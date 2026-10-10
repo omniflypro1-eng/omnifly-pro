@@ -39,6 +39,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { NjazLogo, NjazSymbol } from "@/components/NjazLogo";
+import { dispatchWhatsApp } from "@/lib/whatsapp";
+import { WhatsAppPermissionDialog } from "@/components/WhatsAppPermissionDialog";
 
 function fmt(n?: number) {
   return Number(n ?? 0).toLocaleString("ar-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -47,6 +49,21 @@ function fmt(n?: number) {
 export default function CustomerPortalPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("rides");
+
+  // WhatsApp One-Time Permission & Direct Native Dispatch State
+  const [waPermOpen, setWaPermOpen] = useState(false);
+  const [pendingWaAction, setPendingWaAction] = useState<(() => void) | null>(null);
+
+  const handleSendWhatsApp = (phone?: string, text: string = "") => {
+    dispatchWhatsApp({
+      phone,
+      text,
+      onRequirePermission: (action) => {
+        setPendingWaAction(() => action);
+        setWaPermOpen(true);
+      }
+    });
+  };
 
   // Fetch Website Branding & Settings
   const { data: siteConfig } = useQuery<any>({
@@ -280,15 +297,14 @@ export default function CustomerPortalPage() {
               )}
 
               {siteConfig?.whatsapp && (
-                <a
-                  href={`https://wa.me/${siteConfig.whatsapp}?text=${encodeURIComponent("مرحباً، أود حجز رحلة / مشوار مع وكالة نجاز")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsApp(siteConfig.whatsapp, "مرحباً، أود حجز رحلة / مشوار مع وكالة نجاز")}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">واتساب سريع</span>
-                </a>
+                </button>
               )}
 
               <Button
@@ -922,17 +938,20 @@ export default function CustomerPortalPage() {
                   </Button>
 
                   {siteConfig?.whatsapp && (
-                    <a
-                      href={`https://wa.me/${siteConfig.whatsapp}?text=${encodeURIComponent(`مرحباً وكالة نجاز، تم حجز ${confirmedBooking.booking_ref} باسم ${confirmedBooking.customer_name}`)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1"
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        handleSendWhatsApp(
+                          siteConfig.whatsapp,
+                          `مرحباً وكالة نجاز، تم حجز ${confirmedBooking.booking_ref} باسم ${confirmedBooking.customer_name}`
+                        )
+                      }
+                      className="flex-1 border-emerald-500 text-emerald-700 hover:bg-emerald-50 rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
                     >
-                      <Button variant="outline" className="w-full border-emerald-500 text-emerald-700 hover:bg-emerald-50 rounded-xl text-xs font-bold gap-1.5">
-                        <MessageSquare className="w-4 h-4 text-emerald-600" />
-                        <span>إرسال للواتساب</span>
-                      </Button>
-                    </a>
+                      <MessageSquare className="w-4 h-4 text-emerald-600" />
+                      <span>إرسال للواتساب</span>
+                    </Button>
                   )}
                 </div>
 
@@ -1117,17 +1136,32 @@ export default function CustomerPortalPage() {
         </button>
 
         {siteConfig?.whatsapp && (
-          <a
-            href={`https://wa.me/${siteConfig.whatsapp}?text=${encodeURIComponent("مرحباً، أود الاستفسار والحجز مع وكالة نجاز")}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex flex-col items-center gap-0.5 py-1 px-2 text-emerald-600 hover:text-emerald-700 transition-all font-bold"
+          <button
+            type="button"
+            onClick={() => handleSendWhatsApp(siteConfig.whatsapp, "مرحباً، أود الاستفسار والحجز مع وكالة نجاز")}
+            className="flex flex-col items-center gap-0.5 py-1 px-2 text-emerald-600 hover:text-emerald-700 transition-all font-bold cursor-pointer"
           >
             <MessageSquare className="w-5 h-5" />
             <span className="text-[10px]">واتساب</span>
-          </a>
+          </button>
         )}
       </nav>
+
+      {/* ─── WhatsApp One-Time Permission & Send Mode Dialog ─── */}
+      <WhatsAppPermissionDialog
+        open={waPermOpen}
+        onClose={() => {
+          setWaPermOpen(false);
+          setPendingWaAction(null);
+        }}
+        onConfirmed={() => {
+          setWaPermOpen(false);
+          if (pendingWaAction) {
+            pendingWaAction();
+            setPendingWaAction(null);
+          }
+        }}
+      />
     </div>
   );
 }

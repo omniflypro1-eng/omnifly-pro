@@ -38,7 +38,8 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  X
+  X,
+  Smartphone
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,14 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { NjazLogo } from "@/components/NjazLogo";
+import {
+  dispatchWhatsApp,
+  getWhatsAppPermission,
+  saveWhatsAppPermission,
+  resetWhatsAppPermission,
+  WhatsAppSendMode
+} from "@/lib/whatsapp";
+import { WhatsAppPermissionDialog } from "@/components/WhatsAppPermissionDialog";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? sessionStorage.getItem("pos_token") ?? "";
@@ -75,6 +84,42 @@ export default function WebsiteManagementPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("bookings");
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // WhatsApp One-Time Permission & Direct Native Dispatch State
+  const [waPermOpen, setWaPermOpen] = useState(false);
+  const [pendingWaAction, setPendingWaAction] = useState<(() => void) | null>(null);
+  const [currentWaPerm, setCurrentWaPerm] = useState(getWhatsAppPermission);
+
+  const handleSendWhatsApp = (phone?: string, text: string = "") => {
+    dispatchWhatsApp({
+      phone,
+      text,
+      onRequirePermission: (action) => {
+        setPendingWaAction(() => action);
+        setWaPermOpen(true);
+      }
+    });
+  };
+
+  const handleUpdateWaMode = (mode: WhatsAppSendMode) => {
+    const updated = saveWhatsAppPermission({ mode });
+    setCurrentWaPerm(updated);
+    toast({
+      title: "تم تحديث ضبط الواتساب ✅",
+      description: mode === "installed_app"
+        ? "تم التفعيل: الإرسال المباشر عبر تطبيق واتساب المثبت (whatsapp://)"
+        : "تم التفعيل: الإرسال عبر متصفح الويب (واتساب ويب)"
+    });
+  };
+
+  const handleResetWaPermission = () => {
+    resetWhatsAppPermission();
+    setCurrentWaPerm(getWhatsAppPermission());
+    toast({
+      title: "تمت إعادة تعيين الإذن 🔄",
+      description: "سيطلب النظام الإذن مجدداً لمرة واحدة عند أول إرسال قادم"
+    });
+  };
 
   // 1. Fetch Website Settings
   const { data: config, isLoading: isConfigLoading } = useQuery<any>({
@@ -458,16 +503,22 @@ export default function WebsiteManagementPage() {
                           </td>
                           <td className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1.5">
-                              {config?.whatsapp && (
-                                <a
-                                  href={`https://wa.me/${b.customer_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`مرحباً أستاذ ${b.customer_name}، بخصوص حجزكم رقم ${b.booking_ref} لدى وكالة أومني فلاي...`)}`}
-                                  target="_blank"
-                                  rel="noreferrer"
+                              {b.customer_phone && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    handleSendWhatsApp(
+                                      b.customer_phone,
+                                      `مرحباً أستاذ ${b.customer_name}، بخصوص حجزكم رقم ${b.booking_ref} لدى وكالة نجاز للسفريات والمشاوير (@Njaz)...`
+                                    )
+                                  }
+                                  title="مراسلة العميل عبر واتساب"
+                                  className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
                                 >
-                                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-50 rounded-lg">
-                                    <MessageSquare className="w-4 h-4" />
-                                  </Button>
-                                </a>
+                                  <MessageSquare className="w-4 h-4" />
+                                </Button>
                               )}
 
                               <Button
@@ -1251,16 +1302,20 @@ export default function WebsiteManagementPage() {
 
                       <div className="flex items-center gap-2">
                         {inq.phone && (
-                          <a
-                            href={`https://wa.me/${inq.phone.replace(/\D/g, "")}?text=${encodeURIComponent(`مرحباً أستاذ ${inq.name}، بخصوص استفساركم لدى وكالة أومني فلاي للسياحة والسفر...`)}`}
-                            target="_blank"
-                            rel="noreferrer"
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() =>
+                              handleSendWhatsApp(
+                                inq.phone,
+                                `مرحباً أستاذ ${inq.name}، بخصوص استفساركم لدى وكالة نجاز للسفريات والمشاوير (@Njaz)...`
+                              )
+                            }
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1 cursor-pointer"
                           >
-                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1">
-                              <MessageSquare className="w-3.5 h-3.5" />
-                              <span>محادثة واتساب</span>
-                            </Button>
-                          </a>
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>محادثة واتساب</span>
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -1270,7 +1325,90 @@ export default function WebsiteManagementPage() {
             </TabsContent>
           </Tabs>
         </div>
+
+        {/* WhatsApp Dispatch Controls & Device Permissions Card */}
+        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black text-slate-900">طريقة إرسال ومراسلة الواتساب على هذا الجهاز</h4>
+                <Badge className={currentWaPerm.mode === "installed_app" ? "bg-emerald-600 text-white text-[10px]" : "bg-slate-700 text-white text-[10px]"}>
+                  {currentWaPerm.mode === "installed_app" ? "تلقائي: تطبيق واتساب المثبت (مباشر)" : "يدوي: متصفح الويب"}
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {currentWaPerm.mode === "installed_app"
+                  ? "يتم توجيه الرسائل مباشرة إلى تطبيق واتساب المثبت على جهازك دون فتح صفحة المتصفح أو واتساب ويب."
+                  : "يتم فتح الرابط عبر متصفح الإنترنت (واتساب ويب)."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={currentWaPerm.mode === "installed_app" ? "default" : "outline"}
+              onClick={() => handleUpdateWaMode("installed_app")}
+              className={`rounded-xl text-xs font-bold gap-1.5 h-8 cursor-pointer ${
+                currentWaPerm.mode === "installed_app"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                  : "border-slate-300 text-slate-700"
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>تلقائي (تطبيق واتساب المثبت)</span>
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              variant={currentWaPerm.mode === "manual_web" ? "default" : "outline"}
+              onClick={() => handleUpdateWaMode("manual_web")}
+              className={`rounded-xl text-xs font-bold gap-1.5 h-8 cursor-pointer ${
+                currentWaPerm.mode === "manual_web"
+                  ? "bg-slate-800 text-white"
+                  : "border-slate-300 text-slate-700"
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>يدوي (متصفح الويب)</span>
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={handleResetWaPermission}
+              className="rounded-xl text-xs text-slate-500 hover:text-slate-800 h-8 cursor-pointer"
+              title="إعادة تعيين وسؤال المستخدم عند الإرسال القادم"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>إعادة تعيين الإذن</span>
+            </Button>
+          </div>
+        </div>
       </div>
+
+      {/* WhatsApp One-Time Permission Dialog */}
+      <WhatsAppPermissionDialog
+        open={waPermOpen}
+        onClose={() => {
+          setWaPermOpen(false);
+          setPendingWaAction(null);
+        }}
+        onConfirmed={() => {
+          setWaPermOpen(false);
+          setCurrentWaPerm(getWhatsAppPermission());
+          if (pendingWaAction) {
+            pendingWaAction();
+            setPendingWaAction(null);
+          }
+        }}
+      />
     </AdminLayout>
   );
 }

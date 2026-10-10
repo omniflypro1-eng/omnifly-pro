@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Users, Plus, Search, Edit2, Trash2, UserCheck, Eye, Phone, Mail, MapPin, Ticket, Globe, Hotel, Luggage, Printer, FileText, MessageSquare, Building2, Store, Check, ExternalLink, DollarSign, AlertCircle, Lock, ShieldCheck } from "lucide-react";
 import { printA4Html, generateStatementA4Html } from "@/lib/printUtils";
+import { dispatchWhatsApp } from "@/lib/whatsapp";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? "";
@@ -257,8 +258,8 @@ export default function TravelCustomersPage() {
     const phone = profileData.customer.phone || "";
     const name = profileData.customer.name || "";
     const due = profileData.summary?.dueAmount || 0;
-    const msg = `مرحباً العميل العزيز ${name}، رصيدكم المستحق لديكم هو ${due} ريال. نسعد بخدمتكم دائماً - OmniSystem Pro`;
-    window.open(`https://wa.me/${phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(msg)}`, "_blank");
+    const msg = `مرحباً العميل العزيز ${name}، رصيدكم المستحق لديكم هو ${due} ريال. نسعد بخدمتكم دائماً - OmniFly Pro / نجاز`;
+    dispatchWhatsApp({ phone, text: msg });
   };
 
   const handleExportCsv = () => {

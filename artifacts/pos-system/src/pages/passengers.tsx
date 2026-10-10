@@ -1002,20 +1002,19 @@ export default function PassengersPage() {
       } catch (e) {
         await (window as any).electronAPI.openExternal(whatsappWebUri);
       }
-    } else {
-      // 2. Web Browser: Launch Protocol & Web WhatsApp
+      // 2. Web Browser: Launch Native App Protocol directly
       try {
         const link = document.createElement("a");
         link.href = whatsappAppUri;
-        link.target = "_blank";
         document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
         setTimeout(() => {
-          window.open(whatsappWebUri, "_blank");
-        }, 500);
+          if (document.body.contains(link)) {
+            document.body.removeChild(link);
+          }
+        }, 300);
       } catch (e) {
-        window.open(whatsappWebUri, "_blank");
+        window.location.href = whatsappAppUri;
       }
     }
 
@@ -1125,21 +1124,15 @@ export default function PassengersPage() {
             dispatchedOk = true;
           }
         } else {
-          const win = window.open(whatsappWebUri, "_blank");
-          if (win && !win.closed) {
-            dispatchedOk = true;
-          } else {
-            const a = document.createElement("a");
-            a.href = whatsappWebUri;
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => {
-              if (document.body.contains(a)) document.body.removeChild(a);
-            }, 500);
-            dispatchedOk = true;
-          }
+          // In Browser: Launch Native WhatsApp App protocol directly
+          const link = document.createElement("a");
+          link.href = whatsappSendMode === "manual" ? whatsappWebUri : whatsappAppUri;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            if (document.body.contains(link)) document.body.removeChild(link);
+          }, 300);
+          dispatchedOk = true;
         }
       } catch (e) {
         dispatchedOk = false;
