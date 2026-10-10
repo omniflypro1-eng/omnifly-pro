@@ -1,8 +1,46 @@
-import app from "./artifacts/api-server/src/app";
-import express from "express";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
+
+// ── Auto-bootstrap TypeScript Execution (for Render / Docker / production running "node server.ts") ──
+// Plain Node.js cannot resolve extensionless TypeScript imports in ESM without a loader.
+// If not already running under tsx, bun, or a bootstrapped child process, respawn with `--import tsx`.
+const isTsxActive = Boolean(
+  process.env.__TSX_BOOTSTRAPPED__ === "1" ||
+  process.execArgv.some((a) => a.includes("tsx")) ||
+  (process as any).versions?.bun
+);
+
+if (!isTsxActive) {
+  const child = spawn(process.execPath, ["--import", "tsx", ...process.argv.slice(1)], {
+    stdio: "inherit",
+    env: { ...process.env, __TSX_BOOTSTRAPPED__: "1" }
+  });
+
+  const forwardSignal = (sig: NodeJS.Signals) => {
+    try {
+      if (!child.killed) child.kill(sig);
+    } catch {}
+  };
+
+  process.on("SIGINT", () => forwardSignal("SIGINT"));
+  process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      try { process.kill(process.pid, signal); } catch { process.exit(1); }
+    } else {
+      process.exit(code ?? 0);
+    }
+  });
+
+  // Keep parent waiting for child process to finish
+  await new Promise(() => {});
+}
+
+// Dynamically import app & express once TSX or Bun loader is guaranteed
+const { default: app } = await import("./artifacts/api-server/src/app");
+const { default: express } = await import("express");
 
 const _dirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 
