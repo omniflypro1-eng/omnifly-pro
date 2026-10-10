@@ -458,6 +458,7 @@ router.get("/public/website/config", (_req, res) => {
     };
   }
   try {
+    ensureWebsiteOffersTable();
     const offers = db.prepare("SELECT * FROM website_offers WHERE is_active = 1 ORDER BY sort_order ASC, id DESC").all();
     settings.offers = offers;
   } catch (e) {
@@ -848,8 +849,31 @@ router.post("/admin/website/upload", upload.single("file"), (req, res) => {
 });
 
 // 19.0.2 Offers and Banners CRUD
+function ensureWebsiteOffersTable() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS website_offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        badge TEXT,
+        discount TEXT,
+        image_url TEXT,
+        action_type TEXT DEFAULT 'tab',
+        action_value TEXT DEFAULT 'rides',
+        is_active INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
+      );
+    `);
+  } catch (e) {
+    console.error("Error creating website_offers table:", e);
+  }
+}
+
 router.get("/public/website/offers", (_req, res) => {
   try {
+    ensureWebsiteOffersTable();
     const rows = db.prepare("SELECT * FROM website_offers WHERE is_active = 1 ORDER BY sort_order ASC, id DESC").all();
     res.json(rows);
   } catch (e) {
@@ -861,6 +885,7 @@ router.get("/admin/website/offers", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
   try {
+    ensureWebsiteOffersTable();
     const rows = db.prepare("SELECT * FROM website_offers ORDER BY sort_order ASC, id DESC").all();
     res.json(rows);
   } catch (e) {
@@ -871,49 +896,83 @@ router.get("/admin/website/offers", (req, res) => {
 router.post("/admin/website/offers", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  ensureWebsiteOffersTable();
   const { title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order } = req.body;
   if (!title) { res.status(400).json({ error: "العنوان مطلوب" }); return; }
-  const info = db.prepare(`
-    INSERT INTO website_offers (title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    title, subtitle || null, badge || null, discount || null, image_url || null,
-    action_type || "tab", action_value || "rides", is_active !== undefined ? Number(is_active) : 1, Number(sort_order || 0)
-  );
-  const created = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(info.lastInsertRowid);
-  res.json(created);
+  try {
+    const info = db.prepare(`
+      INSERT INTO website_offers (title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      title,
+      subtitle || null,
+      badge || null,
+      discount || null,
+      image_url || null,
+      action_type || "tab",
+      action_value || "rides",
+      is_active !== undefined ? Number(is_active) : 1,
+      Number(sort_order || 0)
+    );
+    const created = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(info.lastInsertRowid);
+    res.json(created);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "فشل حفظ العرض في قاعدة البيانات" });
+  }
 });
 
 router.put("/admin/website/offers/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  ensureWebsiteOffersTable();
   const { title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order } = req.body;
-  db.prepare(`
-    UPDATE website_offers
-    SET title = COALESCE(?, title),
-        subtitle = COALESCE(?, subtitle),
-        badge = COALESCE(?, badge),
-        discount = COALESCE(?, discount),
-        image_url = COALESCE(?, image_url),
-        action_type = COALESCE(?, action_type),
-        action_value = COALESCE(?, action_value),
-        is_active = COALESCE(?, is_active),
-        sort_order = COALESCE(?, sort_order)
-    WHERE id = ?
-  `).run(
-    title || null, subtitle || null, badge || null, discount || null, image_url || null,
-    action_type || null, action_value || null, is_active !== undefined ? Number(is_active) : null,
-    sort_order !== undefined ? Number(sort_order) : null, req.params.id
-  );
-  const updated = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(req.params.id);
-  res.json(updated);
+  try {
+    const existing = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(req.params.id) as any;
+    if (!existing) {
+      res.status(404).json({ error: "العرض غير موجود" });
+      return;
+    }
+    db.prepare(`
+      UPDATE website_offers
+      SET title = ?,
+          subtitle = ?,
+          badge = ?,
+          discount = ?,
+          image_url = ?,
+          action_type = ?,
+          action_value = ?,
+          is_active = ?,
+          sort_order = ?
+      WHERE id = ?
+    `).run(
+      title !== undefined ? title : existing.title,
+      subtitle !== undefined ? subtitle : existing.subtitle,
+      badge !== undefined ? badge : existing.badge,
+      discount !== undefined ? discount : existing.discount,
+      image_url !== undefined ? image_url : existing.image_url,
+      action_type !== undefined ? action_type : existing.action_type,
+      action_value !== undefined ? action_value : existing.action_value,
+      is_active !== undefined ? Number(is_active) : existing.is_active,
+      sort_order !== undefined ? Number(sort_order) : existing.sort_order,
+      req.params.id
+    );
+    const updated = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(req.params.id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "فشل تعديل العرض في قاعدة البيانات" });
+  }
 });
 
 router.delete("/admin/website/offers/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
-  db.prepare("DELETE FROM website_offers WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+  try {
+    ensureWebsiteOffersTable();
+    db.prepare("DELETE FROM website_offers WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "فشل حذف العرض" });
+  }
 });
 
 // 19.1 Admin Get All Custom Services

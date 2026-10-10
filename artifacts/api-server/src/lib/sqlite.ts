@@ -4855,6 +4855,20 @@ function runMigrations() {
         status TEXT DEFAULT 'new',
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
+
+      CREATE TABLE IF NOT EXISTS website_offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        badge TEXT,
+        discount TEXT,
+        image_url TEXT,
+        action_type TEXT DEFAULT 'tab',
+        action_value TEXT DEFAULT 'rides',
+        is_active INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
+      );
     `);
 
     // Ensure default settings row exists
@@ -4882,6 +4896,63 @@ function runMigrations() {
           'OMNIFLY10', 10
         )
       `).run();
+    }
+
+    // Ensure default promotional offers & ads banners exist (4 offers)
+    try {
+      const offersCount = (db.prepare("SELECT COUNT(*) as c FROM website_offers").get() as { c: number }).c;
+      if (offersCount === 0) {
+        const insOffer = db.prepare(`
+          INSERT INTO website_offers (title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insOffer.run(
+          "عرض خاص: توصيل واستقبال المطارات VIP",
+          "خدمة فاخرة 24/7 بسيارات حديثة وسائقين معتمدين وتتبع دقيق للرحلات",
+          "الأكثر طلباً",
+          "خصم 20%",
+          "/assets/omnifly_hero_modern_1788663939856-aIfelTPm.jpg",
+          "tab",
+          "rides",
+          1,
+          1
+        );
+        insOffer.run(
+          "باقات العمرة والزيارة المتكاملة",
+          "شاملة السكن بجوار الحرم والمشاوير الخاصة مع استقبال وتوديع المطار",
+          "VIP عائلي",
+          "خصم 15%",
+          "/assets/omnifly_hajj_umrah_1788663965150-PuQNTAsW.jpg",
+          "tab",
+          "packages",
+          1,
+          2
+        );
+        insOffer.run(
+          "عروض تذاكر الطيران المباشرة",
+          "أفضل أسعار الخطوط السعودية وطيران ناس وفلاي أديل بحجز فوري معتمد",
+          "حجز فوري",
+          "مؤكد PNR",
+          "/assets/omnifly_catalog_modules_1788663953219-CjsKLR8n.jpg",
+          "tab",
+          "flights",
+          1,
+          3
+        );
+        insOffer.run(
+          "مشاوير بين المدن وتوصيل المحافظات",
+          "رحلات مريحة وآمنة وسيارات VIP مجهزة للتنقل بين كافة مدن ومحافظات المملكة",
+          "حصري",
+          "خصم 25%",
+          "/assets/omnifly_hero_modern_1788663939856-aIfelTPm.jpg",
+          "tab",
+          "rides",
+          1,
+          4
+        );
+      }
+    } catch (e) {
+      console.error("Error seeding default website_offers:", e);
     }
   } catch (e) {
     console.error("Error creating website tables:", e);
