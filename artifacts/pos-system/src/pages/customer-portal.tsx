@@ -37,6 +37,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { NjazLogo, NjazSymbol } from "@/components/NjazLogo";
 import { dispatchWhatsApp } from "@/lib/whatsapp";
@@ -119,6 +126,8 @@ export default function CustomerPortalPage() {
   const [lookupQuery, setLookupQuery] = useState("");
   const [lookupResults, setLookupResults] = useState<any>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [notFoundModalOpen, setNotFoundModalOpen] = useState(false);
+  const [notFoundQuery, setNotFoundQuery] = useState("");
 
   // Contact / Inquiry Form
   const [inquiryForm, setInquiryForm] = useState({
@@ -200,16 +209,50 @@ export default function CustomerPortalPage() {
 
   const handleLookupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!lookupQuery.trim()) return;
+    const query = lookupQuery.trim();
+    if (!query) {
+      toast({
+        title: "تنبيه",
+        description: "يرجى كتابة رقم الحجز أو رقم الجوال للاستعلام والتتبع"
+      });
+      return;
+    }
     setIsLookingUp(true);
     setLookupResults(null);
     try {
-      const res = await fetch(`/api/public/website/lookup?query=${encodeURIComponent(lookupQuery.trim())}`);
+      const res = await fetch(`/api/public/website/lookup?query=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "لم يتم العثور على حجز");
+      
+      const totalResults = ((data.online_bookings?.length || 0) + (data.travel_bookings?.length || 0)) || (data.count || 0);
+
+      if (!res.ok || totalResults === 0) {
+        // Did not find anything: show friendly pop-up dialog stating it was not found (and NOT a validation error)
+        setNotFoundQuery(query);
+        setNotFoundModalOpen(true);
+        setLookupResults({
+          query,
+          count: 0,
+          online_bookings: [],
+          travel_bookings: []
+        });
+        return;
+      }
+
       setLookupResults(data);
-    } catch (err: any) {
-      toast({ title: "بحث الحجوزات", description: err.message, variant: "destructive" });
+      toast({
+        title: "تم العثور على بيانات الحجز بنجاح ✅",
+        description: `تم إيجاد ${totalResults} سجل مطابق لـ "${query}"`
+      });
+    } catch {
+      // In case of any network issue, show friendly not found popup modal instead of an ugly destructive validation error
+      setNotFoundQuery(query);
+      setNotFoundModalOpen(true);
+      setLookupResults({
+        query,
+        count: 0,
+        online_bookings: [],
+        travel_bookings: []
+      });
     } finally {
       setIsLookingUp(false);
     }
@@ -857,29 +900,117 @@ export default function CustomerPortalPage() {
                 </div>
 
                 {lookupResults && (
-                  <div className="space-y-3 pt-4 border-t border-slate-100">
-                    {(lookupResults.online_bookings || []).map((b: any) => (
-                      <div key={b.id} className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-sky-600 text-white text-xs">{b.booking_ref}</Badge>
-                            <span className="font-bold text-slate-900 text-sm">{b.service_title}</span>
-                          </div>
-                          <div className="text-xs text-slate-600 mt-1 flex flex-wrap gap-3 sm:gap-4">
-                            <span><strong>المسافر:</strong> {b.customer_name}</span>
-                            <span><strong>رقم PNR:</strong> {b.pnr}</span>
-                            <span><strong>الحالة:</strong> مؤكد ✅</span>
-                          </div>
+                  <div className="space-y-4 pt-4 border-t border-slate-100">
+                    {/* في حال عدم وجود أي حجز */}
+                    {((lookupResults.online_bookings?.length || 0) + (lookupResults.travel_bookings?.length || 0) === 0) ? (
+                      <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-5 text-center space-y-3">
+                        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                          <Search className="w-6 h-6" />
                         </div>
-                        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
-                          <span className="font-black text-slate-900 text-sm">{fmt(b.total_amount)} ر.س</span>
-                          <Button size="sm" onClick={() => window.print()} variant="outline" className="rounded-xl text-xs gap-1">
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>طباعة التذكرة</span>
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-sm">لم يتم العثور على أي حجز مسجل لـ "{lookupResults.query}"</h4>
+                          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                            تأكد من صحة رقم الحجز المرجعي أو رقم الجوال المدخل، أو تواصل مباشرة مع فريق خدمة العملاء للمساعدة.
+                          </p>
+                        </div>
+                        <div className="flex justify-center gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              const phone = siteConfig?.whatsapp || "966501234567";
+                              handleSendWhatsApp(
+                                phone,
+                                `مرحباً وكالة نجاز، أود الاستفسار عن حجزي برقم/بيانات (${lookupResults.query}) حيث لم يتم العثور عليه بالتتبع.`
+                              );
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold gap-1.5"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>مساعدة فورية عبر واتساب</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setLookupQuery("");
+                              setLookupResults(null);
+                            }}
+                            className="rounded-xl text-xs border-slate-300 hover:bg-slate-50"
+                          >
+                            مسح البحث
                           </Button>
                         </div>
                       </div>
-                    ))}
+                    ) : (
+                      <>
+                        {/* 1. حجوزات البوابة والمشاوير الإلكترونية */}
+                        {(lookupResults.online_bookings || []).map((b: any) => (
+                          <div key={`online-${b.id}`} className="p-3.5 sm:p-5 bg-white rounded-2xl border border-slate-200 hover:border-sky-300 transition-all shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge className="bg-sky-600 text-white text-xs font-mono">{b.booking_ref}</Badge>
+                                <span className="font-bold text-slate-900 text-sm sm:text-base">{b.service_title}</span>
+                                <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 text-[11px]">
+                                  {b.status === "confirmed" ? "مؤكد ✅" : b.status || "مؤكد ✅"}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+                                <span><strong>المسافر / العميل:</strong> {b.customer_name}</span>
+                                {b.customer_phone && <span><strong>الجوال:</strong> {b.customer_phone}</span>}
+                                {b.pnr && <span><strong>رقم PNR:</strong> <span className="font-mono font-bold text-sky-700">{b.pnr}</span></span>}
+                                {b.origin && b.destination && <span><strong>المسار:</strong> {b.origin} ⟵ {b.destination}</span>}
+                                {b.departure_date && <span><strong>التاريخ:</strong> {b.departure_date}</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2.5 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-400 block">الإجمالي</span>
+                                <span className="font-black text-slate-900 text-sm sm:text-base">{fmt(b.total_amount)} ر.س</span>
+                              </div>
+                              <Button size="sm" onClick={() => window.print()} variant="outline" className="rounded-xl text-xs gap-1.5 border-slate-300 hover:bg-slate-50">
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>طباعة التذكرة</span>
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* 2. تذاكر الطيران والسفريات المسجلة بالنظام */}
+                        {(lookupResults.travel_bookings || []).map((b: any) => (
+                          <div key={`travel-${b.id}`} className="p-3.5 sm:p-5 bg-white rounded-2xl border border-slate-200 hover:border-sky-300 transition-all shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge className="bg-indigo-600 text-white text-xs font-mono">
+                                  {b.booking_number || b.ticket_number || b.pnr}
+                                </Badge>
+                                <span className="font-bold text-slate-900 text-sm sm:text-base">
+                                  {b.service_type || "تذكرة سفر وحجز"} {b.airline ? `(${b.airline})` : ""}
+                                </span>
+                                <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 text-[11px]">
+                                  {b.status || "مؤكد ✅"}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+                                <span><strong>المسافر:</strong> {b.passenger_name_ar || b.customer_name || "عميل نجاز"}</span>
+                                {b.customer_phone && <span><strong>الجوال:</strong> {b.customer_phone}</span>}
+                                {b.pnr && <span><strong>رقم PNR:</strong> <span className="font-mono font-bold text-indigo-700">{b.pnr}</span></span>}
+                                {b.origin && b.destination && <span><strong>خط السير:</strong> {b.origin} ⟵ {b.destination}</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2.5 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-400 block">الإجمالي</span>
+                                <span className="font-black text-slate-900 text-sm sm:text-base">{fmt(b.total_amount || b.sale_price)} ر.س</span>
+                              </div>
+                              <Button size="sm" onClick={() => window.print()} variant="outline" className="rounded-xl text-xs gap-1.5 border-slate-300 hover:bg-slate-50">
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>طباعة التذكرة</span>
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
               </TabsContent>
@@ -1405,6 +1536,64 @@ export default function CustomerPortalPage() {
           }
         }}
       />
+
+      {/* ─── Pop-up Modal: Booking Not Found (رسالة منبثقة تفيد بعدم وجود الحجز) ─── */}
+      <Dialog open={notFoundModalOpen} onOpenChange={setNotFoundModalOpen}>
+        <DialogContent className="sm:max-w-md text-right font-sans rounded-3xl p-6" dir="rtl">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-500 flex items-center justify-center mb-3 shadow-xs">
+              <Search className="w-8 h-8 text-amber-500 stroke-[2.2]" />
+            </div>
+            <DialogHeader className="text-center sm:text-center space-y-1.5 w-full">
+              <DialogTitle className="text-lg sm:text-xl font-black text-slate-900 text-center">
+                لم يتم العثور على الحجز
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed text-center">
+                عذراً، لم نتمكن من العثور على أي حجز أو تذكرة مسجلة بالبيانات المدخلة:
+                <span className="block mt-1.5 font-bold text-slate-900 bg-slate-100 py-1 px-3 rounded-lg border border-slate-200 font-mono text-xs">
+                  {notFoundQuery}
+                </span>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3 text-xs text-amber-900 text-right w-full my-4 leading-relaxed">
+              <p className="font-bold mb-1 flex items-center gap-1.5">
+                <span>💡 نصائح وتوجيهات للبحث:</span>
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-800">
+                <li>تأكد من إدخال رقم الحجز المرجعي كما ظهر لك عند الحجز (مثل: <span className="font-mono font-bold">WEB-123456</span>).</li>
+                <li>أو أدخل رمز الـ PNR أو رقم الجوال المستخدم في الحجز بدون مسافات.</li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 w-full pt-1">
+              <Button
+                type="button"
+                onClick={() => {
+                  setNotFoundModalOpen(false);
+                  const phone = siteConfig?.whatsapp || "966501234567";
+                  handleSendWhatsApp(
+                    phone,
+                    `مرحباً وكالة نجاز، أود الاستفسار عن حجزي برقم/بيانات (${notFoundQuery}) حيث لم أجده في نظام تتبع الحجوزات.`
+                  );
+                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-11 text-xs font-bold gap-2 cursor-pointer shadow-xs"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>مساعدة فورية عبر واتساب</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setNotFoundModalOpen(false)}
+                className="rounded-xl h-11 text-xs font-bold border-slate-200 hover:bg-slate-100 cursor-pointer"
+              >
+                إغلاق
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

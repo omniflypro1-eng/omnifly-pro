@@ -662,37 +662,62 @@ router.post("/public/website/bookings", (req, res) => {
 
 // 16. Public Booking Lookup & Ticket Tracker (By PNR, Booking Ref, Phone, or Passport)
 router.get("/public/website/lookup", (req, res) => {
-  const { query } = req.query;
-  if (!query || String(query).trim().length < 2) {
-    res.status(400).json({ error: "الرجاء إدخال رقم الحجز أو الهاتف أو رقم الجواز" });
-    return;
+  try {
+    const { query } = req.query;
+    const q = String(query || "").trim();
+    if (!q || q.length < 2) {
+      res.json({
+        query: q,
+        count: 0,
+        online_bookings: [],
+        travel_bookings: [],
+        message: "الرجاء إدخال حرفين على الأقل للبحث"
+      });
+      return;
+    }
+
+    // Search online bookings first
+    let onlineBookings: any[] = [];
+    try {
+      onlineBookings = db.prepare(`
+        SELECT * FROM website_online_bookings
+        WHERE booking_ref LIKE ? OR pnr LIKE ? OR customer_phone LIKE ? OR passport_number LIKE ?
+        ORDER BY id DESC LIMIT 10
+      `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    } catch {
+      onlineBookings = [];
+    }
+
+    // Search internal travel bookings
+    let travelBookings: any[] = [];
+    try {
+      travelBookings = db.prepare(`
+        SELECT b.*, p.name_ar as passenger_name_ar, p.passport_number, c.name as customer_name, c.phone as customer_phone
+        FROM travel_bookings b
+        LEFT JOIN travel_passengers p ON p.id = b.passenger_id
+        LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE b.pnr LIKE ? OR b.ticket_number LIKE ? OR b.booking_number LIKE ? OR c.phone LIKE ? OR p.passport_number LIKE ?
+        ORDER BY b.id DESC LIMIT 10
+      `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    } catch {
+      travelBookings = [];
+    }
+
+    res.json({
+      query: q,
+      count: onlineBookings.length + travelBookings.length,
+      online_bookings: onlineBookings,
+      travel_bookings: travelBookings
+    });
+  } catch (err: any) {
+    res.json({
+      query: String(req.query.query || "").trim(),
+      count: 0,
+      online_bookings: [],
+      travel_bookings: [],
+      error: err.message
+    });
   }
-
-  const q = String(query).trim();
-
-  // Search online bookings first
-  const onlineBookings = db.prepare(`
-    SELECT * FROM website_online_bookings
-    WHERE booking_ref LIKE ? OR pnr LIKE ? OR customer_phone LIKE ? OR passport_number LIKE ?
-    ORDER BY id DESC LIMIT 5
-  `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-
-  // Search internal travel bookings
-  const travelBookings = db.prepare(`
-    SELECT b.*, p.name_ar as passenger_name_ar, p.passport_number, c.name as customer_name, c.phone as customer_phone
-    FROM travel_bookings b
-    LEFT JOIN travel_passengers p ON p.id = b.passenger_id
-    LEFT JOIN customers c ON c.id = b.customer_id
-    WHERE b.pnr LIKE ? OR b.ticket_number LIKE ? OR b.booking_number LIKE ? OR c.phone LIKE ? OR p.passport_number LIKE ?
-    ORDER BY b.id DESC LIMIT 5
-  `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-
-  res.json({
-    query: q,
-    count: onlineBookings.length + travelBookings.length,
-    online_bookings: onlineBookings,
-    travel_bookings: travelBookings
-  });
 });
 
 // 17. Submit Public Customer Inquiry or Custom Tour Request
