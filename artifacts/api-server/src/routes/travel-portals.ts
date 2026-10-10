@@ -1,4 +1,7 @@
 import { Router } from "express";
+import multer from "multer";
+import fs from "node:fs";
+import path from "node:path";
 import { db, createDoubleEntryJournal, logAudit } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 
@@ -429,22 +432,36 @@ router.post("/travel/b2c/requests/:id/action", (req, res) => {
 
 // 13. Get public website configuration & branding
 router.get("/public/website/config", (_req, res) => {
-  let settings = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
+  let settings: any = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
   if (!settings) {
     settings = {
-      site_name: "وكالة أومني فلاي برو للسياحة والسفر",
-      site_slogan: "بوابتكم الذكية لحجوزات الطيران والفنادق والتأشيرات المعتمدة حول العالم",
+      site_name: "وكالة نجاز للمشاوير والسفريات والسياحة",
+      site_slogan: "نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة",
       phone: "+966 50 123 4567",
       whatsapp: "966501234567",
-      email: "reservations@omnifly-travel.sa",
-      address: "الرياض - طريق الملك فهد - برج الأعمال السياحية",
-      hero_title: "اكتشف العالم بأفضل الأسعار وأسهل خيارات الحجز",
-      hero_subtitle: "احجز تذاكر الطيران، الفنادق الفاخرة، باقات العمرة والسياحة، واستخرج تأشيرتك فورياً بكل سهولة وأمان",
+      email: "info@njaz-travel.com",
+      address: "المملكة العربية السعودية - خدمات النقل والمطارات",
+      hero_title: "مشاويرك، رحلاتك، وفنادقك.. بكل إنجاز وسهولة!",
+      hero_subtitle: "حجوزات طيران محلية ودولية، مشاوير ونقل سياحي مريح، فنادق فاخرة، وباقات عمرة وتأشيرات بأفضل الأسعار وأعلى سرعة إنجاز",
+      topbar_text: "خدمة العملاء والمشاوير 24/7",
+      social_handle: "@Njaz",
+      facebook_url: "https://facebook.com/Njaz",
+      x_url: "https://x.com/Njaz",
+      instagram_url: "https://instagram.com/Njaz",
+      footer_desc: "وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.",
+      guarantee_title: "ضمانات نجاز للعملاء",
+      guarantee_text: "جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.",
       flight_enabled: 1, hotel_enabled: 1, packages_enabled: 1, visas_enabled: 1, bus_enabled: 1, insurance_enabled: 1,
       payment_card_enabled: 1, payment_bank_enabled: 1, payment_cash_enabled: 1,
-      bank_name: "مصرف الراجحي", bank_iban: "SA0380000000608010167519", bank_account_name: "مؤسسة أومني فلاي للسياحة والسفر",
+      bank_name: "مصرف الراجحي", bank_iban: "SA0380000000608010167519", bank_account_name: "وكالة نجاز للمشاوير والسفريات",
       promo_code: "OMNIFLY10", promo_discount_percent: 10
     };
+  }
+  try {
+    const offers = db.prepare("SELECT * FROM website_offers WHERE is_active = 1 ORDER BY sort_order ASC, id DESC").all();
+    settings.offers = offers;
+  } catch (e) {
+    settings.offers = [];
   }
   res.json(settings);
 });
@@ -715,7 +732,12 @@ router.put("/admin/website/config", (req, res) => {
 
   const {
     site_name, site_slogan, phone, whatsapp, email, address,
-    hero_title, hero_subtitle, rides_enabled, flight_enabled, hotel_enabled,
+    hero_title, hero_subtitle, logo_url, topbar_text, social_handle,
+    facebook_url, x_url, instagram_url, snapchat_url, tiktok_url,
+    footer_desc, guarantee_title, guarantee_text,
+    rides_image_url, flights_image_url, hotels_image_url, packages_image_url,
+    announcement_bar_enabled, announcement_bar_text,
+    rides_enabled, flight_enabled, hotel_enabled,
     packages_enabled, visas_enabled, bus_enabled, insurance_enabled,
     flight_markup_val, flight_markup_type, hotel_markup_val, hotel_markup_type,
     package_markup_val, package_markup_type, payment_card_enabled, payment_bank_enabled,
@@ -726,7 +748,12 @@ router.put("/admin/website/config", (req, res) => {
   db.prepare(`
     UPDATE website_settings
     SET site_name = ?, site_slogan = ?, phone = ?, whatsapp = ?, email = ?, address = ?,
-        hero_title = ?, hero_subtitle = ?, rides_enabled = ?, flight_enabled = ?, hotel_enabled = ?,
+        hero_title = ?, hero_subtitle = ?, logo_url = ?, topbar_text = ?, social_handle = ?,
+        facebook_url = ?, x_url = ?, instagram_url = ?, snapchat_url = ?, tiktok_url = ?,
+        footer_desc = ?, guarantee_title = ?, guarantee_text = ?,
+        rides_image_url = ?, flights_image_url = ?, hotels_image_url = ?, packages_image_url = ?,
+        announcement_bar_enabled = ?, announcement_bar_text = ?,
+        rides_enabled = ?, flight_enabled = ?, hotel_enabled = ?,
         packages_enabled = ?, visas_enabled = ?, bus_enabled = ?, insurance_enabled = ?,
         flight_markup_val = ?, flight_markup_type = ?, hotel_markup_val = ?, hotel_markup_type = ?,
         package_markup_val = ?, package_markup_type = ?, payment_card_enabled = ?, payment_bank_enabled = ?,
@@ -734,22 +761,159 @@ router.put("/admin/website/config", (req, res) => {
         promo_code = ?, promo_discount_percent = ?, updated_at = (datetime('now', 'localtime'))
     WHERE id = 1
   `).run(
-    site_name, site_slogan, phone, whatsapp, email, address,
-    hero_title, hero_subtitle,
+    site_name || "وكالة نجاز للمشاوير والسفريات والسياحة",
+    site_slogan || "نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة",
+    phone || "+966 50 123 4567",
+    whatsapp || "966501234567",
+    email || "info@njaz-travel.com",
+    address || "المملكة العربية السعودية - خدمات النقل والمطارات",
+    hero_title || "مشاويرك، رحلاتك، وفنادقك.. بكل إنجاز وسهولة!",
+    hero_subtitle || "حجوزات طيران محلية ودولية، مشاوير ونقل سياحي مريح، فنادق فاخرة، وباقات عمرة وتأشيرات بأفضل الأسعار وأعلى سرعة إنجاز",
+    logo_url || "",
+    topbar_text || "خدمة العملاء والمشاوير 24/7",
+    social_handle || "@Njaz",
+    facebook_url || "https://facebook.com/Njaz",
+    x_url || "https://x.com/Njaz",
+    instagram_url || "https://instagram.com/Njaz",
+    snapchat_url || "",
+    tiktok_url || "",
+    footer_desc || "وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.",
+    guarantee_title || "ضمانات نجاز للعملاء",
+    guarantee_text || "جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.",
+    rides_image_url || "",
+    flights_image_url || "",
+    hotels_image_url || "",
+    packages_image_url || "",
+    announcement_bar_enabled !== undefined ? Number(announcement_bar_enabled) : 1,
+    announcement_bar_text || "🔥 عروض المشاوير السياحية وتوصيل المطارات VIP مستمرة على مدار الساعة — احجز مشوارك الآن مع نجاز!",
     Number(rides_enabled ?? 1), Number(flight_enabled ?? 1), Number(hotel_enabled ?? 1),
     Number(packages_enabled ?? 1), Number(visas_enabled ?? 1), Number(bus_enabled ?? 1), Number(insurance_enabled ?? 1),
     Number(flight_markup_val ?? 5), flight_markup_type || "percent",
     Number(hotel_markup_val ?? 8), hotel_markup_type || "percent",
     Number(package_markup_val ?? 5), package_markup_type || "percent",
     Number(payment_card_enabled ?? 1), Number(payment_bank_enabled ?? 1),
-    Number(payment_cash_enabled ?? 1), bank_name, bank_iban, bank_account_name,
-    promo_code, Number(promo_discount_percent ?? 10)
+    Number(payment_cash_enabled ?? 1), bank_name || null, bank_iban || null, bank_account_name || null,
+    promo_code || "OMNIFLY10", Number(promo_discount_percent ?? 10)
   );
 
   logAudit(user.id, user.name, "WEBSITE_CMS_UPDATED", "تحديث إعدادات ومحتوى الموقع الإلكتروني للعملاء");
 
   const updated = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
   res.json({ success: true, settings: updated });
+});
+
+// 19.0.1 Upload website image (Logo, section banner, ads)
+const uploadsDir = path.resolve(process.cwd(), "public/uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".png";
+    const name = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+    cb(null, name);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+router.post("/admin/website/upload", upload.single("file"), (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+
+  if (req.file) {
+    res.json({ success: true, url: `/uploads/${req.file.filename}` });
+    return;
+  }
+
+  if (req.body?.base64) {
+    try {
+      const base64Data = req.body.base64.replace(/^data:image\/\w+;base64,/, "");
+      const ext = req.body.ext || "png";
+      const filename = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+      const filepath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filepath, Buffer.from(base64Data, "base64"));
+      res.json({ success: true, url: `/uploads/${filename}` });
+      return;
+    } catch (err: any) {
+      res.status(500).json({ error: "فشل حفظ الصورة: " + err.message });
+      return;
+    }
+  }
+
+  res.status(400).json({ error: "يرجى اختيار ملف صورة صالح" });
+});
+
+// 19.0.2 Offers and Banners CRUD
+router.get("/public/website/offers", (_req, res) => {
+  try {
+    const rows = db.prepare("SELECT * FROM website_offers WHERE is_active = 1 ORDER BY sort_order ASC, id DESC").all();
+    res.json(rows);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+router.get("/admin/website/offers", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  try {
+    const rows = db.prepare("SELECT * FROM website_offers ORDER BY sort_order ASC, id DESC").all();
+    res.json(rows);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+router.post("/admin/website/offers", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  const { title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order } = req.body;
+  if (!title) { res.status(400).json({ error: "العنوان مطلوب" }); return; }
+  const info = db.prepare(`
+    INSERT INTO website_offers (title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    title, subtitle || null, badge || null, discount || null, image_url || null,
+    action_type || "tab", action_value || "rides", is_active !== undefined ? Number(is_active) : 1, Number(sort_order || 0)
+  );
+  const created = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(info.lastInsertRowid);
+  res.json(created);
+});
+
+router.put("/admin/website/offers/:id", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  const { title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order } = req.body;
+  db.prepare(`
+    UPDATE website_offers
+    SET title = COALESCE(?, title),
+        subtitle = COALESCE(?, subtitle),
+        badge = COALESCE(?, badge),
+        discount = COALESCE(?, discount),
+        image_url = COALESCE(?, image_url),
+        action_type = COALESCE(?, action_type),
+        action_value = COALESCE(?, action_value),
+        is_active = COALESCE(?, is_active),
+        sort_order = COALESCE(?, sort_order)
+    WHERE id = ?
+  `).run(
+    title || null, subtitle || null, badge || null, discount || null, image_url || null,
+    action_type || null, action_value || null, is_active !== undefined ? Number(is_active) : null,
+    sort_order !== undefined ? Number(sort_order) : null, req.params.id
+  );
+  const updated = db.prepare("SELECT * FROM website_offers WHERE id = ?").get(req.params.id);
+  res.json(updated);
+});
+
+router.delete("/admin/website/offers/:id", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  db.prepare("DELETE FROM website_offers WHERE id = ?").run(req.params.id);
+  res.json({ success: true });
 });
 
 // 19.1 Admin Get All Custom Services

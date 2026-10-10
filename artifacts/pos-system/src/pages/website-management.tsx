@@ -39,7 +39,10 @@ import {
   Eye,
   EyeOff,
   X,
-  Smartphone
+  Smartphone,
+  Sparkles,
+  Upload,
+  Image as ImageIcon
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -142,10 +145,105 @@ export default function WebsiteManagementPage() {
     queryFn: () => fetchWithAuth("/api/admin/website/bookings")
   });
 
+  // 2.1 Fetch Offers & Ads Banners
+  const { data: offers = [], isLoading: isOffersLoading } = useQuery<any[]>({
+    queryKey: ["admin-website-offers"],
+    queryFn: () => fetchWithAuth("/api/admin/website/offers")
+  });
+
   // 3. Fetch Inquiries
   const { data: inquiries = [], isLoading: isInquiriesLoading } = useQuery<any[]>({
     queryKey: ["admin-website-inquiries"],
     queryFn: () => fetchWithAuth("/api/admin/website/inquiries")
+  });
+
+  // Image Upload State & Helper
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const handleUploadFile = async (file: File): Promise<string> => {
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = localStorage.getItem("pos_token") ?? sessionStorage.getItem("pos_token") ?? "";
+      const res = await fetch("/api/admin/website/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "فشل رفع الصورة");
+      toast({ title: "تم رفع الصورة بنجاح ✅" });
+      return data.url;
+    } catch (err: any) {
+      toast({ title: "خطأ في رفع الصورة", description: err.message, variant: "destructive" });
+      throw err;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // Offer Modal State
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  const [editingOffer, setEditingOffer] = useState<any>(null);
+  const [offerForm, setOfferForm] = useState({
+    title: "",
+    subtitle: "",
+    badge: "",
+    discount: "",
+    image_url: "",
+    action_type: "tab",
+    action_value: "rides",
+    is_active: 1,
+    sort_order: 0
+  });
+
+  // Offer Mutations
+  const saveOfferMutation = useMutation({
+    mutationFn: (payload: any) =>
+      editingOffer
+        ? fetchWithAuth(`/api/admin/website/offers/${editingOffer.id}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+          })
+        : fetchWithAuth("/api/admin/website/offers", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-website-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["public-website-config"] });
+      setOfferModalOpen(false);
+      setEditingOffer(null);
+      toast({ title: "تم حفظ العرض الإعلاني بنجاح 🎉" });
+    },
+    onError: (err: any) => {
+      toast({ title: "فشل حفظ العرض", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const deleteOfferMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetchWithAuth(`/api/admin/website/offers/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-website-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["public-website-config"] });
+      toast({ title: "تم حذف العرض الإعلاني" });
+    }
+  });
+
+  const toggleOfferActiveMutation = useMutation({
+    mutationFn: ({ id, is_active }: any) =>
+      fetchWithAuth(`/api/admin/website/offers/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ is_active })
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-website-offers"] });
+      queryClient.invalidateQueries({ queryKey: ["public-website-config"] });
+      toast({ title: "تم تحديث حالة العرض" });
+    }
   });
 
   // Update Settings Mutation
@@ -415,18 +513,22 @@ export default function WebsiteManagementPage() {
         {/* Main Tabs Hub */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto p-1.5 bg-slate-100 rounded-2xl gap-1 mb-6">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-6 h-auto p-1.5 bg-slate-100 rounded-2xl gap-1 mb-6">
               <TabsTrigger value="bookings" className="rounded-xl py-2.5 text-xs font-bold gap-1.5 data-[state=active]:bg-sky-600 data-[state=active]:text-white">
                 <Ticket className="w-4 h-4" />
-                <span>الحجوزات الإلكترونية ({bookings.length})</span>
+                <span>الحجوزات ({bookings.length})</span>
               </TabsTrigger>
               <TabsTrigger value="services" className="rounded-xl py-2.5 text-xs font-bold gap-1.5 data-[state=active]:bg-sky-600 data-[state=active]:text-white">
                 <LayoutDashboard className="w-4 h-4" />
-                <span>الخدمات والأقسام</span>
+                <span>الخدمات والمشاوير</span>
+              </TabsTrigger>
+              <TabsTrigger value="offers" className="rounded-xl py-2.5 text-xs font-bold gap-1.5 data-[state=active]:bg-sky-600 data-[state=active]:text-white">
+                <Sparkles className="w-4 h-4" />
+                <span>العروض والإعلانات ({offers.length})</span>
               </TabsTrigger>
               <TabsTrigger value="content" className="rounded-xl py-2.5 text-xs font-bold gap-1.5 data-[state=active]:bg-sky-600 data-[state=active]:text-white">
                 <Globe className="w-4 h-4" />
-                <span>المحتوى والهوية</span>
+                <span>الشعار والهوية والشريط</span>
               </TabsTrigger>
               <TabsTrigger value="pricing" className="rounded-xl py-2.5 text-xs font-bold gap-1.5 data-[state=active]:bg-sky-600 data-[state=active]:text-white">
                 <Percent className="w-4 h-4" />
@@ -1076,96 +1178,693 @@ export default function WebsiteManagementPage() {
               )}
             </TabsContent>
 
+            {/* ─── TAB 2.5: OFFERS & ADS BANNERS CMS ─── */}
+            <TabsContent value="offers" className="space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-slate-900">إدارة العروض والإعلانات الترويجية الحصرية</h3>
+                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 font-bold">
+                      {offers.length} عروض إعلانية
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    إضافة وتعديل وحذف العروض وبنرات الإعلانات التي تظهر أعلى الموقع مع تحديد الصورة والخصم
+                  </p>
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setEditingOffer(null);
+                    setOfferForm({
+                      title: "",
+                      subtitle: "",
+                      badge: "عرض خاص",
+                      discount: "خصم 15%",
+                      image_url: "",
+                      action_type: "tab",
+                      action_value: "rides",
+                      is_active: 1,
+                      sort_order: offers.length + 1
+                    });
+                    setOfferModalOpen(true);
+                  }}
+                  className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إضافة عرض / إعلان جديد +</span>
+                </Button>
+              </div>
+
+              {/* Offers Grid */}
+              {offers.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <Sparkles className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs text-slate-500 font-bold">لا توجد عروض أو إعلانات مسجلة</p>
+                  <p className="text-[11px] text-slate-400 mt-1">اضغط على زر "إضافة عرض / إعلان جديد" للبدء</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {offers.map((offer: any) => (
+                    <Card
+                      key={offer.id}
+                      className={`rounded-2xl border transition-all overflow-hidden ${
+                        offer.is_active === 1
+                          ? "border-slate-200 shadow-xs hover:border-orange-300"
+                          : "border-slate-200 bg-slate-50/70 opacity-75"
+                      }`}
+                    >
+                      {offer.image_url ? (
+                        <div className="h-36 w-full overflow-hidden relative bg-slate-100">
+                          <img src={offer.image_url} alt={offer.title} className="w-full h-full object-cover" />
+                          {offer.badge && (
+                            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold">
+                              {offer.badge}
+                            </span>
+                          )}
+                          {offer.discount && (
+                            <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold font-mono">
+                              {offer.discount}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="h-24 w-full bg-slate-100 flex items-center justify-center text-slate-400 text-xs">
+                          بدون صورة
+                        </div>
+                      )}
+
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="font-black text-slate-900 text-xs sm:text-sm line-clamp-1">{offer.title}</h4>
+                            {offer.subtitle && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{offer.subtitle}</p>
+                            )}
+                          </div>
+                          <Badge className={offer.is_active === 1 ? "bg-emerald-50 text-emerald-700 text-[10px]" : "bg-slate-200 text-slate-600 text-[10px]"}>
+                            {offer.is_active === 1 ? "معروض" : "مخفي"}
+                          </Badge>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toggleOfferActiveMutation.mutate({ id: offer.id, is_active: offer.is_active === 1 ? 0 : 1 })}
+                            className="h-8 text-xs rounded-xl"
+                          >
+                            {offer.is_active === 1 ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </Button>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingOffer(offer);
+                                setOfferForm({
+                                  title: offer.title || "",
+                                  subtitle: offer.subtitle || "",
+                                  badge: offer.badge || "",
+                                  discount: offer.discount || "",
+                                  image_url: offer.image_url || "",
+                                  action_type: offer.action_type || "tab",
+                                  action_value: offer.action_value || "rides",
+                                  is_active: offer.is_active ?? 1,
+                                  sort_order: offer.sort_order ?? 0
+                                });
+                                setOfferModalOpen(true);
+                              }}
+                              className="h-8 text-xs rounded-xl gap-1"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>تعديل</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                if (confirm("هل أنت متأكد من حذف هذا العرض؟")) {
+                                  deleteOfferMutation.mutate(offer.id);
+                                }
+                              }}
+                              className="h-8 text-xs text-rose-600 hover:text-rose-700 rounded-xl"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* Offer Modal */}
+              {offerModalOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                  <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200 my-auto text-right" dir="rtl">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                      <h3 className="text-base font-black text-slate-900">
+                        {editingOffer ? "تعديل بيانات العرض / الإعلان" : "إضافة عرض إعلاني جديد"}
+                      </h3>
+                      <Button variant="ghost" size="sm" onClick={() => setOfferModalOpen(false)} className="rounded-full h-8 w-8 p-0">✕</Button>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        saveOfferMutation.mutate(offerForm);
+                      }}
+                      className="space-y-4 text-xs"
+                    >
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">عنوان العرض أو الإعلان *</label>
+                        <Input
+                          required
+                          placeholder="مثال: خصم 20% على مشاوير واستقبال المطار VIP"
+                          value={offerForm.title}
+                          onChange={(e) => setOfferForm({ ...offerForm, title: e.target.value })}
+                          className="rounded-xl h-10 text-xs font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">الوصف الفرعي للعرض</label>
+                        <Input
+                          placeholder="مثال: خدمة 24/7 بسيارات حديثة ومجهزة لكافة المدن"
+                          value={offerForm.subtitle}
+                          onChange={(e) => setOfferForm({ ...offerForm, subtitle: e.target.value })}
+                          className="rounded-xl h-10 text-xs"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">وسام التميز (Badge)</label>
+                          <Input
+                            placeholder="مثال: الأكثر طلباً / VIP"
+                            value={offerForm.badge}
+                            onChange={(e) => setOfferForm({ ...offerForm, badge: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">نسبة أو قيمة الخصم</label>
+                          <Input
+                            placeholder="مثال: خصم 20% / سعر خاص"
+                            value={offerForm.discount}
+                            onChange={(e) => setOfferForm({ ...offerForm, discount: e.target.value })}
+                            className="rounded-xl h-10 text-xs font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Image Upload for Offer */}
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">صورة العرض / البنر</label>
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            placeholder="رابط الصورة أو ارفع من جهازك"
+                            value={offerForm.image_url}
+                            onChange={(e) => setOfferForm({ ...offerForm, image_url: e.target.value })}
+                            className="rounded-xl h-10 text-xs font-mono flex-1"
+                          />
+                          <label className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer font-bold flex items-center gap-1 shrink-0 text-xs">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>رفع صورة</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const url = await handleUploadFile(file);
+                                  setOfferForm({ ...offerForm, image_url: url });
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                        {offerForm.image_url && (
+                          <div className="mt-2 h-20 w-36 rounded-xl overflow-hidden border border-slate-200">
+                            <img src={offerForm.image_url} alt="Preview" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">نوع الإجراء عند النقر</label>
+                          <select
+                            value={offerForm.action_type}
+                            onChange={(e) => setOfferForm({ ...offerForm, action_type: e.target.value })}
+                            className="w-full h-10 bg-white border border-slate-300 rounded-xl text-xs px-3"
+                          >
+                            <option value="tab">الانتقال لقسم في الموقع</option>
+                            <option value="whatsapp">مراسلة واتساب فوراً</option>
+                          </select>
+                        </div>
+
+                        {offerForm.action_type === "tab" && (
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">القسم المستهدف</label>
+                            <select
+                              value={offerForm.action_value}
+                              onChange={(e) => setOfferForm({ ...offerForm, action_value: e.target.value })}
+                              className="w-full h-10 bg-white border border-slate-300 rounded-xl text-xs px-3"
+                            >
+                              <option value="rides">المشاوير والنقل VIP</option>
+                              <option value="flights">حجوزات الطيران</option>
+                              <option value="hotels">حجوزات الفنادق</option>
+                              <option value="packages">باقات العمرة والرحلات</option>
+                              <option value="visas">تأشيرات السفر</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <span className="font-bold text-slate-800">حالة عرض الإعلان للجمهور</span>
+                        <input
+                          type="checkbox"
+                          checked={offerForm.is_active === 1}
+                          onChange={(e) => setOfferForm({ ...offerForm, is_active: e.target.checked ? 1 : 0 })}
+                          className="w-4 h-4 accent-orange-600 rounded"
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                        <Button type="button" variant="outline" onClick={() => setOfferModalOpen(false)} className="rounded-xl text-xs">إلغاء</Button>
+                        <Button type="submit" disabled={saveOfferMutation.isPending} className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold px-6">
+                          {saveOfferMutation.isPending ? "جارٍ الحفظ..." : "حفظ العرض"}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
             {/* ─── TAB 3: CONTENT & BRANDING CMS ─── */}
             <TabsContent value="content" className="space-y-6">
               <form onSubmit={handleSaveSettings} className="space-y-6">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-1">بيانات الهوية والمحتوى والاتصال بالموقع</h3>
-                  <p className="text-xs text-slate-500">تظهر هذه البيانات مباشرة في الواجهة الرئيسية وأسفل الموقع للعملاء</p>
+                  <h3 className="text-sm font-bold text-slate-800 mb-1">الهوية البصرية، الشعار، الشريط العلوي وبيانات الاتصال</h3>
+                  <p className="text-xs text-slate-500">تحكم كامل في مظهر الموقع، الشعار المرفوع، الشريط العلوي، شبكات التواصل، والتذييل</p>
                 </div>
 
                 {formState && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">اسم الوكالة / الموقع *</label>
+                  <div className="space-y-6 text-xs">
+                    {/* 1. Logo Management Box */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                          <ImageIcon className="w-4 h-4 text-orange-500" />
+                          <span>شعار الموقع والهوية البصرية الرسمية</span>
+                        </h4>
+                        <Badge className="bg-sky-50 text-sky-700 border-sky-200 text-[10px]">يدعم PNG, JPG, SVG, WebP</Badge>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
+                        {/* Current Logo Preview */}
+                        <div className="p-2 border border-slate-200 rounded-2xl bg-slate-50 flex items-center justify-center shrink-0 w-28 h-28">
+                          {formState.logo_url ? (
+                            <img src={formState.logo_url} alt="Logo Preview" className="max-w-full max-h-full object-contain" />
+                          ) : (
+                            <NjazLogo size="md" showText={false} />
+                          )}
+                        </div>
+
+                        <div className="flex-1 space-y-3 w-full">
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">رابط صورة الشعار (Logo URL)</label>
+                            <div className="flex gap-2">
+                              <Input
+                                value={formState.logo_url || ""}
+                                onChange={(e) => setFormState({ ...formState, logo_url: e.target.value })}
+                                placeholder="https://example.com/logo.png أو ارفع من الملفات مباشرة ⬇️"
+                                className="rounded-xl h-10 text-xs font-mono"
+                              />
+                              <label className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl cursor-pointer font-bold flex items-center gap-1.5 shrink-0 text-xs shadow-xs transition-colors">
+                                <Upload className="w-4 h-4" />
+                                <span>{uploadingImage ? "جارٍ الرفع..." : "رفع من الجهاز"}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={uploadingImage}
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const url = await handleUploadFile(file);
+                                      setFormState({ ...formState, logo_url: url });
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setFormState({ ...formState, logo_url: "" })}
+                              className="text-[11px] rounded-xl h-8"
+                            >
+                              استعادة الشعار الهندسي الافتراضي لنـجـاز
+                            </Button>
+                            {formState.logo_url && (
+                              <span className="text-[11px] text-emerald-600 font-bold">✓ تم تفعيل الشعار المرفوع</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Top Identity Bar & Social Media Controls */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                      <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-sky-600" />
+                        <span>بيانات الشريط العلوي، خدمة العملاء والشبكات الاجتماعية</span>
+                      </h4>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">نص خدمة العملاء والمشاوير *</label>
+                          <Input
+                            value={formState.topbar_text || "خدمة العملاء والمشاوير 24/7"}
+                            onChange={(e) => setFormState({ ...formState, topbar_text: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">رقم الهاتف الرسمي (الشريط العلوي) *</label>
+                          <Input
+                            value={formState.phone || "+966 50 123 4567"}
+                            onChange={(e) => setFormState({ ...formState, phone: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">رقم الواتساب لاستقبال الطلبات *</label>
+                          <Input
+                            value={formState.whatsapp || "966501234567"}
+                            onChange={(e) => setFormState({ ...formState, whatsapp: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">المعرف الموحد للوكالة *</label>
+                          <Input
+                            value={formState.social_handle || "@Njaz"}
+                            onChange={(e) => setFormState({ ...formState, social_handle: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white font-bold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">البريد الإلكتروني الرسمي *</label>
+                          <Input
+                            value={formState.email || "info@njaz-travel.com"}
+                            onChange={(e) => setFormState({ ...formState, email: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">العنوان والمقر الرئيسي *</label>
+                          <Input
+                            value={formState.address || "المملكة العربية السعودية - خدمات النقل والمطارات"}
+                            onChange={(e) => setFormState({ ...formState, address: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Social Channels URLs */}
+                      <div className="pt-2 border-t border-slate-200">
+                        <label className="font-bold text-slate-800 block mb-2">روابط صفحات التواصل الاجتماعي المعتمدة</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <span className="text-[11px] text-slate-500 font-bold block mb-1">رابط Facebook</span>
+                            <Input
+                              value={formState.facebook_url || "https://facebook.com/Njaz"}
+                              onChange={(e) => setFormState({ ...formState, facebook_url: e.target.value })}
+                              className="rounded-xl h-9 text-xs bg-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[11px] text-slate-500 font-bold block mb-1">رابط X / Twitter</span>
+                            <Input
+                              value={formState.x_url || "https://x.com/Njaz"}
+                              onChange={(e) => setFormState({ ...formState, x_url: e.target.value })}
+                              className="rounded-xl h-9 text-xs bg-white font-mono"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[11px] text-slate-500 font-bold block mb-1">رابط Instagram</span>
+                            <Input
+                              value={formState.instagram_url || "https://instagram.com/Njaz"}
+                              onChange={(e) => setFormState({ ...formState, instagram_url: e.target.value })}
+                              className="rounded-xl h-9 text-xs bg-white font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Announcement Ticker Bar */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-amber-500" />
+                          <span>شريط الإعلانات الترويجي المنزلق (Announcement Bar)</span>
+                        </h4>
+                        <input
+                          type="checkbox"
+                          checked={formState.announcement_bar_enabled !== 0}
+                          onChange={(e) => setFormState({ ...formState, announcement_bar_enabled: e.target.checked ? 1 : 0 })}
+                          className="w-4 h-4 accent-orange-600 rounded cursor-pointer"
+                        />
+                      </div>
                       <Input
-                        value={formState.site_name || ""}
-                        onChange={(e) => setFormState({ ...formState, site_name: e.target.value })}
-                        className="rounded-xl h-10 text-xs"
+                        value={formState.announcement_bar_text || "🔥 عروض المشاوير السياحية وتوصيل المطارات VIP مستمرة على مدار الساعة — احجز مشوارك الآن مع نجاز!"}
+                        onChange={(e) => setFormState({ ...formState, announcement_bar_text: e.target.value })}
+                        className="rounded-xl h-10 text-xs bg-white font-medium"
                       />
                     </div>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">الشعار اللفظي (Slogan)</label>
-                      <Input
-                        value={formState.site_slogan || ""}
-                        onChange={(e) => setFormState({ ...formState, site_slogan: e.target.value })}
-                        className="rounded-xl h-10 text-xs"
-                      />
+                    {/* 4. Section Banner Images */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                      <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-indigo-600" />
+                        <span>صور وبنرات الأقسام الرئيسية (المشاوير، الطيران، الفنادق، الباقات)</span>
+                      </h4>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">صورة قسم المشاوير والنقل VIP</label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={formState.rides_image_url || ""}
+                              onChange={(e) => setFormState({ ...formState, rides_image_url: e.target.value })}
+                              placeholder="رابط الصورة أو ارفع ملفاً"
+                              className="rounded-xl h-9 text-xs bg-white font-mono flex-1"
+                            />
+                            <label className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl cursor-pointer font-bold text-xs shrink-0 flex items-center gap-1">
+                              <Upload className="w-3.5 h-3.5" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const url = await handleUploadFile(file);
+                                    setFormState({ ...formState, rides_image_url: url });
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">صورة قسم حجوزات الطيران</label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={formState.flights_image_url || ""}
+                              onChange={(e) => setFormState({ ...formState, flights_image_url: e.target.value })}
+                              placeholder="رابط الصورة أو ارفع ملفاً"
+                              className="rounded-xl h-9 text-xs bg-white font-mono flex-1"
+                            />
+                            <label className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl cursor-pointer font-bold text-xs shrink-0 flex items-center gap-1">
+                              <Upload className="w-3.5 h-3.5" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const url = await handleUploadFile(file);
+                                    setFormState({ ...formState, flights_image_url: url });
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">صورة قسم الفنادق والمنتجعات</label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={formState.hotels_image_url || ""}
+                              onChange={(e) => setFormState({ ...formState, hotels_image_url: e.target.value })}
+                              placeholder="رابط الصورة أو ارفع ملفاً"
+                              className="rounded-xl h-9 text-xs bg-white font-mono flex-1"
+                            />
+                            <label className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl cursor-pointer font-bold text-xs shrink-0 flex items-center gap-1">
+                              <Upload className="w-3.5 h-3.5" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const url = await handleUploadFile(file);
+                                    setFormState({ ...formState, hotels_image_url: url });
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">صورة قسم الباقات والعمرة</label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={formState.packages_image_url || ""}
+                              onChange={(e) => setFormState({ ...formState, packages_image_url: e.target.value })}
+                              placeholder="رابط الصورة أو ارفع ملفاً"
+                              className="rounded-xl h-9 text-xs bg-white font-mono flex-1"
+                            />
+                            <label className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl cursor-pointer font-bold text-xs shrink-0 flex items-center gap-1">
+                              <Upload className="w-3.5 h-3.5" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const url = await handleUploadFile(file);
+                                    setFormState({ ...formState, packages_image_url: url });
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">رقم الهاتف الرسمي</label>
-                      <Input
-                        value={formState.phone || ""}
-                        onChange={(e) => setFormState({ ...formState, phone: e.target.value })}
-                        className="rounded-xl h-10 text-xs"
-                      />
+                    {/* 5. Hero & Slogan Texts */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-5 bg-slate-50 rounded-2xl border border-slate-200">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">اسم الوكالة / الموقع الرسمي *</label>
+                        <Input
+                          value={formState.site_name || "وكالة نجاز للمشاوير والسفريات والسياحة"}
+                          onChange={(e) => setFormState({ ...formState, site_name: e.target.value })}
+                          className="rounded-xl h-10 text-xs bg-white font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">الشعار اللفظي (Slogan)</label>
+                        <Input
+                          value={formState.site_slogan || "نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة"}
+                          onChange={(e) => setFormState({ ...formState, site_slogan: e.target.value })}
+                          className="rounded-xl h-10 text-xs bg-white"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="font-bold text-slate-700 block mb-1">العنوان الرئيسي في الواجهة (Hero Title)</label>
+                        <Input
+                          value={formState.hero_title || "مشاويرك، رحلاتك، وفنادقك.. بكل إنجاز وسهولة!"}
+                          onChange={(e) => setFormState({ ...formState, hero_title: e.target.value })}
+                          className="rounded-xl h-10 text-xs bg-white font-bold"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="font-bold text-slate-700 block mb-1">الوصف الترويجي في الواجهة (Hero Subtitle)</label>
+                        <textarea
+                          rows={2}
+                          value={formState.hero_subtitle || "حجوزات طيران محلية ودولية، مشاوير ونقل سياحي مريح، فنادق فاخرة، وباقات عمرة وتأشيرات بأفضل الأسعار وأعلى سرعة إنجاز"}
+                          onChange={(e) => setFormState({ ...formState, hero_subtitle: e.target.value })}
+                          className="w-full bg-white border border-slate-300 rounded-xl text-xs p-3 font-medium focus:outline-sky-500"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">رقم الواتساب لاستقبال الحجوزات</label>
-                      <Input
-                        value={formState.whatsapp || ""}
-                        onChange={(e) => setFormState({ ...formState, whatsapp: e.target.value })}
-                        placeholder="مثال: 966501234567"
-                        className="rounded-xl h-10 text-xs font-mono"
-                      />
-                    </div>
+                    {/* 6. Footer & Guarantees Details */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                      <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        <span>نصوص التذييل وضمانات نجاز للعملاء</span>
+                      </h4>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">البريد الإلكتروني الرسمي</label>
-                      <Input
-                        value={formState.email || ""}
-                        onChange={(e) => setFormState({ ...formState, email: e.target.value })}
-                        className="rounded-xl h-10 text-xs"
-                      />
-                    </div>
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">نبذة الوكالة في التذييل (Footer Bio)</label>
+                        <textarea
+                          rows={2}
+                          value={formState.footer_desc || "وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة."}
+                          onChange={(e) => setFormState({ ...formState, footer_desc: e.target.value })}
+                          className="w-full bg-white border border-slate-300 rounded-xl text-xs p-3 font-medium"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">العنوان والمقر الرئيسي</label>
-                      <Input
-                        value={formState.address || ""}
-                        onChange={(e) => setFormState({ ...formState, address: e.target.value })}
-                        className="rounded-xl h-10 text-xs"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-700 block mb-1">العنوان الرئيسي في البنر (Hero Title)</label>
-                      <Input
-                        value={formState.hero_title || ""}
-                        onChange={(e) => setFormState({ ...formState, hero_title: e.target.value })}
-                        className="rounded-xl h-10 text-xs"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-700 block mb-1">الوصف الترويجي في البنر (Hero Subtitle)</label>
-                      <textarea
-                        rows={2}
-                        value={formState.hero_subtitle || ""}
-                        onChange={(e) => setFormState({ ...formState, hero_subtitle: e.target.value })}
-                        className="w-full bg-white border border-slate-300 rounded-xl text-xs p-3 font-medium focus:outline-sky-500"
-                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">عنوان قسم الضمانات</label>
+                          <Input
+                            value={formState.guarantee_title || "ضمانات نجاز للعملاء"}
+                            onChange={(e) => setFormState({ ...formState, guarantee_title: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">نص الضمانات</label>
+                          <Input
+                            value={formState.guarantee_text || "جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة."}
+                            onChange={(e) => setFormState({ ...formState, guarantee_text: e.target.value })}
+                            className="rounded-xl h-10 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 <div className="flex justify-end pt-4 border-t border-slate-100">
-                  <Button type="submit" disabled={updateConfigMutation.isPending} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold gap-2 px-6">
+                  <Button type="submit" disabled={updateConfigMutation.isPending} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold gap-2 px-8 py-2.5 shadow-xs">
                     <Save className="w-4 h-4" />
-                    <span>حفظ المحتوى والهوية</span>
+                    <span>حفظ المحتوى والهوية بالكامل</span>
                   </Button>
                 </div>
               </form>

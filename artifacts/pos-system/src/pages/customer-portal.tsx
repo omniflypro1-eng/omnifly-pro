@@ -250,73 +250,137 @@ export default function CustomerPortalPage() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col selection:bg-orange-500 selection:text-white pb-20 sm:pb-0" dir="rtl">
-      {/* ─── Top Identity Bar ─── */}
-      <div className="bg-slate-900 text-slate-300 text-[11px] sm:text-xs py-2 px-3 sm:px-8 border-b border-slate-800">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col selection:bg-orange-500 selection:text-white pb-24 sm:pb-0 w-full overflow-x-hidden" dir="rtl">
+      {/* ─── Top Identity Bar (Ultra Responsive with Full Dynamic Controls) ─── */}
+      <div className="bg-slate-950 text-slate-200 text-[10px] sm:text-xs py-1.5 sm:py-2 px-3 sm:px-8 border-b border-slate-800/80">
+        <div className="max-w-7xl mx-auto flex flex-col xs:flex-row items-center justify-between gap-1.5 xs:gap-2">
+          {/* Right: Service Status & Phone */}
+          <div className="flex items-center justify-between xs:justify-start w-full xs:w-auto gap-2 sm:gap-4">
             <span className="flex items-center gap-1.5 font-bold text-orange-400">
-              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-              خدمة العملاء والمشاوير 24/7
+              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shrink-0" />
+              <span className="truncate">{siteConfig?.topbar_text || "خدمة العملاء والمشاوير 24/7"}</span>
             </span>
-            <span className="hidden md:inline-block text-slate-400">
-              {siteConfig?.phone || "+966 50 123 4567"}
-            </span>
+            <a
+              href={`tel:${(siteConfig?.phone || "+966 50 123 4567").replace(/\s+/g, "")}`}
+              className="text-slate-300 hover:text-white font-mono flex items-center gap-1 transition-colors font-bold text-[10px] sm:text-xs shrink-0 bg-slate-900/90 px-2 py-0.5 rounded-lg border border-slate-800"
+              dir="ltr"
+              title="اتصال بخدمة العملاء والمشاوير"
+            >
+              <Phone className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-orange-400 shrink-0" />
+              <span>{siteConfig?.phone || "+966 50 123 4567"}</span>
+            </a>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] font-bold">
-            <span className="text-sky-400">تابعنا على @Njaz</span>
-            <div className="hidden sm:flex items-center gap-1.5">
-              <span className="px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/60">Facebook</span>
-              <span className="px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/60">X</span>
-              <span className="px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/60">Instagram</span>
+          {/* Left: Social Handle & Networks */}
+          <div className="flex items-center justify-between xs:justify-end w-full xs:w-auto gap-2 text-[10px] sm:text-[11px] font-bold">
+            <span className="text-sky-400 shrink-0">تابعنا على {siteConfig?.social_handle || "@Njaz"}</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <a
+                href={siteConfig?.facebook_url || "https://facebook.com/Njaz"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-1.5 py-0.5 rounded-md bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800/60 transition-colors text-[9px] sm:text-[10px]"
+                title="Facebook"
+              >
+                Facebook
+              </a>
+              <a
+                href={siteConfig?.x_url || "https://x.com/Njaz"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-1.5 py-0.5 rounded-md bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800/60 transition-colors text-[9px] sm:text-[10px]"
+                title="X"
+              >
+                X
+              </a>
+              <a
+                href={siteConfig?.instagram_url || "https://instagram.com/Njaz"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-1.5 py-0.5 rounded-md bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800/60 transition-colors text-[9px] sm:text-[10px]"
+                title="Instagram"
+              >
+                Instagram
+              </a>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ─── Main Navigation Header ─── */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 sm:h-20">
-            {/* Njaz Logo */}
-            <div className="flex items-center">
-              <NjazLogo size="md" showText={true} />
+      {/* ─── Announcement Ticker Bar (Optional & Dynamic) ─── */}
+      {siteConfig?.announcement_bar_enabled !== 0 && (
+        <div className="bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 text-white text-[11px] sm:text-xs py-1.5 px-3 sm:px-6 shadow-inner text-center font-bold flex items-center justify-center gap-2">
+          <span>{siteConfig?.announcement_bar_text || "🔥 عروض المشاوير السياحية وتوصيل المطارات VIP مستمرة على مدار الساعة — احجز مشوارك الآن مع نجاز!"}</span>
+          <button
+            type="button"
+            onClick={() => { setActiveTab("rides"); window.scrollTo({ top: 380, behavior: "smooth" }); }}
+            className="underline underline-offset-2 hover:opacity-80 shrink-0 text-amber-100 cursor-pointer font-bold"
+          >
+            احجز الآن ❯
+          </button>
+        </div>
+      )}
+
+      {/* ─── Main Navigation Header (Logo, Call Button, Track Button, Message Button Matching Bottom Dock) ─── */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-xs">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-20 gap-1.5 sm:gap-3">
+            {/* 1. Njaz Logo with Custom Upload Support */}
+            <div className="flex items-center min-w-0">
+              <NjazLogo
+                customLogoUrl={siteConfig?.logo_url}
+                siteName={siteConfig?.site_name}
+                siteSlogan={siteConfig?.site_slogan}
+                socialHandle={siteConfig?.social_handle}
+                size="md"
+                showText={true}
+              />
             </div>
 
-            {/* Quick Actions & Help (Admin Login Removed for Public Security & Mobile Cleanliness) */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              {siteConfig?.phone && (
-                <a
-                  href={`tel:${siteConfig.phone.replace(/\s+/g, "")}`}
-                  className="flex items-center gap-1 px-2.5 sm:px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">اتصال مباشر</span>
-                </a>
-              )}
-
-              {siteConfig?.whatsapp && (
-                <button
-                  type="button"
-                  onClick={() => handleSendWhatsApp(siteConfig.whatsapp, "مرحباً، أود حجز رحلة / مشوار مع وكالة نجاز")}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">واتساب سريع</span>
-                </button>
-              )}
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setActiveTab("lookup")}
-                className="gap-1 text-xs font-bold border-sky-300 text-sky-700 hover:bg-sky-50 rounded-xl px-2.5 sm:px-3 h-8 sm:h-9"
+            {/* 2. Top Action Trio: Call, Track Booking, Message (Harmonized with Bottom Dock) */}
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+              {/* زر الاتصال */}
+              <a
+                href={`tel:${(siteConfig?.phone || "+966 50 123 4567").replace(/\s+/g, "")}`}
+                className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-xs transition-all active:scale-95 shrink-0"
+                title="اتصال مباشر بنجاز"
               >
-                <Search className="w-3.5 h-3.5 text-sky-600" />
-                <span className="hidden xs:inline">استعلام الحجز</span>
+                <Phone className="w-3.5 h-3.5 shrink-0" />
+                <span>اتصال</span>
+              </a>
+
+              {/* زر التتبع */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("lookup");
+                  window.scrollTo({ top: 350, behavior: "smooth" });
+                }}
+                className={`flex items-center gap-1 px-2 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold border transition-all active:scale-95 cursor-pointer shrink-0 ${
+                  activeTab === "lookup"
+                    ? "bg-sky-600 text-white border-sky-600 shadow-xs"
+                    : "border-sky-300 text-sky-700 hover:bg-sky-50 bg-sky-50/50"
+                }`}
+                title="تتبع حجزك"
+              >
+                <Search className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xs:inline">تتبع حجزك</span>
                 <span className="xs:hidden">تتبع</span>
-              </Button>
+              </button>
+
+              {/* زر المراسلة */}
+              <button
+                type="button"
+                onClick={() => {
+                  const phone = siteConfig?.whatsapp || "966501234567";
+                  handleSendWhatsApp(phone, `مرحباً فريق وكالة نجاز (${siteConfig?.social_handle || "@Njaz"})، أود الاستفسار وطلب خدمة مشوار / رحلة.`);
+                }}
+                className="flex items-center gap-1 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-[11px] sm:text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
+                title="المراسلة السريعة عبر واتساب"
+              >
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span>مراسلة</span>
+              </button>
             </div>
           </div>
         </div>
@@ -418,6 +482,19 @@ export default function CustomerPortalPage() {
               {/* ─── TAB 1: RIDES & TRANSFERS (المشاوير والنقل) ─── */}
               {siteConfig?.rides_enabled !== 0 && (
                 <TabsContent value="rides" className="space-y-4 mt-0">
+                  {siteConfig?.rides_image_url && (
+                    <div className="relative rounded-2xl overflow-hidden h-28 sm:h-44 w-full shadow-xs border border-orange-200 group">
+                      <img src={siteConfig.rides_image_url} alt="المشاوير والنقل VIP" className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent flex items-end p-3 sm:p-4 justify-between">
+                        <div>
+                          <span className="text-white font-black text-xs sm:text-base block">مشاوير وتوصيل مطارات VIP على مدار 24 ساعة</span>
+                          <span className="text-orange-300 text-[10px] sm:text-xs">سيارات فاخرة وسائقون معتمدون في كافة مناطق المملكة</span>
+                        </div>
+                        <Badge className="bg-orange-500 text-white text-[10px] font-bold shrink-0">حجز فوري</Badge>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="bg-orange-50/70 p-3 sm:p-4 rounded-2xl border border-orange-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div className="p-2.5 bg-orange-500 text-white rounded-xl shadow-xs shrink-0">
@@ -492,6 +569,19 @@ export default function CustomerPortalPage() {
               {/* ─── TAB 2: FLIGHTS ─── */}
               {siteConfig?.flight_enabled !== 0 && (
                 <TabsContent value="flights" className="space-y-4 mt-0">
+                  {siteConfig?.flights_image_url && (
+                    <div className="relative rounded-2xl overflow-hidden h-28 sm:h-44 w-full shadow-xs border border-sky-200 group">
+                      <img src={siteConfig.flights_image_url} alt="حجوزات الطيران" className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent flex items-end p-3 sm:p-4 justify-between">
+                        <div>
+                          <span className="text-white font-black text-xs sm:text-base block">حجوزات طيران مباشرة ومؤكدة بأفضل الأسعار</span>
+                          <span className="text-sky-300 text-[10px] sm:text-xs">تأكيد PNR فوري مع كافة خطوط الطيران المعتمدة</span>
+                        </div>
+                        <Badge className="bg-sky-600 text-white text-[10px] font-bold shrink-0">إصدار رسمي</Badge>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200">
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">مدينة المغادرة</label>
@@ -566,6 +656,19 @@ export default function CustomerPortalPage() {
               {/* ─── TAB 3: HOTELS ─── */}
               {siteConfig?.hotel_enabled !== 0 && (
                 <TabsContent value="hotels" className="space-y-4 mt-0">
+                  {siteConfig?.hotels_image_url && (
+                    <div className="relative rounded-2xl overflow-hidden h-28 sm:h-44 w-full shadow-xs border border-indigo-200 group">
+                      <img src={siteConfig.hotels_image_url} alt="حجوزات الفنادق" className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent flex items-end p-3 sm:p-4 justify-between">
+                        <div>
+                          <span className="text-white font-black text-xs sm:text-base block">أفضل الفنادق والمنتجعات بأقل الأسعار المعتمدة</span>
+                          <span className="text-indigo-300 text-[10px] sm:text-xs">فنادق مكة والمدينة والرياض ودبي وكافة الوجهات</span>
+                        </div>
+                        <Badge className="bg-indigo-600 text-white text-[10px] font-bold shrink-0">أفضل سعر</Badge>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200">
                     <Input
                       placeholder="ابحث بالمدينة (مثال: مكة المكرمة، المدينة، دبي، القاهرة، اسطنبول)"
@@ -616,6 +719,19 @@ export default function CustomerPortalPage() {
               {/* ─── TAB 4: PACKAGES ─── */}
               {siteConfig?.packages_enabled !== 0 && (
                 <TabsContent value="packages" className="space-y-4 mt-0">
+                  {siteConfig?.packages_image_url && (
+                    <div className="relative rounded-2xl overflow-hidden h-28 sm:h-44 w-full shadow-xs border border-amber-200 group">
+                      <img src={siteConfig.packages_image_url} alt="باقات العمرة والرحلات" className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent flex items-end p-3 sm:p-4 justify-between">
+                        <div>
+                          <span className="text-white font-black text-xs sm:text-base block">باقات العمرة والرحلات السياحية المتكاملة</span>
+                          <span className="text-amber-300 text-[10px] sm:text-xs">إقامة ونقل وجولات سياحية شاملة ومريحة</span>
+                        </div>
+                        <Badge className="bg-amber-600 text-white text-[10px] font-bold shrink-0">باقات VIP</Badge>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                     {(catalog?.packages || []).map((pkg: any) => (
                       <Card key={pkg.id} className="rounded-2xl border border-slate-200 hover:border-orange-300 hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden">
@@ -771,6 +887,78 @@ export default function CustomerPortalPage() {
           </div>
         </div>
       </section>
+
+      {/* ─── Special Offers & Ads Banners Section (Dynamic from CMS) ─── */}
+      {siteConfig?.offers && siteConfig.offers.length > 0 && (
+        <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 -mt-8 sm:-mt-12 relative z-20">
+          <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-xl border border-slate-200/90">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-orange-500" />
+                <h3 className="font-black text-slate-900 text-sm sm:text-base">عروض وإعلانات نجاز الحصرية</h3>
+                <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-[10px]">محدثة 24/7</Badge>
+              </div>
+              <span className="text-xs text-slate-400 font-medium">احجز الآن واستفد من الخصومات الفورية لمشاويرك ورحلاتك</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {siteConfig.offers.map((offer: any) => (
+                <div
+                  key={offer.id}
+                  className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50 hover:bg-white hover:shadow-lg transition-all flex flex-col justify-between"
+                >
+                  {offer.image_url && (
+                    <div className="h-36 w-full overflow-hidden relative bg-slate-200">
+                      <img
+                        src={offer.image_url}
+                        alt={offer.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {offer.badge && (
+                        <span className="absolute top-2 right-2 px-2.5 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold shadow-xs">
+                          {offer.badge}
+                        </span>
+                      )}
+                      {offer.discount && (
+                        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black shadow-xs font-mono">
+                          {offer.discount}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-3.5 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h4 className="font-black text-slate-900 text-xs sm:text-sm line-clamp-1">{offer.title}</h4>
+                      {offer.subtitle && (
+                        <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">{offer.subtitle}</p>
+                      )}
+                    </div>
+
+                    <div className="pt-3 mt-3 border-t border-slate-200/60 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (offer.action_type === "tab") {
+                            setActiveTab(offer.action_value || "rides");
+                            window.scrollTo({ top: 380, behavior: "smooth" });
+                          } else if (offer.action_type === "whatsapp") {
+                            handleSendWhatsApp(siteConfig?.whatsapp, `مرحباً وكالة نجاز (${siteConfig?.social_handle || "@Njaz"})، أود الاستفادة من العرض: ${offer.title}`);
+                          }
+                        }}
+                        className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>طلب العرض الآن</span>
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ─── BOOKING MODAL & CHECKOUT (Responsive Sheet for Mobile) ─── */}
       {bookingModalItem && (
@@ -940,17 +1128,16 @@ export default function CustomerPortalPage() {
                   {siteConfig?.whatsapp && (
                     <Button
                       type="button"
-                      variant="outline"
                       onClick={() =>
                         handleSendWhatsApp(
                           siteConfig.whatsapp,
-                          `مرحباً وكالة نجاز، تم حجز ${confirmedBooking.booking_ref} باسم ${confirmedBooking.customer_name}`
+                          `مرحباً فريق وكالة نجاز (${siteConfig?.social_handle || "@Njaz"})،\nتم تأكيد طلب الحجز:\n- رقم الحجز: ${confirmedBooking.booking_ref}\n- رمز PNR: ${confirmedBooking.pnr}\n- المسافر: ${confirmedBooking.customer_name}\n- الجوال: ${confirmedBooking.customer_phone || ""}\n- الخدمة: ${confirmedBooking.service_title}\n- الإجمالي: ${fmt(confirmedBooking.total_amount)} ر.س\nيرجى تأكيد الحجز وإصدار السند فوراً.`
                         )
                       }
-                      className="flex-1 border-emerald-500 text-emerald-700 hover:bg-emerald-50 rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
+                      className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold gap-1.5 cursor-pointer shadow-xs"
                     >
-                      <MessageSquare className="w-4 h-4 text-emerald-600" />
-                      <span>إرسال للواتساب</span>
+                      <MessageSquare className="w-4 h-4" />
+                      <span>إرسال الطلب لفريق نجاز عبر واتساب 📲</span>
                     </Button>
                   )}
                 </div>
@@ -1032,7 +1219,21 @@ export default function CustomerPortalPage() {
                 />
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    const phone = siteConfig?.whatsapp || "966501234567";
+                    const txt = `مرحباً فريق نجاز (${siteConfig?.social_handle || "@Njaz"})، أود الاستفسار وطلب خدمة: ${inquiryForm.service_interest || "مشوار خاص"} - الاسم: ${inquiryForm.name || "عميل"} - الجوال: ${inquiryForm.phone || ""}`;
+                    handleSendWhatsApp(phone, txt);
+                  }}
+                  className="w-full sm:w-auto border-emerald-500 text-emerald-700 hover:bg-emerald-50 rounded-xl text-xs font-bold h-10 px-6 gap-2"
+                >
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                  <span>إرسال مباشر عبر واتساب 📲</span>
+                </Button>
+
                 <Button type="submit" className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold h-10 px-8">
                   إرسال الطلب لفريق نجاز
                 </Button>
@@ -1042,43 +1243,64 @@ export default function CustomerPortalPage() {
         </div>
       </section>
 
-      {/* ─── FOOTER WITH FULL BRANDING (Admin Login link removed) ─── */}
+      {/* ─── FOOTER WITH FULL NJAZ BRANDING & DETAILS ─── */}
       <footer className="bg-slate-950 text-slate-400 py-12 border-t border-slate-800 mt-auto text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
           <div className="space-y-3">
-            <NjazLogo size="sm" showText={true} theme="dark" />
+            <NjazLogo
+              customLogoUrl={siteConfig?.logo_url}
+              siteName={siteConfig?.site_name}
+              siteSlogan={siteConfig?.site_slogan}
+              socialHandle={siteConfig?.social_handle}
+              size="sm"
+              showText={true}
+              theme="dark"
+            />
             <p className="text-slate-400 text-xs leading-relaxed mt-2">
-              وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.
+              {siteConfig?.footer_desc || "وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة."}
             </p>
             <div className="pt-2 text-orange-400 font-bold text-xs">
-              معرفنا الموحد: @Njaz
+              معرفنا الموحد: {siteConfig?.social_handle || "@Njaz"}
             </div>
           </div>
 
           <div>
             <h4 className="text-white font-bold mb-3">الخدمات السريعة</h4>
             <ul className="space-y-2">
-              <li><button onClick={() => setActiveTab("rides")} className="hover:text-orange-400 transition-colors">المشاوير وتوصيل المطارات VIP</button></li>
-              <li><button onClick={() => setActiveTab("flights")} className="hover:text-orange-400 transition-colors">حجز تذاكر الطيران المباشرة</button></li>
-              <li><button onClick={() => setActiveTab("hotels")} className="hover:text-orange-400 transition-colors">حجوزات الفنادق والمنتجعات</button></li>
-              <li><button onClick={() => setActiveTab("packages")} className="hover:text-orange-400 transition-colors">باقات العمرة والرحلات</button></li>
-              <li><button onClick={() => setActiveTab("visas")} className="hover:text-orange-400 transition-colors">خدمات التأشيرات السريعة</button></li>
+              <li><button onClick={() => { setActiveTab("rides"); window.scrollTo({ top: 350, behavior: "smooth" }); }} className="hover:text-orange-400 transition-colors">المشاوير وتوصيل المطارات VIP</button></li>
+              <li><button onClick={() => { setActiveTab("flights"); window.scrollTo({ top: 350, behavior: "smooth" }); }} className="hover:text-orange-400 transition-colors">حجز تذاكر الطيران المباشرة</button></li>
+              <li><button onClick={() => { setActiveTab("hotels"); window.scrollTo({ top: 350, behavior: "smooth" }); }} className="hover:text-orange-400 transition-colors">حجوزات الفنادق والمنتجعات</button></li>
+              <li><button onClick={() => { setActiveTab("packages"); window.scrollTo({ top: 350, behavior: "smooth" }); }} className="hover:text-orange-400 transition-colors">باقات العمرة والرحلات</button></li>
+              <li><button onClick={() => { setActiveTab("visas"); window.scrollTo({ top: 350, behavior: "smooth" }); }} className="hover:text-orange-400 transition-colors">خدمات التأشيرات السريعة</button></li>
             </ul>
           </div>
 
           <div>
             <h4 className="text-white font-bold mb-3">التواصل والمقر</h4>
             <ul className="space-y-2">
-              <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-orange-400" /> <span>{siteConfig?.phone || "+966 50 123 4567"}</span></li>
-              <li className="flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-orange-400" /> <span>{siteConfig?.email || "info@njaz-travel.com"}</span></li>
-              <li className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5 text-orange-400" /> <span>المملكة العربية السعودية - خدمات النقل والمطارات</span></li>
+              <li className="flex items-center gap-2">
+                <Phone className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <a href={`tel:${(siteConfig?.phone || "+966 50 123 4567").replace(/\s+/g, "")}`} className="hover:text-white" dir="ltr">
+                  {siteConfig?.phone || "+966 50 123 4567"}
+                </a>
+              </li>
+              <li className="flex items-center gap-2">
+                <Mail className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <a href={`mailto:${siteConfig?.email || "info@njaz-travel.com"}`} className="hover:text-white">
+                  {siteConfig?.email || "info@njaz-travel.com"}
+                </a>
+              </li>
+              <li className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <span>{siteConfig?.address || "المملكة العربية السعودية - خدمات النقل والمطارات"}</span>
+              </li>
             </ul>
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-3">ضمانات نجاز للعملاء</h4>
+            <h4 className="text-white font-bold mb-3">{siteConfig?.guarantee_title || "ضمانات نجاز للعملاء"}</h4>
             <p className="text-slate-400 mb-3 text-xs leading-relaxed">
-              جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.
+              {siteConfig?.guarantee_text || "جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة."}
             </p>
             <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 text-xs font-bold">
               <ShieldCheck className="w-4 h-4 shrink-0" />
@@ -1088,63 +1310,84 @@ export default function CustomerPortalPage() {
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 mt-8 border-t border-slate-900 text-center text-slate-500 text-[11px] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span>جميع الحقوق محفوظة © {new Date().getFullYear()} وكالة نجاز للمشاوير والسفريات والسياحة (@Njaz).</span>
+          <span>جميع الحقوق محفوظة © 2026 {siteConfig?.site_name || "وكالة نجاز للمشاوير والسفريات والسياحة"} ({siteConfig?.social_handle || "@Njaz"}).</span>
           <span className="text-orange-400 font-bold">بوابة الحجز الذكية والسريعة</span>
         </div>
       </footer>
 
-      {/* ─── Mobile Sticky Bottom Navigation (Optimized for all phone screen sizes) ─── */}
-      <nav aria-label="شريط التنقل السريع للهواتف" className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-2 py-1.5 flex items-center justify-around">
+      {/* ─── Unified Mobile Bottom Navigation Dock (5 Core Touch Targets Matching Top Bar) ─── */}
+      <nav
+        aria-label="شريط التنقل السريع للهواتف"
+        className="sm:hidden fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-[0_-4px_25px_rgba(0,0,0,0.1)] px-1 py-1 pb-[max(0.6rem,env(safe-area-inset-bottom))] grid grid-cols-5 gap-1"
+      >
+        {/* 1. المشاوير */}
         <button
-          onClick={() => { setActiveTab("rides"); window.scrollTo({ top: 120, behavior: "smooth" }); }}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
-            activeTab === "rides" ? "text-orange-600 font-bold scale-105" : "text-slate-500 hover:text-slate-800"
+          type="button"
+          onClick={() => { setActiveTab("rides"); window.scrollTo({ top: 350, behavior: "smooth" }); }}
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            activeTab === "rides"
+              ? "text-orange-600 font-black bg-orange-50 border border-orange-200/80 shadow-xs"
+              : "text-slate-500 hover:text-slate-800"
           }`}
         >
-          <Car className="w-5 h-5" />
-          <span className="text-[10px]">المشاوير</span>
+          <Car className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] leading-tight font-bold">المشاوير</span>
         </button>
 
+        {/* 2. الطيران */}
         <button
-          onClick={() => { setActiveTab("flights"); window.scrollTo({ top: 120, behavior: "smooth" }); }}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
-            activeTab === "flights" ? "text-sky-600 font-bold scale-105" : "text-slate-500 hover:text-slate-800"
+          type="button"
+          onClick={() => { setActiveTab("flights"); window.scrollTo({ top: 350, behavior: "smooth" }); }}
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            activeTab === "flights"
+              ? "text-sky-600 font-black bg-sky-50 border border-sky-200/80 shadow-xs"
+              : "text-slate-500 hover:text-slate-800"
           }`}
         >
-          <Plane className="w-5 h-5" />
-          <span className="text-[10px]">الطيران</span>
+          <Plane className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] leading-tight font-bold">الطيران</span>
         </button>
 
+        {/* 3. الفنادق */}
         <button
-          onClick={() => { setActiveTab("hotels"); window.scrollTo({ top: 120, behavior: "smooth" }); }}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
-            activeTab === "hotels" ? "text-indigo-600 font-bold scale-105" : "text-slate-500 hover:text-slate-800"
+          type="button"
+          onClick={() => { setActiveTab("hotels"); window.scrollTo({ top: 350, behavior: "smooth" }); }}
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            activeTab === "hotels"
+              ? "text-indigo-600 font-black bg-indigo-50 border border-indigo-200/80 shadow-xs"
+              : "text-slate-500 hover:text-slate-800"
           }`}
         >
-          <Building2 className="w-5 h-5" />
-          <span className="text-[10px]">الفنادق</span>
+          <Building2 className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] leading-tight font-bold">الفنادق</span>
         </button>
 
+        {/* 4. تتبع حجزك */}
         <button
-          onClick={() => { setActiveTab("lookup"); window.scrollTo({ top: 120, behavior: "smooth" }); }}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
-            activeTab === "lookup" ? "text-sky-600 font-bold scale-105" : "text-slate-500 hover:text-slate-800"
+          type="button"
+          onClick={() => { setActiveTab("lookup"); window.scrollTo({ top: 350, behavior: "smooth" }); }}
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all cursor-pointer active:scale-95 ${
+            activeTab === "lookup"
+              ? "text-sky-700 font-black bg-sky-50 border border-sky-300 shadow-xs"
+              : "text-slate-500 hover:text-slate-800"
           }`}
         >
-          <Search className="w-5 h-5" />
-          <span className="text-[10px]">تتبع حجزك</span>
+          <Search className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] leading-tight font-bold">تتبع حجزك</span>
         </button>
 
-        {siteConfig?.whatsapp && (
-          <button
-            type="button"
-            onClick={() => handleSendWhatsApp(siteConfig.whatsapp, "مرحباً، أود الاستفسار والحجز مع وكالة نجاز")}
-            className="flex flex-col items-center gap-0.5 py-1 px-2 text-emerald-600 hover:text-emerald-700 transition-all font-bold cursor-pointer"
-          >
-            <MessageSquare className="w-5 h-5" />
-            <span className="text-[10px]">واتساب</span>
-          </button>
-        )}
+        {/* 5. واتساب */}
+        <button
+          type="button"
+          onClick={() => {
+            const phone = siteConfig?.whatsapp || "966501234567";
+            handleSendWhatsApp(phone, `مرحباً وكالة نجاز (${siteConfig?.social_handle || "@Njaz"})، أود الاستفسار والحجز معكم.`);
+          }}
+          className="flex flex-col items-center justify-center py-1.5 px-0.5 text-emerald-600 hover:text-emerald-700 rounded-xl transition-all font-bold cursor-pointer active:scale-95 hover:bg-emerald-50"
+        >
+          <MessageSquare className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] leading-tight">واتساب</span>
+        </button>
       </nav>
 
       {/* ─── WhatsApp One-Time Permission & Send Mode Dialog ─── */}

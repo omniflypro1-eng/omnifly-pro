@@ -4,5 +4,6 @@
  */
 
 import App from "../artifacts/pos-system/src/App";
+
 export default App;
 
