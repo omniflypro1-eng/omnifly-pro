@@ -31,7 +31,14 @@ import {
   Mail,
   MapPin,
   Tag,
-  AlertCircle
+  AlertCircle,
+  Car,
+  Plus,
+  Edit2,
+  Trash2,
+  Eye,
+  EyeOff,
+  X
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -125,6 +132,126 @@ export default function WebsiteManagementPage() {
       toast({ title: "تم التحديث ✅", description: "تم تغيير حالة الحجز" });
     }
   });
+
+  // 4. Fetch Custom Services & Rides
+  const { data: customServices = [], isLoading: isServicesLoading } = useQuery<any[]>({
+    queryKey: ["admin-website-services"],
+    queryFn: () => fetchWithAuth("/api/admin/website/services")
+  });
+
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState("all");
+  const [serviceModalOpen, setServiceModalOpen] = useState(false);
+  const [editingService, setEditingService] = useState<any | null>(null);
+  const [serviceForm, setServiceForm] = useState({
+    category: "rides",
+    title: "",
+    subtitle: "",
+    price: 150,
+    badge: "الأكثر طلباً",
+    car_type: "سيدان حديثة (كامري / سوناتا)",
+    duration: "45 دقيقة",
+    features: "استقبال باللوحة • متوفر 24/7 • واي فاي مجاني",
+    origin: "مطار الملك خالد الدولي",
+    destination: "جميع أحياء الرياض",
+    is_active: 1,
+    sort_order: 0
+  });
+
+  // Save Service Mutation (Create / Update)
+  const saveServiceMutation = useMutation({
+    mutationFn: (data: any) => {
+      if (editingService?.id) {
+        return fetchWithAuth(`/api/admin/website/services/${editingService.id}`, {
+          method: "PUT",
+          body: JSON.stringify(data)
+        });
+      }
+      return fetchWithAuth("/api/admin/website/services", {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-website-services"] });
+      queryClient.invalidateQueries({ queryKey: ["public-website-catalog"] });
+      setServiceModalOpen(false);
+      setEditingService(null);
+      toast({
+        title: "تم الحفظ بنجاح ✅",
+        description: editingService ? "تم تحديث بيانات الخدمة بنجاح" : "تمت إضافة الخدمة الجديدة للموقع بنجاح"
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "فشل الحفظ", description: err.message, variant: "destructive" });
+    }
+  });
+
+  // Delete Service Mutation
+  const deleteServiceMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetchWithAuth(`/api/admin/website/services/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-website-services"] });
+      queryClient.invalidateQueries({ queryKey: ["public-website-catalog"] });
+      toast({ title: "تم الحذف بنجاح 🗑️", description: "تمت إزالة الخدمة من الموقع" });
+    },
+    onError: (err: any) => {
+      toast({ title: "فشل الحذف", description: err.message, variant: "destructive" });
+    }
+  });
+
+  // Toggle Service Active Mutation
+  const toggleServiceActiveMutation = useMutation({
+    mutationFn: ({ id, is_active }: { id: number; is_active: number }) =>
+      fetchWithAuth(`/api/admin/website/services/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ is_active })
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-website-services"] });
+      queryClient.invalidateQueries({ queryKey: ["public-website-catalog"] });
+      toast({ title: "تم التحديث ✅", description: "تم تحديث حالة عرض الخدمة" });
+    }
+  });
+
+  // Open Service Modal
+  const handleOpenAddService = () => {
+    setEditingService(null);
+    setServiceForm({
+      category: "rides",
+      title: "",
+      subtitle: "",
+      price: 150,
+      badge: "الأكثر طلباً",
+      car_type: "سيدان حديثة (كامري / سوناتا)",
+      duration: "45 دقيقة",
+      features: "استقبال باللوحة • متوفر 24/7 • واي فاي مجاني",
+      origin: "مطار الملك خالد الدولي",
+      destination: "جميع أحياء الرياض",
+      is_active: 1,
+      sort_order: 0
+    });
+    setServiceModalOpen(true);
+  };
+
+  const handleOpenEditService = (service: any) => {
+    setEditingService(service);
+    setServiceForm({
+      category: service.category || "rides",
+      title: service.title || "",
+      subtitle: service.subtitle || "",
+      price: Number(service.price) || 0,
+      badge: service.badge || "",
+      car_type: service.car_type || "",
+      duration: service.duration || "",
+      features: service.features || "",
+      origin: service.origin || "",
+      destination: service.destination || "",
+      is_active: service.is_active ?? 1,
+      sort_order: service.sort_order ?? 0
+    });
+    setServiceModalOpen(true);
+  };
 
   // Copy website link
   const handleCopyPortalLink = () => {
@@ -367,145 +494,535 @@ export default function WebsiteManagementPage() {
               )}
             </TabsContent>
 
-            {/* ─── TAB 2: SECTIONS & SERVICES VISIBILITY ─── */}
-            <TabsContent value="services" className="space-y-6">
-              <form onSubmit={handleSaveSettings} className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-1">التحكم في الأقسام والخدمات المعروضة في الموقع للعملاء</h3>
-                  <p className="text-xs text-slate-500">يمكنك تفعيل أو إيقاف أي خدمة لتظهر أو تختفي فورياً من الموقع الإلكتروني للزوار</p>
+            {/* ─── TAB 2: SECTIONS & SERVICES VISIBILITY & CRUD ─── */}
+            <TabsContent value="services" className="space-y-8">
+              {/* 1. Main Sections Visibility */}
+              <form onSubmit={handleSaveSettings} className="space-y-4 bg-slate-50/60 p-5 rounded-2xl border border-slate-200">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-slate-200/80">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">أقسام الموقع الرئيسية (إظهار / إخفاء الأقسام العامة)</h3>
+                    <p className="text-xs text-slate-500">التحكم الفوري في إظهار أو إخفاء أي قسم كامل في موقع العملاء (@Njaz Portal)</p>
+                  </div>
+                  <Button type="submit" disabled={updateConfigMutation.isPending} size="sm" className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold gap-1.5 shadow-xs">
+                    <Save className="w-3.5 h-3.5" />
+                    <span>حفظ حالة الأقسام</span>
+                  </Button>
                 </div>
 
                 {formState && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <Card className="rounded-2xl border-slate-200">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl">
-                            <Plane className="w-5 h-5" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                            <Car className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-900 text-xs block">مشاوير ونقل وتوصيل VIP</span>
+                            <span className="text-[10px] text-slate-400">توصيل المطارات والحرمين</span>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={formState.rides_enabled !== 0}
+                          onChange={(e) => setFormState({ ...formState, rides_enabled: e.target.checked ? 1 : 0 })}
+                          className="w-4 h-4 accent-orange-600 rounded cursor-pointer"
+                        />
+                      </CardContent>
+                    </Card>
+
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-sky-50 text-sky-600 rounded-lg">
+                            <Plane className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 text-xs block">حجز تذاكر الطيران</span>
-                            <span className="text-[11px] text-slate-400">محرك بحث الرحلات المباشرة</span>
+                            <span className="text-[10px] text-slate-400">محرك بحث الرحلات المباشرة</span>
                           </div>
                         </div>
                         <input
                           type="checkbox"
                           checked={formState.flight_enabled === 1}
                           onChange={(e) => setFormState({ ...formState, flight_enabled: e.target.checked ? 1 : 0 })}
-                          className="w-5 h-5 accent-sky-600 rounded-md cursor-pointer"
+                          className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
                         />
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border-slate-200">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-                            <Building2 className="w-5 h-5" />
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                            <Building2 className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 text-xs block">حجز الفنادق والمنتجعات</span>
-                            <span className="text-[11px] text-slate-400">دليل الفنادق ومحرك الأسعار</span>
+                            <span className="text-[10px] text-slate-400">دليل الفنادق ومحرك الأسعار</span>
                           </div>
                         </div>
                         <input
                           type="checkbox"
                           checked={formState.hotel_enabled === 1}
                           onChange={(e) => setFormState({ ...formState, hotel_enabled: e.target.checked ? 1 : 0 })}
-                          className="w-5 h-5 accent-sky-600 rounded-md cursor-pointer"
+                          className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
                         />
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border-slate-200">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
-                            <Compass className="w-5 h-5" />
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                            <Compass className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 text-xs block">باقات السياحة والعمرة</span>
-                            <span className="text-[11px] text-slate-400">البرامج السياحية الشاملة</span>
+                            <span className="text-[10px] text-slate-400">البرامج السياحية الشاملة</span>
                           </div>
                         </div>
                         <input
                           type="checkbox"
                           checked={formState.packages_enabled === 1}
                           onChange={(e) => setFormState({ ...formState, packages_enabled: e.target.checked ? 1 : 0 })}
-                          className="w-5 h-5 accent-sky-600 rounded-md cursor-pointer"
+                          className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
                         />
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border-slate-200">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-                            <FileText className="w-5 h-5" />
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <FileText className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 text-xs block">معاملات وخدمات التأشيرات</span>
-                            <span className="text-[11px] text-slate-400">التقديم وتتبع حالة التأشيرات</span>
+                            <span className="text-[10px] text-slate-400">التقديم وتتبع حالة التأشيرات</span>
                           </div>
                         </div>
                         <input
                           type="checkbox"
                           checked={formState.visas_enabled === 1}
                           onChange={(e) => setFormState({ ...formState, visas_enabled: e.target.checked ? 1 : 0 })}
-                          className="w-5 h-5 accent-sky-600 rounded-md cursor-pointer"
+                          className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
                         />
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border-slate-200">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-purple-50 text-purple-600 rounded-xl">
-                            <Bus className="w-5 h-5" />
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                            <Bus className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 text-xs block">تذاكر الباصات والنقل البري</span>
-                            <span className="text-[11px] text-slate-400">حجوزات الرحلات البرية</span>
+                            <span className="text-[10px] text-slate-400">حجوزات الرحلات البرية</span>
                           </div>
                         </div>
                         <input
                           type="checkbox"
                           checked={formState.bus_enabled === 1}
                           onChange={(e) => setFormState({ ...formState, bus_enabled: e.target.checked ? 1 : 0 })}
-                          className="w-5 h-5 accent-sky-600 rounded-md cursor-pointer"
+                          className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
                         />
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border-slate-200">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
-                            <ShieldCheck className="w-5 h-5" />
+                    <Card className="rounded-xl border-slate-200 bg-white">
+                      <CardContent className="p-3.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                            <ShieldCheck className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 text-xs block">التأمين الصحي والسياحي</span>
-                            <span className="text-[11px] text-slate-400">وثائق تأمين السفر المعتمدة</span>
+                            <span className="text-[10px] text-slate-400">وثائق تأمين السفر المعتمدة</span>
                           </div>
                         </div>
                         <input
                           type="checkbox"
                           checked={formState.insurance_enabled === 1}
                           onChange={(e) => setFormState({ ...formState, insurance_enabled: e.target.checked ? 1 : 0 })}
-                          className="w-5 h-5 accent-sky-600 rounded-md cursor-pointer"
+                          className="w-4 h-4 accent-sky-600 rounded cursor-pointer"
                         />
                       </CardContent>
                     </Card>
                   </div>
                 )}
+              </form>
 
-                <div className="flex justify-end pt-4 border-t border-slate-100">
-                  <Button type="submit" disabled={updateConfigMutation.isPending} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold gap-2 px-6">
-                    <Save className="w-4 h-4" />
-                    <span>حفظ حالة الأقسام</span>
+              {/* 2. Custom Services & Rides CRUD Section */}
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-900">إدارة المشاوير والخدمات والعروض المخصصة</h3>
+                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 font-bold">
+                        {customServices.length} خدمات مضافة
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      إضافة وتعديل وحذف وتفعيل كل مشوار أو باقة أو خدمة تظهر للمسافرين مع تحديد السعر والسيارة والميزات
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={handleOpenAddService}
+                    className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold gap-1.5 shadow-xs"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إضافة مشوار / خدمة جديدة +</span>
                   </Button>
                 </div>
-              </form>
+
+                {/* Filter Tabs by Category */}
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-400 text-xs font-bold ml-1">تصفية:</span>
+                  {[
+                    { id: "all", label: "جميع الخدمات" },
+                    { id: "rides", label: "المشاوير والنقل VIP" },
+                    { id: "packages", label: "باقات سياحية وعمرة" },
+                    { id: "visas", label: "تأشيرات سفر" },
+                    { id: "general", label: "عروض أخرى" }
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setServiceCategoryFilter(cat.id)}
+                      className={`px-3 py-1.5 rounded-xl font-bold transition-colors ${
+                        serviceCategoryFilter === cat.id
+                          ? "bg-slate-900 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Services List / Cards */}
+                {customServices.length === 0 ? (
+                  <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <Car className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs text-slate-500 font-bold">لا توجد خدمات أو مشاوير مخصصة مسجلة</p>
+                    <p className="text-[11px] text-slate-400 mt-1">اضغط على زر "إضافة مشوار / خدمة جديدة" للبدء</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {customServices
+                      .filter((s) => serviceCategoryFilter === "all" || s.category === serviceCategoryFilter)
+                      .map((service) => (
+                        <Card
+                          key={service.id}
+                          className={`rounded-2xl border transition-all ${
+                            service.is_active === 1
+                              ? "border-slate-200 shadow-xs hover:border-orange-300"
+                              : "border-slate-200 bg-slate-50/70 opacity-75"
+                          }`}
+                        >
+                          <CardContent className="p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 text-[10px]">
+                                    {service.category === "rides"
+                                      ? "مشاوير ونقل"
+                                      : service.category === "packages"
+                                      ? "باقة سياحية"
+                                      : service.category === "visas"
+                                      ? "تأشيرة"
+                                      : "خدمة عامة"}
+                                  </Badge>
+                                  {service.badge && (
+                                    <Badge className="bg-orange-50 text-orange-700 border-orange-200 text-[10px]">
+                                      {service.badge}
+                                    </Badge>
+                                  )}
+                                  {service.is_active === 1 ? (
+                                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                                      معروض للعملاء
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-slate-200 text-slate-600 text-[10px]">مخفي</Badge>
+                                  )}
+                                </div>
+                                <h4 className="font-black text-slate-900 text-xs sm:text-sm line-clamp-1">{service.title}</h4>
+                                {service.subtitle && (
+                                  <p className="text-[11px] text-slate-500 mt-0.5">{service.subtitle}</p>
+                                )}
+                              </div>
+                              <div className="text-left shrink-0">
+                                <span className="font-black text-emerald-600 text-base">{fmt(service.price)}</span>
+                                <span className="text-[10px] text-slate-400 block">ر.س</span>
+                              </div>
+                            </div>
+
+                            <div className="text-[11px] space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-slate-600">
+                              {service.car_type && (
+                                <div className="flex items-center gap-1.5">
+                                  <Car className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                  <span>{service.car_type}</span>
+                                </div>
+                              )}
+                              {service.duration && (
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                                  <span>{service.duration}</span>
+                                </div>
+                              )}
+                              {(service.origin || service.destination) && (
+                                <div className="flex items-center gap-1.5 text-slate-500">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span className="line-clamp-1">{service.origin} ➔ {service.destination}</span>
+                                </div>
+                              )}
+                              {service.features && (
+                                <p className="text-[10px] text-slate-400 line-clamp-2 pt-1 border-t border-slate-200/60">
+                                  {service.features}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  toggleServiceActiveMutation.mutate({
+                                    id: service.id,
+                                    is_active: service.is_active === 1 ? 0 : 1
+                                  })
+                                }
+                                className={`h-8 text-xs rounded-xl gap-1 font-bold ${
+                                  service.is_active === 1
+                                    ? "text-slate-600 hover:bg-slate-100"
+                                    : "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                                }`}
+                              >
+                                {service.is_active === 1 ? (
+                                  <>
+                                    <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>إخفاء</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>إظهار بالموقع</span>
+                                  </>
+                                )}
+                              </Button>
+
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleOpenEditService(service)}
+                                  className="h-8 text-xs rounded-xl px-2.5 gap-1 border-slate-300 text-slate-700 hover:bg-slate-100"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <span>تعديل</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    if (confirm(`هل أنت متأكد من حذف الخدمة: ${service.title}؟`)) {
+                                      deleteServiceMutation.mutate(service.id);
+                                    }
+                                  }}
+                                  className="h-8 text-xs rounded-xl px-2 text-rose-600 border-rose-200 hover:bg-rose-50"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ─── ADD / EDIT SERVICE MODAL ─── */}
+              {serviceModalOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                  <div className="bg-white rounded-3xl max-w-xl w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200 my-auto text-right" dir="rtl">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                      <div>
+                        <h3 className="text-base font-black text-slate-900">
+                          {editingService ? "تعديل تفاصيل الخدمة / المشوار" : "إضافة خدمة أو مشوار جديد للموقع"}
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          ستظهر هذه الخدمة وتفاصيلها وسعرها فورياً في واجهة العملاء (@Njaz)
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setServiceModalOpen(false)}
+                        className="rounded-full h-8 w-8 p-0"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        saveServiceMutation.mutate(serviceForm);
+                      }}
+                      className="space-y-4 text-xs"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">فئة الخدمة *</label>
+                          <select
+                            value={serviceForm.category}
+                            onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })}
+                            className="w-full h-10 bg-white border border-slate-300 rounded-xl text-xs px-3 font-bold"
+                          >
+                            <option value="rides">مشاوير ونقل سياحي VIP (Rides)</option>
+                            <option value="packages">باقات سياحية وعمرة (Packages)</option>
+                            <option value="visas">تأشيرات ومعاملات سفر (Visas)</option>
+                            <option value="general">عروض وخدمات عامة (General)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">السعر (ر.س) *</label>
+                          <Input
+                            type="number"
+                            required
+                            min="0"
+                            step="1"
+                            value={serviceForm.price}
+                            onChange={(e) => setServiceForm({ ...serviceForm, price: Number(e.target.value) })}
+                            className="rounded-xl h-10 text-xs font-mono font-bold"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="font-bold text-slate-700 block mb-1">اسم الخدمة / عنوان المشوار *</label>
+                          <Input
+                            required
+                            placeholder="مثال: توصيل واستقبال مطار الملك خالد الدولي VIP"
+                            value={serviceForm.title}
+                            onChange={(e) => setServiceForm({ ...serviceForm, title: e.target.value })}
+                            className="rounded-xl h-10 text-xs font-bold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">التصنيف الفرعي / النوع</label>
+                          <Input
+                            placeholder="مثال: توصيل مطار VIP أو باقة عمرة 5 نجوم"
+                            value={serviceForm.subtitle}
+                            onChange={(e) => setServiceForm({ ...serviceForm, subtitle: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">وسام تميز (Badge)</label>
+                          <Input
+                            placeholder="مثال: الأكثر طلباً، عرض خاص، VIP"
+                            value={serviceForm.badge}
+                            onChange={(e) => setServiceForm({ ...serviceForm, badge: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">نوع السيارة / فئة النقل</label>
+                          <Input
+                            placeholder="مثال: جمس يوكون / سيدان كامري حديثة"
+                            value={serviceForm.car_type}
+                            onChange={(e) => setServiceForm({ ...serviceForm, car_type: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">المدة التقديرية</label>
+                          <Input
+                            placeholder="مثال: 45 دقيقة أو 3 أيام"
+                            value={serviceForm.duration}
+                            onChange={(e) => setServiceForm({ ...serviceForm, duration: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">نقطة الانطلاق (Origin)</label>
+                          <Input
+                            placeholder="مثال: مطار الملك خالد الدولي"
+                            value={serviceForm.origin}
+                            onChange={(e) => setServiceForm({ ...serviceForm, origin: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">الوجهة (Destination)</label>
+                          <Input
+                            placeholder="مثال: فنادق المنطقة المركزية"
+                            value={serviceForm.destination}
+                            onChange={(e) => setServiceForm({ ...serviceForm, destination: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="font-bold text-slate-700 block mb-1">ميزات الخدمة (Features)</label>
+                          <Input
+                            placeholder="مثال: استقبال باللوحة • متوفر 24/7 • واي فاي • مياه وضيافة"
+                            value={serviceForm.features}
+                            onChange={(e) => setServiceForm({ ...serviceForm, features: e.target.value })}
+                            className="rounded-xl h-10 text-xs"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-slate-800 block">حالة العرض في الموقع</span>
+                            <span className="text-[11px] text-slate-400">إظهار الخدمة للجمهور والمسافرين فور الحفظ</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={serviceForm.is_active === 1}
+                            onChange={(e) => setServiceForm({ ...serviceForm, is_active: e.target.checked ? 1 : 0 })}
+                            className="w-5 h-5 accent-orange-600 rounded cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setServiceModalOpen(false)}
+                          className="rounded-xl text-xs"
+                        >
+                          إلغاء
+                        </Button>
+                        <Button
+                          type="submit"
+                          disabled={saveServiceMutation.isPending}
+                          className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold px-6"
+                        >
+                          {saveServiceMutation.isPending ? "جارٍ الحفظ..." : "حفظ الخدمة"}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
             </TabsContent>
 
             {/* ─── TAB 3: CONTENT & BRANDING CMS ─── */}

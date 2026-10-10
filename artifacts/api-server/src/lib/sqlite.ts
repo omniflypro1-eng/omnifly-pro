@@ -4775,8 +4775,9 @@ function runMigrations() {
         whatsapp TEXT DEFAULT '966501234567',
         email TEXT DEFAULT 'reservations@omnifly-travel.sa',
         address TEXT DEFAULT 'الرياض - طريق الملك فهد - برج الأعمال السياحية',
-        hero_title TEXT DEFAULT 'اكتشف العالم بأفضل الأسعار وأسهل خيارات الحجز',
-        hero_subtitle TEXT DEFAULT 'احجز تذاكر الطيران، الفنادق الفاخرة، باقات العمرة والسياحة، واستخرج تأشيرتك فورياً بكل سهولة وأمان',
+        hero_title TEXT DEFAULT 'نجاز للمشاوير والسفريات والسياحة — رحلتك تبدأ هنا',
+        hero_subtitle TEXT DEFAULT 'حجوزات طيران محلية ودولية، مشاوير ونقل سياحي مريح، فنادق فاخرة، وباقات عمرة وتأشيرات بأفضل الأسعار المعتمدة',
+        rides_enabled INTEGER DEFAULT 1,
         flight_enabled INTEGER DEFAULT 1,
         hotel_enabled INTEGER DEFAULT 1,
         packages_enabled INTEGER DEFAULT 1,
@@ -4798,6 +4799,23 @@ function runMigrations() {
         promo_code TEXT DEFAULT 'OMNIFLY10',
         promo_discount_percent REAL DEFAULT 10,
         updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+      );
+
+      CREATE TABLE IF NOT EXISTS website_custom_services (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        price REAL NOT NULL,
+        badge TEXT,
+        car_type TEXT,
+        duration TEXT,
+        features TEXT,
+        origin TEXT,
+        destination TEXT,
+        is_active INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
 
       CREATE TABLE IF NOT EXISTS website_online_bookings (

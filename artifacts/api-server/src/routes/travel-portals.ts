@@ -526,7 +526,49 @@ router.get("/public/website/catalog", (_req, res) => {
     { from: "المدينة المنورة", to: "مكة المكرمة", operator: "باصات رحلات المعتمرين VIP", departure_time: "16:00 عصراً", duration: "5 ساعات", price: 95 }
   ];
 
-  res.json({ flights, hotels, packages, visas, buses });
+  // Custom Services & Rides from website_custom_services table
+  let customServices: any[] = [];
+  try {
+    customServices = db.prepare(`
+      SELECT * FROM website_custom_services
+      WHERE is_active = 1
+      ORDER BY sort_order ASC, id DESC
+    `).all();
+  } catch (e) {
+    customServices = [];
+  }
+
+  const rides = customServices.filter((s: any) => s.category === "rides");
+  const customPackages = customServices.filter((s: any) => s.category === "packages").map((s: any) => ({
+    id: s.id,
+    package_name: s.title,
+    destination_city: s.destination || s.subtitle || "سياحة متكاملة",
+    duration_days: s.duration || "5 أيام",
+    price_per_person: s.price,
+    notes: s.features || s.subtitle,
+    is_custom: true
+  }));
+  const customVisas = customServices.filter((s: any) => s.category === "visas").map((s: any) => ({
+    country: s.title,
+    type: s.subtitle || "تأشيرة إلكترونية",
+    processing_days: s.duration || "3-5 أيام عمل",
+    price: s.price,
+    requirements: s.features || "جواز سفر ساري المفعول",
+    is_custom: true
+  }));
+
+  const allPackages = [...customPackages, ...packages];
+  const allVisas = [...customVisas, ...visas];
+
+  res.json({
+    rides,
+    flights,
+    hotels,
+    packages: allPackages,
+    visas: allVisas,
+    buses,
+    customServices
+  });
 });
 
 // 15. Create Online Booking from Website (No authentication required for passengers)
@@ -673,7 +715,7 @@ router.put("/admin/website/config", (req, res) => {
 
   const {
     site_name, site_slogan, phone, whatsapp, email, address,
-    hero_title, hero_subtitle, flight_enabled, hotel_enabled,
+    hero_title, hero_subtitle, rides_enabled, flight_enabled, hotel_enabled,
     packages_enabled, visas_enabled, bus_enabled, insurance_enabled,
     flight_markup_val, flight_markup_type, hotel_markup_val, hotel_markup_type,
     package_markup_val, package_markup_type, payment_card_enabled, payment_bank_enabled,
@@ -684,7 +726,7 @@ router.put("/admin/website/config", (req, res) => {
   db.prepare(`
     UPDATE website_settings
     SET site_name = ?, site_slogan = ?, phone = ?, whatsapp = ?, email = ?, address = ?,
-        hero_title = ?, hero_subtitle = ?, flight_enabled = ?, hotel_enabled = ?,
+        hero_title = ?, hero_subtitle = ?, rides_enabled = ?, flight_enabled = ?, hotel_enabled = ?,
         packages_enabled = ?, visas_enabled = ?, bus_enabled = ?, insurance_enabled = ?,
         flight_markup_val = ?, flight_markup_type = ?, hotel_markup_val = ?, hotel_markup_type = ?,
         package_markup_val = ?, package_markup_type = ?, payment_card_enabled = ?, payment_bank_enabled = ?,
@@ -694,7 +736,7 @@ router.put("/admin/website/config", (req, res) => {
   `).run(
     site_name, site_slogan, phone, whatsapp, email, address,
     hero_title, hero_subtitle,
-    Number(flight_enabled ?? 1), Number(hotel_enabled ?? 1),
+    Number(rides_enabled ?? 1), Number(flight_enabled ?? 1), Number(hotel_enabled ?? 1),
     Number(packages_enabled ?? 1), Number(visas_enabled ?? 1), Number(bus_enabled ?? 1), Number(insurance_enabled ?? 1),
     Number(flight_markup_val ?? 5), flight_markup_type || "percent",
     Number(hotel_markup_val ?? 8), hotel_markup_type || "percent",
@@ -708,6 +750,65 @@ router.put("/admin/website/config", (req, res) => {
 
   const updated = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
   res.json({ success: true, settings: updated });
+});
+
+// 19.1 Admin Get All Custom Services
+router.get("/admin/website/services", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  const rows = db.prepare("SELECT * FROM website_custom_services ORDER BY category ASC, sort_order ASC, id DESC").all();
+  res.json(rows);
+});
+
+// 19.2 Admin Create Custom Service
+router.post("/admin/website/services", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  const { category = "rides", title, subtitle, price, badge, car_type, duration, features, origin, destination, is_active = 1, sort_order = 0 } = req.body;
+  if (!title || price === undefined) {
+    res.status(400).json({ error: "العنوان والسعر مطلوبان" });
+    return;
+  }
+  const ins = db.prepare(`
+    INSERT INTO website_custom_services (category, title, subtitle, price, badge, car_type, duration, features, origin, destination, is_active, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const r = ins.run(category, title, subtitle || null, Number(price), badge || null, car_type || null, duration || null, features || null, origin || null, destination || null, Number(is_active ?? 1), Number(sort_order ?? 0));
+  const created = db.prepare("SELECT * FROM website_custom_services WHERE id = ?").get(r.lastInsertRowid);
+  res.status(201).json(created);
+});
+
+// 19.3 Admin Update Custom Service
+router.put("/admin/website/services/:id", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  const { category, title, subtitle, price, badge, car_type, duration, features, origin, destination, is_active, sort_order } = req.body;
+  db.prepare(`
+    UPDATE website_custom_services
+    SET category = COALESCE(?, category),
+        title = COALESCE(?, title),
+        subtitle = COALESCE(?, subtitle),
+        price = COALESCE(?, price),
+        badge = COALESCE(?, badge),
+        car_type = COALESCE(?, car_type),
+        duration = COALESCE(?, duration),
+        features = COALESCE(?, features),
+        origin = COALESCE(?, origin),
+        destination = COALESCE(?, destination),
+        is_active = COALESCE(?, is_active),
+        sort_order = COALESCE(?, sort_order)
+    WHERE id = ?
+  `).run(category, title, subtitle, price !== undefined ? Number(price) : null, badge, car_type, duration, features, origin, destination, is_active !== undefined ? Number(is_active) : null, sort_order !== undefined ? Number(sort_order) : null, req.params.id);
+  const updated = db.prepare("SELECT * FROM website_custom_services WHERE id = ?").get(req.params.id);
+  res.json(updated);
+});
+
+// 19.4 Admin Delete Custom Service
+router.delete("/admin/website/services/:id", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  db.prepare("DELETE FROM website_custom_services WHERE id = ?").run(req.params.id);
+  res.json({ success: true, message: "تم حذف الخدمة بنجاح" });
 });
 
 // 20. Admin Get All Website Online Bookings
