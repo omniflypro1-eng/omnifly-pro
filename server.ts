@@ -38,9 +38,26 @@ if (!isTsxActive) {
   await new Promise(() => {});
 }
 
+// Global error handlers to prevent unhandled rejections or uncaught exceptions from crashing Node
+// This eliminates Cloudflare Error 520 ("Web server is returning an unknown error")
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("⚠️ Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ Uncaught Exception thrown:", err);
+});
+
 // Dynamically import app & express once TSX or Bun loader is guaranteed
 const { default: app } = await import("./artifacts/api-server/src/app");
 const { default: express } = await import("express");
+
+// Add top-level health checks for Render, Railway, Fly.io, and Cloudflare
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+app.get("/ping", (req, res) => {
+  res.status(200).send("pong");
+});
 
 const _dirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 
@@ -62,38 +79,92 @@ export async function startServer(portOverride?: number) {
     });
     app.use(vite.middlewares);
   } else {
-    // التحقق من كافة المسارات المحتملة لحزمة الواجهة المجمعة
-    const candidates = [
+    // التحقق من مجلدات حزمة الإنتاج المجمعة (dist) فقط
+    // تجنب اختيار المجلد الجذري للمشروع لأن index.html المصدري يحتوي على /src/main.tsx
+    // مما يتسبب في خطأ MIME type "application/octet-stream" وظهور شاشة بيضاء
+    const possibleDistDirs = [
       process.env.APP_ROOT ? path.resolve(process.env.APP_ROOT, "dist") : "",
-      process.env.APP_ROOT ? path.resolve(process.env.APP_ROOT, "artifacts/pos-system/dist") : "",
+      path.resolve(process.cwd(), "dist"),
+      path.resolve(_dirname, "dist"),
+      path.resolve(process.cwd(), "artifacts/pos-system/dist"),
+      path.resolve(_dirname, "artifacts/pos-system/dist"),
       (process as any).resourcesPath ? path.join((process as any).resourcesPath, "app", "dist") : "",
       (process as any).resourcesPath ? path.join((process as any).resourcesPath, "dist") : "",
-      path.resolve(_dirname), // في حال تشغيل dist/server.cjs يكون _dirname هو مجلد dist نفسه
-      path.resolve(_dirname, "dist"),
+      path.resolve(process.cwd(), "dist/public"),
       path.resolve(_dirname, "../dist"),
       path.resolve(_dirname, "../../dist"),
-      path.resolve(process.cwd(), "dist"),
-      path.resolve(process.cwd(), "artifacts/pos-system/dist"),
-      path.resolve(process.cwd(), "artifacts/pos-system/dist/public"),
-      path.resolve(process.cwd(), "dist/public")
     ].filter(Boolean) as string[];
     
-    const distPath = candidates.find((p) => fs.existsSync(path.join(p, "index.html"))) || candidates[0];
+    // التحقق من أن المجلد يحتوي على index.html مبني فعلياً (لا يحتوي على إشارة إلى /src/main.tsx)
+    let distPath = possibleDistDirs.find((p) => {
+      const indexPath = path.join(p, "index.html");
+      if (!fs.existsSync(indexPath)) return false;
+      try {
+        const content = fs.readFileSync(indexPath, "utf-8");
+        // حزمة الإنتاج تحتوي على سكربت مبني ولا تشير إلى ملف tsx المصدري
+        return !content.includes("/src/main.tsx");
+      } catch {
+        return false;
+      }
+    });
+
+    if (!distPath) {
+      // احتياطي: أول مجلد يحتوي على index.html
+      distPath = possibleDistDirs.find((p) => fs.existsSync(path.join(p, "index.html"))) || path.resolve(process.cwd(), "dist");
+    }
+    
     process.env.FRONTEND_DIST = distPath;
-    
     console.log(`✅ Frontend static files served from: ${distPath}`);
+
+    // إعداد خدمة الملفات الثابتة مع تحديد نوع MIME صريح لملفات JavaScript وCSS
+    // لمنع خطأ: "Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of application/octet-stream"
+    const staticOptions = {
+      index: false,
+      setHeaders: (res: any, filePath: string) => {
+        if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) {
+          res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        } else if (filePath.endsWith(".css")) {
+          res.setHeader("Content-Type", "text/css; charset=utf-8");
+        } else if (filePath.endsWith(".json")) {
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+        } else if (filePath.endsWith(".svg")) {
+          res.setHeader("Content-Type", "image/svg+xml");
+        } else if (filePath.endsWith(".woff2")) {
+          res.setHeader("Content-Type", "font/woff2");
+        } else if (filePath.endsWith(".woff")) {
+          res.setHeader("Content-Type", "font/woff");
+        }
+      }
+    };
     
-    app.use(express.static(distPath));
-    app.use(express.static(path.resolve(process.cwd(), "public")));
+    app.use(express.static(distPath, staticOptions));
+    app.use(express.static(path.resolve(process.cwd(), "public"), staticOptions));
     
     app.get("*", (req, res, next) => {
       if (req.path.startsWith("/api")) {
         res.status(404).json({ error: `API route not found: ${req.path}` });
         return;
       }
-      res.sendFile(path.join(distPath, "index.html"), (err) => {
-        if (err) next(err);
-      });
+
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath, (err) => {
+          if (err) next(err);
+        });
+      } else {
+        res.status(503).send(`
+          <!DOCTYPE html>
+          <html lang="ar" dir="rtl">
+          <head><meta charset="utf-8"><title>OmniFly Pro - جاري التهيئة</title></head>
+          <body style="font-family: system-ui, sans-serif; display: grid; place-content: center; height: 100vh; margin: 0; background: #f8fafc; color: #1e293b; text-align: center;">
+            <div style="background: white; padding: 2rem 3rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+              <h2>جاري تجهيز النظام...</h2>
+              <p>يرجى التأكد من تنفيذ أمر البناء <code>npm run build</code> قبل تشغيل وضع الإنتاج.</p>
+            </div>
+          </body>
+          </html>
+        `);
+      }
     });
   }
 
