@@ -103,7 +103,13 @@ export default function SystemGuidePage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    toast({
+      title: "تصدير دليل التشغيل الشامل كملف PDF",
+      description: "يرجى اختيار (حفظ كـ PDF / Save as PDF) من نافذة الطباعة في المتصفح لحفظ الدليل بدقة واحترافية."
+    });
+    setTimeout(() => {
+      window.print();
+    }, 400);
   };
 
   // Comprehensive Guide Sections & Operational Workflows
