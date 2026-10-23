@@ -128,13 +128,23 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
     setGatewayTestMessage("");
 
     try {
-      await new Promise((r) => setTimeout(r, 800));
-      localStorage.setItem("pos_meta_api_key", metaApiKey);
-      setGatewayTestStatus("success");
-      setGatewayTestMessage("✓ تم فحص الاتصال بنجاح مع بوابة واتساب كلاود آبي آي وتأكيد صلاحية المفتاح والترخيص (Green Quality).");
+      const res = await fetch("/api/travel/whatsapp/test-meta-gateway", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ access_token: metaApiKey.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem("pos_meta_api_key", metaApiKey.trim());
+        setGatewayTestStatus("success");
+        setGatewayTestMessage(data.message || "✓ تم التحقق الحقيقي من اتصال البوابة بنجاح.");
+      } else {
+        setGatewayTestStatus("error");
+        setGatewayTestMessage(data.error || "× فشل التحقق من مفتاح البوابة.");
+      }
     } catch (err: any) {
       setGatewayTestStatus("error");
-      setGatewayTestMessage("× فشل الاتصال بالبوابة: تأكد من صحة المفتاح.");
+      setGatewayTestMessage("× حدث خطأ في الاتصال بالخادم: " + (err.message || ""));
     } finally {
       setIsTestingGateway(false);
     }

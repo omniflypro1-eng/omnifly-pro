@@ -140,11 +140,86 @@ router.post("/travel/packages/:id/itinerary", (req, res) => {
   res.status(201).json(newDay);
 });
 
-router.delete("/travel/packages/itinerary/:dayId", (req, res) => {
-  const user = getAuthUser(req);
-  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
-  db.prepare("DELETE FROM travel_package_itinerary WHERE id = ?").run(req.params.dayId);
-  res.status(204).send();
+router.get("/travel/packages/:id/pdf", (req, res) => {
+  try {
+    const pkg: any = db.prepare("SELECT * FROM travel_packages WHERE id = ?").get(req.params.id);
+    if (!pkg) {
+      res.status(404).json({ error: "البرنامج السياحي غير موجود" });
+      return;
+    }
+    const itinerary = db.prepare("SELECT * FROM travel_package_itinerary WHERE package_id = ? ORDER BY day_number ASC").all(req.params.id) as any[];
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="UTF-8">
+        <title>برنامج الرحلة السياحية - ${pkg.title}</title>
+        <style>
+          body { font-family: 'Tajawal', Arial, sans-serif; padding: 40px; color: #1e293b; direction: rtl; background: #fff; }
+          .header { border-bottom: 3px solid #059669; padding-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+          .logo { font-size: 22px; font-weight: 900; color: #059669; }
+          .badge { background: #ecfdf5; color: #065f46; padding: 6px 14px; border-radius: 8px; font-weight: bold; font-size: 14px; }
+          .title { font-size: 26px; font-weight: bold; margin-top: 25px; color: #0f172a; }
+          .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; background: #f8fafc; padding: 18px; border-radius: 12px; margin-top: 20px; font-size: 14px; border: 1px solid #e2e8f0; }
+          .section-title { font-size: 18px; font-weight: bold; margin-top: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; color: #0f172a; }
+          .day-card { background: #f9fafb; border-right: 4px solid #059669; padding: 14px 18px; border-radius: 8px; margin-top: 14px; border: 1px solid #e2e8f0; }
+          .day-title { font-weight: bold; color: #065f46; font-size: 15px; }
+          .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          @media print {
+            body { padding: 15px; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 20px; text-align: left;">
+          <button onclick="window.print()" style="background: #059669; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;">🖨️ طباعة أو حفظ كـ PDF</button>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="logo">OMNIFLY PRO - برامج الرحلات السياحية</div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 4px;">كود الباقة: ${pkg.package_code}</div>
+          </div>
+          <div class="badge">${pkg.days_count} أيام / ${pkg.nights_count} ليالي</div>
+        </div>
+
+        <div class="title">${pkg.title}</div>
+        <div style="color: #475569; font-size: 15px; margin-top: 6px;">الوجهة: <strong>${pkg.destination}</strong></div>
+
+        <div class="meta">
+          <div>🏨 <strong>الفنادق المقترحة:</strong> ${pkg.hotels_info || "غير محدد"}</div>
+          <div>🚌 <strong>النقل والمواصلات:</strong> ${pkg.transport_info || "مشمول بالبرنامج"}</div>
+          <div>🍽️ <strong>الوجبات المشمولة:</strong> ${pkg.meals_info || "إفطار يومي"}</div>
+          <div>🧭 <strong>المرشد السياحي:</strong> ${pkg.tour_guide || "متوفر طوال الرحلة"}</div>
+        </div>
+
+        <div class="section-title">📅 المسار والبرنامج اليومي للرحلة (Itinerary)</div>
+        ${itinerary.length === 0 ? '<p style="color: #64748b; font-size: 14px; margin-top: 10px;">لم يتم إضافة تفاصيل الأيام بعد.</p>' : itinerary.map((d: any) => `
+          <div class="day-card">
+            <div class="day-title">اليوم ${d.day_number}: ${d.title}</div>
+            <p style="margin-top: 6px; font-size: 13px; color: #334155; line-height: 1.6;">${d.description || ""}</p>
+          </div>
+        `).join('')}
+
+        <div style="margin-top: 35px; background: #ecfdf5; padding: 18px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 18px; font-weight: bold; color: #065f46; border: 1px solid #a7f3d0;">
+          <span>سعر البرنامج الإجمالي للعميل:</span>
+          <span>${Number(pkg.selling_price || 0).toLocaleString()} ريال سعودي</span>
+        </div>
+
+        <div class="footer">
+          تم إصدار هذا البرنامج رسمياً عبر نظام أومني فلاي برو للسفريات والسياحة (Omnifly Pro ERP) • جميع الحقوق محفوظة
+        </div>
+      </body>
+      </html>
+    `;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 

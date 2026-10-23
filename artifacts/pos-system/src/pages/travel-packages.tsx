@@ -481,8 +481,15 @@ export default function TravelPackagesPage() {
               </div>
             </div>
 
-            <DialogFooter>
-              <Button onClick={() => window.print()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => window.open(`/api/travel/packages/${selectedPackage?.id}/pdf`, "_blank")}
+                className="gap-2 text-xs"
+              >
+                <FileText className="w-4 h-4 text-emerald-600" /> عرض وتنزيل ملف PDF
+              </Button>
+              <Button onClick={() => window.print()} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-xs">
                 <Printer className="w-4 h-4" /> طباعة الآن
               </Button>
             </DialogFooter>
