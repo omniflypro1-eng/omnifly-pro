@@ -883,7 +883,7 @@ export default function SystemGuidePage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6 pb-16">
+      <div id="printable-system-guide" className="space-y-6 pb-16">
         
         {/* Header Hero Banner */}
         <div className="bg-gradient-to-r from-sky-950 via-blue-900 to-indigo-950 text-white p-6 md:p-8 rounded-3xl shadow-xl border border-sky-700/40 relative overflow-hidden">

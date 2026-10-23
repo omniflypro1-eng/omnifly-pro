@@ -202,8 +202,8 @@
     box-sizing: border-box !important;
   }
 
-  /* منطقة طباعة مستندات A4 (كشوفات الحسابات والسندات وبرامج الرحلات والتقارير) */
-  .a4-print-container, #printable-statement, #printable-voucher, #printable-package, #report-print-area {
+  /* منطقة طباعة مستندات A4 (كشوفات الحسابات والسندات وبرامج الرحلات والتقارير والدليل) */
+  .a4-print-container, #printable-statement, #printable-voucher, #printable-package, #report-print-area, #printable-system-guide {
     display: block !important;
     visibility: visible !important;
     position: absolute !important;
@@ -218,7 +218,7 @@
     box-sizing: border-box !important;
   }
 
-  .a4-print-container *, #printable-statement *, #printable-voucher *, #printable-package *, #report-print-area * {
+  .a4-print-container *, #printable-statement *, #printable-voucher *, #printable-package *, #report-print-area *, #printable-system-guide * {
     visibility: visible !important;
   }
 
