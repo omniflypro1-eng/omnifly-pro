@@ -22,12 +22,13 @@ const COLORS = ["#1e3a5f", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"
 
 export default function TravelDashboardPage() {
   const { data: settings } = useGetSettings();
-  const currencySymbol = settings?.currency || "SAR";
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["travel-dashboard-stats"],
     queryFn: () => fetchWithAuth("/api/travel/dashboard-stats")
   });
+
+  const currencySymbol = data?.primaryCurrency || settings?.currency || "SAR";
 
   if (isLoading || !data) {
     return (
@@ -104,7 +105,7 @@ export default function TravelDashboardPage() {
             <Card className="border-r-4 border-r-purple-500 shadow-sm">
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">رصيد الخزائن والصندوق</p>
-                <p className="text-lg font-bold font-mono text-purple-700 mt-1">{fmt(kpis.safeBalance)} ريال</p>
+                <p className="text-lg font-bold font-mono text-purple-700 mt-1">{fmt(kpis.safeBalance)} {currencySymbol}</p>
               </CardContent>
             </Card>
           </div>

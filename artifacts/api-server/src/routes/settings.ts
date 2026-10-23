@@ -6,6 +6,11 @@ import {
   getBusinessDayStatus,
   invalidateBusinessDayConfigCache,
 } from "../lib/business-day";
+import {
+  normalizeCurrencyName,
+  getConversionMultiplier,
+  convertCurrency,
+} from "../lib/currency-converter";
 
 const router = Router();
 
@@ -95,8 +100,59 @@ router.put("/settings", (req, res) => {
       updates = updates.data;
     }
     if (updates && typeof updates === "object") {
+      // 1. Capture the true current system currency BEFORE any database writes
+      const oldCurrRow = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as { value: string } | undefined;
+      const oldCurrency = oldCurrRow?.value || "YER";
+      const newCurrency = updates.currency ? String(updates.currency) : undefined;
+      const customRate = updates.conversionRate ? Number(updates.conversionRate) : undefined;
+
+      // 2. Perform safe and vault balance conversions if currency changed or forced
+      const currencyChanged = newCurrency && normalizeCurrencyName(newCurrency) !== normalizeCurrencyName(oldCurrency);
+      if (newCurrency && (currencyChanged || updates.forceConvertCurrency === true)) {
+        try {
+          const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency FROM safes").all() as any[];
+          for (const s of safes) {
+            const fromCur = s.currency || oldCurrency;
+            const multiplier = getConversionMultiplier(fromCur, newCurrency, customRate);
+            const newBalance = Math.round(s.balance * multiplier * 100) / 100;
+            const newOpening = Math.round((s.opening_balance || 0) * multiplier * 100) / 100;
+            const newActual = Math.round((s.actual_balance || 0) * multiplier * 100) / 100;
+
+            db.prepare(`
+              UPDATE safes 
+              SET balance = ?, opening_balance = ?, actual_balance = ?, currency = ?
+              WHERE id = ?
+            `).run(newBalance, newOpening, newActual, newCurrency, s.id);
+          }
+
+          // Also update default_currency in travel_system_settings
+          try {
+            db.prepare("UPDATE travel_system_settings SET default_currency = ?").run(newCurrency);
+          } catch {}
+
+          // Write audit log
+          try {
+            db.prepare(`
+              INSERT INTO audit_logs (user_id, user_name, action, details, created_at)
+              VALUES (?, ?, ?, ?, datetime('now'))
+            `).run(
+              user.id,
+              user.name || user.username || "admin",
+              "مصارفة وتحويل عملة النظام",
+              `تم تغيير عملة النظام من (${oldCurrency}) إلى (${newCurrency}) وتمت مصارفة وتحويل جميع أرصدة الصناديق والخزائن بنجاح.`
+            );
+          } catch {}
+        } catch (currErr: any) {
+          console.error("Error converting safe balances:", currErr);
+        }
+      }
+
+      // 3. Upsert settings values
       for (const [k, v] of Object.entries(updates)) {
         if (k === "systemLogoUrl" && user.role !== "developer") {
+          continue;
+        }
+        if (k === "forceConvertCurrency" || k === "conversionRate") {
           continue;
         }
         const strVal = v === null || v === undefined ? "null" : typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -113,83 +169,6 @@ router.put("/settings", (req, res) => {
             db.prepare("UPDATE document_print_settings SET company_name = ? WHERE id = 1").run(String(v));
           } catch {}
         }
-
-        // Handle Primary Currency Change & Money Conversion across Safes and System
-        if (k === "currency" && v) {
-          try {
-            const oldCurrRow = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as { value: string } | undefined;
-            const oldCurrency = oldCurrRow?.value || "ريال يمني";
-            const newCurrency = String(v);
-
-            if (newCurrency !== oldCurrency) {
-              // Fetch exchange rate from currencies database
-              let rateFactor = 1.0;
-              let dbCurrencies: any[] = [];
-              try {
-                dbCurrencies = db.prepare("SELECT * FROM currencies WHERE active = 1").all();
-              } catch {}
-
-              const matchCurrency = (term: string) => {
-                const cleaned = term.trim().toLowerCase();
-                return dbCurrencies.find((c: any) =>
-                  c.symbol?.toLowerCase() === cleaned ||
-                  c.name?.toLowerCase() === cleaned ||
-                  (cleaned.includes("سعودي") && (c.symbol === "SAR" || c.name?.includes("سعودي"))) ||
-                  (cleaned.includes("يمني") && (c.symbol === "YER" || c.name?.includes("يمني"))) ||
-                  (cleaned.includes("دولار") && (c.symbol === "USD" || c.name?.includes("دولار"))) ||
-                  (cleaned.includes("درهم") && (c.symbol === "AED" || c.name?.includes("درهم"))) ||
-                  (cleaned.includes("كويتي") && (c.symbol === "KWD" || c.name?.includes("كويتي")))
-                );
-              };
-
-              const targetCur = matchCurrency(newCurrency);
-              const sourceCur = matchCurrency(oldCurrency);
-
-              if (targetCur && targetCur.exchange_rate) {
-                rateFactor = Number(targetCur.exchange_rate);
-              } else if (sourceCur && sourceCur.exchange_rate) {
-                rateFactor = Number(sourceCur.exchange_rate);
-              }
-
-              // Fallback logic for YER <-> SAR conversion if exchange rate is default
-              if (!rateFactor || rateFactor <= 0 || isNaN(rateFactor) || rateFactor === 1.0) {
-                if ((oldCurrency.includes("يمني") || oldCurrency === "YER") && (newCurrency.includes("سعودي") || newCurrency === "SAR")) {
-                  rateFactor = 250.0;
-                } else if ((oldCurrency.includes("سعودي") || oldCurrency === "SAR") && (newCurrency.includes("يمني") || newCurrency === "YER")) {
-                  rateFactor = 0.004;
-                } else {
-                  rateFactor = 1.0;
-                }
-              }
-
-              if (rateFactor && rateFactor !== 1.0) {
-                // Convert safe balances & update currency label
-                db.prepare(`
-                  UPDATE safes 
-                  SET 
-                    balance = ROUND(balance / ?, 2),
-                    opening_balance = ROUND(opening_balance / ?, 2),
-                    actual_balance = ROUND(actual_balance / ?, 2),
-                    currency = ?
-                `).run(rateFactor, rateFactor, rateFactor, newCurrency);
-
-                // Update travel system settings default currency
-                try {
-                  db.prepare("UPDATE travel_system_settings SET default_currency = ?").run(newCurrency);
-                } catch {}
-
-                logAudit(
-                  user.id,
-                  user.name,
-                  "مصارفة وتحويل عملة النظام",
-                  `تم تغيير عملة النظام من (${oldCurrency}) إلى (${newCurrency}) بسعر صرف (${rateFactor})، وتمت مصارفة وتحويل جميع أرصدة الصناديق والخزائن بنجاح.`
-                );
-              }
-            }
-          } catch (currErr: any) {
-            console.error("Error converting system currency balances:", currErr);
-          }
-        }
       }
       invalidateBusinessDayConfigCache();
     }
@@ -197,6 +176,48 @@ router.put("/settings", (req, res) => {
   } catch (err: any) {
     console.error("Error updating settings:", err);
     res.status(500).json({ error: "حدث خطأ أثناء حفظ الإعدادات", message: err?.message });
+  }
+});
+
+// Force convert / synchronize existing balances to current system primary currency
+router.post("/settings/convert-balances", (req, res) => {
+  try {
+    const currentPrimary = getSystemPrimaryCurrency();
+    const { fromCurrency = "YER", conversionRate } = req.body || {};
+    const customRate = conversionRate ? Number(conversionRate) : undefined;
+
+    const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency FROM safes").all() as any[];
+    const results: any[] = [];
+
+    for (const s of safes) {
+      const from = s.currency || fromCurrency;
+      const multiplier = getConversionMultiplier(from, currentPrimary, customRate);
+      const newBalance = Math.round(s.balance * multiplier * 100) / 100;
+      const newOpening = Math.round((s.opening_balance || 0) * multiplier * 100) / 100;
+      const newActual = Math.round((s.actual_balance || 0) * multiplier * 100) / 100;
+
+      db.prepare(`
+        UPDATE safes 
+        SET balance = ?, opening_balance = ?, actual_balance = ?, currency = ?
+        WHERE id = ?
+      `).run(newBalance, newOpening, newActual, currentPrimary, s.id);
+
+      results.push({
+        id: s.id,
+        name: s.name,
+        oldBalance: s.balance,
+        newBalance,
+        currency: currentPrimary
+      });
+    }
+
+    try {
+      db.prepare("UPDATE travel_system_settings SET default_currency = ?").run(currentPrimary);
+    } catch {}
+
+    res.json({ success: true, primaryCurrency: currentPrimary, convertedSafes: results });
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل تحويل الأرصدة", message: err?.message });
   }
 });
 

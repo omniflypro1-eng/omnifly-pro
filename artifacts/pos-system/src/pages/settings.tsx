@@ -24,7 +24,7 @@ import {
   Save, Plus, Trash2, Pencil, Printer, Copy, Building2, Settings2, Upload, X, ShieldCheck,
   Sparkles, Image as ImageIcon, Clock, Moon, Sun, CheckCircle2, AlertCircle, Plane,
   DollarSign, ShoppingCart, Users, Briefcase, FileSpreadsheet, ShieldAlert, Check, RefreshCw,
-  HelpCircle, ArrowRight, CalendarCheck, KeyRound, Fingerprint, Coins
+  HelpCircle, ArrowRight, CalendarCheck, KeyRound, Fingerprint, Coins, ArrowUpDown
 } from "lucide-react";
 import { fetchWithAuth } from "@workspace/api-client-react";
 
@@ -139,19 +139,69 @@ export default function Settings() {
     }
   };
 
+  const [customConversionRate, setCustomConversionRate] = useState<number | "">("");
+  const [isConvertingBalances, setIsConvertingBalances] = useState(false);
+
   useEffect(() => {
-    if (settings) setForm({ ...form, ...settings });
-  }, [settings]);
+    if (settings) {
+      setForm({ ...form, ...settings });
+      // Find matching currency in db list to set initial rate
+      const cur = allCurrenciesList.find((c: any) => c.symbol === settings.currency || c.name === settings.currency);
+      if (cur && cur.exchange_rate) {
+        setCustomConversionRate(cur.exchange_rate);
+      } else if (settings.currency === "SAR" || settings.currency?.includes("سعودي")) {
+        setCustomConversionRate(4);
+      }
+    }
+  }, [settings, allCurrenciesList]);
+
+  const handleInstantConvertBalances = async () => {
+    try {
+      setIsConvertingBalances(true);
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
+      const res = await fetch("/api/settings/convert-balances", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          fromCurrency: "YER",
+          conversionRate: customConversionRate || undefined
+        })
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || "فشل التحويل");
+      qc.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+      qc.invalidateQueries({ queryKey: ["travel-dashboard-stats"] });
+      qc.invalidateQueries({ queryKey: ["safes"] });
+      toast({
+        title: "تمت مصارفة وتحويل الأرصدة بنجاح! 💰✅",
+        description: `تم تحويل مبالغ الخزائن والصناديق بنجاح إلى ${form.currency || "SAR"}.`
+      });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "خطأ في التحويل", description: e.message });
+    } finally {
+      setIsConvertingBalances(false);
+    }
+  };
 
   const handleSave = () => {
-    const payload = { ...form };
+    const payload = {
+      ...form,
+      conversionRate: customConversionRate || undefined,
+      forceConvertCurrency: true
+    };
     if (!isDeveloper) {
       delete payload.systemLogoUrl;
     }
     updateMutation.mutate({ data: payload }, {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
-        toast({ title: "تم حفظ الإعدادات بنجاح" });
+        qc.invalidateQueries({ queryKey: ["travel-dashboard-stats"] });
+        qc.invalidateQueries({ queryKey: ["safes"] });
+        qc.invalidateQueries({ queryKey: ["currencies"] });
+        toast({ title: "تم حفظ الإعدادات ومصارفة الأرصدة بنجاح! 💾✅" });
       },
       onError: (err: any) => toast({ variant: "destructive", title: "فشل في الحفظ", description: err?.message || "يرجى المحاولة مرة أخرى" })
     });
@@ -352,22 +402,31 @@ export default function Settings() {
                   );
                 })}
 
-                {/* Main System Currency Selection Dropdown */}
-                <div className="space-y-2 p-3.5 bg-emerald-50/40 dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-slate-800">
-                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <Coins className="w-4 h-4 text-emerald-600" />
+                {/* Main System Currency Selection Dropdown & Conversion Controls */}
+                <div className="space-y-3 p-4 bg-gradient-to-br from-emerald-50/60 to-teal-50/40 dark:from-slate-900 dark:to-slate-950 rounded-2xl border-2 border-emerald-300/80 dark:border-emerald-800/50 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <Coins className="w-5 h-5 text-emerald-600" />
                       العملة الرئيسية للنظام (تضم جميع العملات المضافة في تهيئة العملات واسعار الصرف) *
+                    </label>
+                    <span className="text-xs text-emerald-800 dark:text-emerald-300 font-mono font-bold bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-md">
+                      Primary Currency
                     </span>
-                    <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">
-                      Main Currency
-                    </span>
-                  </label>
+                  </div>
 
                   <select
                     value={form.currency || "SAR"}
-                    onChange={e => setField("currency", e.target.value)}
-                    className="flex h-11 w-full rounded-xl border border-slate-300 bg-white dark:bg-slate-800 px-3.5 py-2 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                    onChange={e => {
+                      const newVal = e.target.value;
+                      setField("currency", newVal);
+                      const found = allCurrenciesList.find((c: any) => c.symbol === newVal || c.name === newVal);
+                      if (found && found.exchange_rate) {
+                        setCustomConversionRate(found.exchange_rate);
+                      } else if (newVal === "SAR" || newVal?.includes("سعودي")) {
+                        setCustomConversionRate(4);
+                      }
+                    }}
+                    className="flex h-11 w-full rounded-xl border border-emerald-300 bg-white dark:bg-slate-800 px-3.5 py-2 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
                   >
                     {allCurrenciesList.map((c: any) => {
                       const valueKey = c.symbol || c.name;
@@ -379,9 +438,73 @@ export default function Settings() {
                     })}
                   </select>
 
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed pt-0.5">
-                    💡 عند اختيار العملة وحفظ الإعدادات، يتم اعتماد عملة النظام المختارة لتكون الرئيسية بحيث يتم عرض وتحويل البيانات المالية والتقارير ولوحات القيادة للعملة الرئيسية المختارة بشكل دقيق.
-                  </p>
+                  {/* Exchange rate input and live calculation */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600" />
+                        سعر الصرف أو معامل التحويل مقابل الريال اليمني:
+                      </label>
+                      <Input
+                        type="number"
+                        step="any"
+                        value={customConversionRate}
+                        onChange={e => setCustomConversionRate(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="مثال: 4 أو 250 للريال السعودي"
+                        className="bg-white dark:bg-slate-800 font-mono font-bold text-emerald-800 dark:text-emerald-300 border-emerald-300 h-9 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        ملاحظة: يمكنك إدخال 4 (معامل الألف) أو 250 (سعر صرف السعودي مقابل اليمني).
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-white dark:bg-slate-800/80 rounded-xl border border-emerald-200 dark:border-emerald-800/40 flex flex-col justify-between">
+                      <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                        <span>معاينة حية لمصارفة الأرصدة:</span>
+                        <Badge className="bg-emerald-600 text-white text-[10px] py-0">آلي ودقيق</Badge>
+                      </div>
+                      <div className="flex items-center justify-between font-mono font-bold text-xs pt-1">
+                        <span className="text-slate-600 line-through">
+                          {(1000000).toLocaleString("ar-SA")} ريال يمني
+                        </span>
+                        <span className="text-emerald-600 font-black">➔</span>
+                        <span className="text-emerald-700 dark:text-emerald-300 text-sm">
+                          {(() => {
+                            const target = (form.currency || "SAR").toUpperCase();
+                            const r = Number(customConversionRate) || 4;
+                            let res = 4000;
+                            if (target.includes("SAR") || target.includes("سعودي")) {
+                              if (r <= 20) res = Math.round(1000000 * (r / 1000));
+                              else if (r >= 50) res = Math.round(1000000 / r);
+                              else res = Math.round(1000000 * r);
+                            } else if (target.includes("USD") || target.includes("دولار")) {
+                              if (r <= 20) res = Math.round(1000000 * (r / 1000));
+                              else if (r >= 50) res = Math.round(1000000 / r);
+                              else res = Math.round(1000000 * r);
+                            }
+                            return `${res.toLocaleString("ar-SA")} ${form.currency || "SAR"}`;
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t border-emerald-200 dark:border-emerald-800/40">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                      💡 عند حفظ الإعدادات، يتم مصارفة وتحويل كافة أموال الخزائن والصناديق وعرض بيانات لوحة القيادة والمؤشرات بالعملة الرئيسية المختارة فورياً.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleInstantConvertBalances}
+                      disabled={isConvertingBalances}
+                      className="text-xs font-bold border-emerald-400 text-emerald-800 hover:bg-emerald-50 shrink-0 h-8"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ml-1.5 ${isConvertingBalances ? "animate-spin" : ""}`} />
+                      {isConvertingBalances ? "جاري التحويل..." : "مصارفة الأرصدة الآن"}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-1">

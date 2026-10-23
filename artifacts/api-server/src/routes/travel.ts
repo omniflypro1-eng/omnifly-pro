@@ -5,6 +5,7 @@ import { recordAuditLog } from "./audit";
 import { triggerTravelNotificationEvent, applyPassengerWhatsAppAutomation } from "./travel-notifications";
 import { getCustomerAccountCode, getSupplierAccountCode } from "./customers";
 import { getBusinessDate } from "../lib/business-day";
+import { getSystemPrimaryCurrency, convertCurrency } from "../lib/currency-converter";
 
 const router = Router();
 
@@ -3473,29 +3474,32 @@ router.get("/travel/customer-profile/:id", (req, res) => {
 router.get("/travel/dashboard-stats", (_req, res) => {
   const today = getBusinessDate("travel");
   const monthStart = today.slice(0, 7) + "-01";
+  const primaryCurrency = getSystemPrimaryCurrency();
 
-  // Today sales
-  const todaySalesRow = db.prepare(`
-    SELECT COALESCE(SUM(selling_price), 0) as total, COALESCE(SUM(commission), 0) as comm, COUNT(*) as cnt
-    FROM travel_bookings WHERE issue_date = ?
-  `).get(today) as any;
+  // 1. Safe and Bank Balances converted to primary currency
+  const activeSafes = db.prepare("SELECT balance, currency FROM safes WHERE active=1").all() as any[];
+  const totalSafeBalance = activeSafes.reduce((sum, s) => {
+    return sum + convertCurrency(s.balance || 0, s.currency || primaryCurrency, primaryCurrency);
+  }, 0);
 
-  // Month sales
-  const monthSalesRow = db.prepare(`
-    SELECT COALESCE(SUM(selling_price), 0) as total, COALESCE(SUM(commission), 0) as comm, COUNT(*) as cnt
-    FROM travel_bookings WHERE issue_date >= ?
-  `).get(monthStart) as any;
+  // 2. Today sales & bookings converted to primary currency
+  const todayBookings = db.prepare("SELECT selling_price, commission, currency FROM travel_bookings WHERE issue_date = ?").all() as any[];
+  const todaySales = todayBookings.reduce((sum, b) => sum + convertCurrency(b.selling_price || 0, b.currency || primaryCurrency, primaryCurrency), 0);
+  const todayCommission = todayBookings.reduce((sum, b) => sum + convertCurrency(b.commission || 0, b.currency || primaryCurrency, primaryCurrency), 0);
 
-  // Expenses
-  const monthExpRow = db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) as total
-    FROM expenses WHERE expense_date >= ?
-  `).get(monthStart) as any;
+  // 3. Month sales & commission converted to primary currency
+  const monthBookings = db.prepare("SELECT selling_price, commission, currency FROM travel_bookings WHERE issue_date >= ?").all() as any[];
+  const monthSales = monthBookings.reduce((sum, b) => sum + convertCurrency(b.selling_price || 0, b.currency || primaryCurrency, primaryCurrency), 0);
+  const monthCommission = monthBookings.reduce((sum, b) => sum + convertCurrency(b.commission || 0, b.currency || primaryCurrency, primaryCurrency), 0);
 
-  // Safe and Bank Balances
-  const safes = db.prepare("SELECT COALESCE(SUM(balance), 0) as total FROM safes WHERE active=1").get() as any;
+  // 4. Expenses converted to primary currency
+  let monthExpensesTotal = 0;
+  try {
+    const monthExpenses = db.prepare("SELECT amount, currency FROM expenses WHERE expense_date >= ?").all() as any[];
+    monthExpensesTotal = monthExpenses.reduce((sum, e) => sum + convertCurrency(e.amount || 0, e.currency || primaryCurrency, primaryCurrency), 0);
+  } catch {}
 
-  // Travel & Service Counts
+  // 5. Travel & Service Counts
   const ticketCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_bookings WHERE service_type='flight' AND status='issued'").get() as any;
   const cancelledTicketCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_bookings WHERE status='cancelled'").get() as any;
   const visaCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_visas").get() as any;
@@ -3519,18 +3523,29 @@ router.get("/travel/dashboard-stats", (_req, res) => {
     } catch (e2) {}
   }
 
-  // Due from customers & Due to suppliers
-  const customerDebts = db.prepare("SELECT COALESCE(SUM(selling_price), 0) as total FROM travel_bookings WHERE payment_status='unpaid' OR payment_status='partial'").get() as any;
+  // 6. Due from customers converted to primary currency
+  const debtBookings = db.prepare("SELECT selling_price, currency FROM travel_bookings WHERE payment_status='unpaid' OR payment_status='partial'").all() as any[];
+  const customerDebts = debtBookings.reduce((sum, b) => sum + convertCurrency(b.selling_price || 0, b.currency || primaryCurrency, primaryCurrency), 0);
 
-  // Recharts: Sales by Airline
-  const airlineStats = db.prepare(`
-    SELECT airline_supplier as name, COUNT(*) as count, SUM(selling_price) as value
+  // 7. Recharts: Sales by Airline converted to primary currency
+  const rawAirlineStats = db.prepare(`
+    SELECT airline_supplier as name, selling_price, currency
     FROM travel_bookings
     WHERE airline_supplier IS NOT NULL AND airline_supplier != ''
-    GROUP BY airline_supplier ORDER BY value DESC LIMIT 6
-  `).all();
+  `).all() as any[];
+  const airlineMap = new Map<string, { count: number; value: number }>();
+  for (const b of rawAirlineStats) {
+    const curVal = airlineMap.get(b.name) || { count: 0, value: 0 };
+    curVal.count += 1;
+    curVal.value += convertCurrency(b.selling_price || 0, b.currency || primaryCurrency, primaryCurrency);
+    airlineMap.set(b.name, curVal);
+  }
+  const airlineStats = Array.from(airlineMap.entries())
+    .map(([name, d]) => ({ name, count: d.count, value: Math.round(d.value * 100) / 100 }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
 
-  // Recharts: Top Destinations
+  // 8. Recharts: Top Destinations
   const destStats = db.prepare(`
     SELECT destination_city as name, COUNT(*) as count
     FROM travel_bookings
@@ -3538,15 +3553,26 @@ router.get("/travel/dashboard-stats", (_req, res) => {
     GROUP BY destination_city ORDER BY count DESC LIMIT 6
   `).all();
 
-  // Recharts: Sales by Service Type
-  const serviceTypeStats = db.prepare(`
-    SELECT service_type as name, SUM(selling_price) as value, COUNT(*) as count
+  // 9. Recharts: Sales by Service Type converted to primary currency
+  const rawServiceStats = db.prepare(`
+    SELECT service_type as name, selling_price, currency
     FROM travel_bookings
-    GROUP BY service_type
-  `).all();
+  `).all() as any[];
+  const serviceMap = new Map<string, { count: number; value: number }>();
+  for (const b of rawServiceStats) {
+    const sName = b.name || "أخرى";
+    const curVal = serviceMap.get(sName) || { count: 0, value: 0 };
+    curVal.count += 1;
+    curVal.value += convertCurrency(b.selling_price || 0, b.currency || primaryCurrency, primaryCurrency);
+    serviceMap.set(sName, curVal);
+  }
+  const serviceTypeStats = Array.from(serviceMap.entries()).map(([name, d]) => ({
+    name,
+    count: d.count,
+    value: Math.round(d.value * 100) / 100
+  }));
 
   // Smart Alerts
-  // 1. Expiring Passports (within 6 months)
   const expiringPassports = db.prepare(`
     SELECT id, name_ar, passport_number, passport_expiry_date
     FROM travel_passengers
@@ -3554,7 +3580,6 @@ router.get("/travel/dashboard-stats", (_req, res) => {
     LIMIT 10
   `).all();
 
-  // 2. Visas Under Process
   const pendingVisas = db.prepare(`
     SELECT v.*, c.name as customer_name, p.name_ar as passenger_name
     FROM travel_visas v
@@ -3563,7 +3588,6 @@ router.get("/travel/dashboard-stats", (_req, res) => {
     WHERE v.status = 'under_process' OR v.status = 'pending_docs'
   `).all();
 
-  // 3. Upcoming Flight Departures (Next 7 days)
   const upcomingFlights = db.prepare(`
     SELECT b.*, c.name as customer_name, p.name_ar as passenger_name
     FROM travel_bookings b
@@ -3573,14 +3597,15 @@ router.get("/travel/dashboard-stats", (_req, res) => {
   `).all();
 
   res.json({
+    primaryCurrency,
     kpis: {
-      todaySales: todaySalesRow?.total || 0,
-      todayBookings: todaySalesRow?.cnt || 0,
-      monthSales: monthSalesRow?.total || 0,
-      monthCommission: monthSalesRow?.comm || 0,
-      netProfit: (monthSalesRow?.comm || 0) - (monthExpRow?.total || 0),
-      monthExpenses: monthExpRow?.total || 0,
-      safeBalance: safes?.total || 0,
+      todaySales: Math.round(todaySales * 100) / 100,
+      todayBookings: todayBookings.length,
+      monthSales: Math.round(monthSales * 100) / 100,
+      monthCommission: Math.round(monthCommission * 100) / 100,
+      netProfit: Math.round((monthCommission - monthExpensesTotal) * 100) / 100,
+      monthExpenses: Math.round(monthExpensesTotal * 100) / 100,
+      safeBalance: Math.round(totalSafeBalance * 100) / 100,
       issuedTickets: ticketCount?.cnt || 0,
       cancelledTickets: cancelledTicketCount?.cnt || 0,
       visaTransactions: visaCount?.cnt || 0,
@@ -3589,7 +3614,7 @@ router.get("/travel/dashboard-stats", (_req, res) => {
       passengersCount: passengerCount?.cnt || 0,
       busBookingsCount: busCount?.cnt || 0,
       refundsCount: refundCount?.cnt || 0,
-      customerDebts: customerDebts?.total || 0
+      customerDebts: Math.round(customerDebts * 100) / 100
     },
     charts: {
       airlineStats,
