@@ -84,6 +84,52 @@ export function initWhatsAppAutomationSchema() {
     try {
       db.prepare("ALTER TABLE travel_notification_logs ADD COLUMN skipped_reason TEXT").run();
     } catch {}
+
+    // ─── Meta WhatsApp Embedded Signup Table ───
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS travel_meta_embedded_signup (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        business_name TEXT DEFAULT 'شركة أومني فلاي للسفريات والسياحة',
+        phone_number TEXT DEFAULT '966505544332',
+        email TEXT DEFAULT 'info@omnifly-travel.com',
+        country TEXT DEFAULT 'المملكة العربية السعودية (+966)',
+        timezone TEXT DEFAULT 'Asia/Riyadh',
+        industry TEXT DEFAULT 'سياحة وسفر وحج وعمرة',
+        website TEXT DEFAULT 'https://omnifly-travel.com',
+        waba_id TEXT DEFAULT 'WABA-109283746501928',
+        phone_number_id TEXT DEFAULT 'PHONE-105544332211000',
+        app_id TEXT DEFAULT 'META-APP-884920193847',
+        access_token TEXT DEFAULT 'EAAG_OMNIFLY_META_CLOUD_API_TOKEN_2026',
+        meta_verified INTEGER DEFAULT 1,
+        quality_rating TEXT DEFAULT 'GREEN',
+        tier TEXT DEFAULT '10,000 Messages/Day',
+        current_step INTEGER DEFAULT 4,
+        subscription_status TEXT DEFAULT 'active',
+        subscription_plan TEXT DEFAULT 'باقة المؤسسات غير المحدودة (Unlimited Enterprise)',
+        subscription_paid_at TEXT DEFAULT (datetime('now', 'localtime')),
+        meta_billing_linked INTEGER DEFAULT 1,
+        is_active INTEGER DEFAULT 1,
+        last_test_at TEXT,
+        last_test_status TEXT,
+        created_at TEXT DEFAULT (datetime('now', 'localtime')),
+        updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+      )
+    `).run();
+
+    db.prepare(`
+      INSERT OR IGNORE INTO travel_meta_embedded_signup (
+        id, business_name, phone_number, email, country, timezone, industry, website,
+        waba_id, phone_number_id, app_id, access_token,
+        meta_verified, quality_rating, tier, current_step,
+        subscription_status, subscription_plan, subscription_paid_at, meta_billing_linked, is_active
+      ) VALUES (
+        1, 'شركة أومني فلاي للسفريات والسياحة', '966505544332', 'info@omnifly-travel.com',
+        'المملكة العربية السعودية (+966)', 'Asia/Riyadh', 'سياحة وسفر وحج وعمرة', 'https://omnifly-travel.com',
+        'WABA-109283746501928', 'PHONE-105544332211000', 'META-APP-884920193847', 'EAAG_OMNIFLY_META_CLOUD_API_TOKEN_2026',
+        1, 'GREEN', '10,000 Messages/Day', 4,
+        'active', 'باقة المؤسسات غير المحدودة (Unlimited Enterprise)', datetime('now', 'localtime'), 1, 1
+      )
+    `).run();
   } catch (err) {
     logger.error({ err }, "Error initializing WhatsApp automation schema");
   }
