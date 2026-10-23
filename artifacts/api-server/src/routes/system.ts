@@ -1,6 +1,14 @@
 import { Router } from "express";
 import { db, logAudit } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
+import {
+  getConversionMultiplier,
+  convertCurrency,
+  getCurrencyDecimals,
+  getCurrencyFractionName,
+  formatCurrencyAmount,
+  STANDARD_CURRENCIES_META
+} from "../lib/currency-converter";
 
 const router = Router();
 
@@ -43,11 +51,11 @@ router.get("/system/backup", (req, res) => {
 });
 
 // ────────────────────────────────────────────────────────
-// CURRENCIES MANAGEMENT ENDPOINTS
+// CURRENCIES MANAGEMENT & CONVERSION ENDPOINTS
 // ────────────────────────────────────────────────────────
 router.get("/currencies", (req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM currencies ORDER BY id").all();
+    const rows = db.prepare("SELECT * FROM currencies ORDER BY type DESC, id ASC").all();
     res.json(rows);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -57,20 +65,41 @@ router.get("/currencies", (req, res) => {
 router.post("/currencies", (req, res) => {
   if (!requireAdmin(req, res)) return;
   const user = getAuthUser(req);
-  const { name, symbol, fraction, type, exchange_rate, active } = req.body;
+  const { name, symbol, fraction, decimal_places, flag, type, exchange_rate, active } = req.body;
   if (!name || !symbol || !type) {
-    res.status(400).json({ error: "بيانات ناقصة" });
+    res.status(400).json({ error: "بيانات العملة ناقصة، يرجى ملء الاسم والرمز والنوع" });
     return;
   }
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const meta = STANDARD_CURRENCIES_META[cleanSymbol];
+  const finalFraction = fraction || meta?.fraction || "هللة";
+  const finalDecimals = decimal_places !== undefined ? Number(decimal_places) : (meta?.decimals ?? 2);
+  const finalFlag = flag || meta?.flag || "🌐";
+  const numRate = Number(exchange_rate) > 0 ? Number(exchange_rate) : 1.0;
+
   try {
+    // If setting as local currency, enforce exclusivity (all others become foreign)
+    if (type === "local") {
+      db.prepare("UPDATE currencies SET type = 'foreign'").run();
+    }
+
     const stmt = db.prepare(`
-      INSERT INTO currencies (name, symbol, fraction, type, exchange_rate, active)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO currencies (name, symbol, fraction, decimal_places, flag, type, exchange_rate, active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(name, symbol, fraction || null, type, exchange_rate || 1.0, active !== false ? 1 : 0);
+    const result = stmt.run(
+      name.trim(),
+      cleanSymbol,
+      finalFraction,
+      finalDecimals,
+      finalFlag,
+      type,
+      type === "local" ? 1.0 : numRate,
+      active !== false ? 1 : 0
+    );
     const row = db.prepare("SELECT * FROM currencies WHERE id = ?").get(result.lastInsertRowid);
     
-    logAudit(user.id, user.name, "إضافة عملة", `تم إضافة عملة جديدة: ${name} (${symbol})`);
+    logAudit(user.id, user.name, "إضافة عملة", `تم إضافة عملة جديدة: ${name} (${cleanSymbol}) بسعر صرف (${type === "local" ? 1.0 : numRate}) وكسر (${finalFraction})`);
     res.status(201).json(row);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -80,28 +109,41 @@ router.post("/currencies", (req, res) => {
 router.put("/currencies/:id", (req, res) => {
   if (!requireAdmin(req, res)) return;
   const user = getAuthUser(req);
-  const { name, symbol, fraction, type, exchange_rate, active } = req.body;
+  const { name, symbol, fraction, decimal_places, flag, type, exchange_rate, active } = req.body;
   try {
     const existing = db.prepare("SELECT * FROM currencies WHERE id = ?").get(req.params.id) as any;
     if (!existing) {
       res.status(404).json({ error: "العملة غير موجودة" });
       return;
     }
+
+    const targetType = type ?? existing.type;
+    // If setting as local currency, all other currencies become foreign
+    if (targetType === "local" && existing.type !== "local") {
+      db.prepare("UPDATE currencies SET type = 'foreign' WHERE id != ?").run(req.params.id);
+    }
+
+    const cleanSymbol = symbol ? symbol.trim().toUpperCase() : existing.symbol;
+    const numRate = targetType === "local" ? 1.0 : (exchange_rate !== undefined ? Number(exchange_rate) : existing.exchange_rate);
+    const numDecimals = decimal_places !== undefined ? Number(decimal_places) : (existing.decimal_places ?? 2);
+
     db.prepare(`
       UPDATE currencies
-      SET name = ?, symbol = ?, fraction = ?, type = ?, exchange_rate = ?, active = ?
+      SET name = ?, symbol = ?, fraction = ?, decimal_places = ?, flag = ?, type = ?, exchange_rate = ?, active = ?
       WHERE id = ?
     `).run(
       name ?? existing.name,
-      symbol ?? existing.symbol,
+      cleanSymbol,
       fraction !== undefined ? fraction : existing.fraction,
-      type ?? existing.type,
-      exchange_rate ?? existing.exchange_rate,
+      numDecimals,
+      flag !== undefined ? flag : existing.flag,
+      targetType,
+      numRate,
       active !== undefined ? (active ? 1 : 0) : existing.active,
       req.params.id
     );
     const updated = db.prepare("SELECT * FROM currencies WHERE id = ?").get(req.params.id);
-    logAudit(user.id, user.name, "تعديل عملة", `تم تعديل عملة: ${name || existing.name}`);
+    logAudit(user.id, user.name, "تعديل عملة", `تم تعديل العملة: ${name || existing.name} (${cleanSymbol})، سعر الصرف: ${numRate}`);
     res.json(updated);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -117,11 +159,48 @@ router.delete("/currencies/:id", (req, res) => {
       res.status(404).json({ error: "العملة غير موجودة" });
       return;
     }
+    if (existing.type === "local") {
+      res.status(400).json({ error: "لا يمكن حذف العملة المحلية الأساسية للنظام" });
+      return;
+    }
     db.prepare("DELETE FROM currencies WHERE id = ?").run(req.params.id);
     logAudit(user.id, user.name, "حذف عملة", `تم حذف عملة: ${existing.name}`);
     res.status(204).send();
   } catch (e: any) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Real-time International Currency Conversion Calculator Endpoint
+router.post("/currencies/convert", (req, res) => {
+  try {
+    const { amount, fromCurrency, toCurrency, customRate } = req.body || {};
+    const numAmount = Number(amount) || 0;
+    const from = String(fromCurrency || "YER");
+    const to = String(toCurrency || "SAR");
+    const rate = customRate !== undefined && customRate !== "" ? Number(customRate) : undefined;
+
+    const multiplier = getConversionMultiplier(from, to, rate);
+    const convertedAmount = convertCurrency(numAmount, from, to, rate);
+    const formatted = formatCurrencyAmount(convertedAmount, to);
+    const toDecimals = getCurrencyDecimals(to);
+    const toFraction = getCurrencyFractionName(to);
+
+    res.json({
+      amount: numAmount,
+      fromCurrency: from,
+      toCurrency: to,
+      multiplier,
+      reverseMultiplier: multiplier > 0 ? Math.round((1.0 / multiplier) * 100000) / 100000 : 0,
+      convertedAmount,
+      decimals: toDecimals,
+      fractionName: toFraction,
+      formattedText: formatted.formatted,
+      spelledText: formatted.spelled,
+      formula: `${numAmount.toLocaleString("ar-SA")} ${from} × ${multiplier} = ${convertedAmount.toLocaleString("ar-SA")} ${to}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "فشل التحويل الحسابي", message: err?.message });
   }
 });
 
