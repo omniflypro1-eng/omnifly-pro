@@ -202,8 +202,8 @@
     box-sizing: border-box !important;
   }
 
-  /* منطقة طباعة مستندات A4 (كشوفات الحسابات والسندات) */
-  .a4-print-container, #printable-statement, #printable-voucher {
+  /* منطقة طباعة مستندات A4 (كشوفات الحسابات والسندات وبرامج الرحلات) */
+  .a4-print-container, #printable-statement, #printable-voucher, #printable-package {
     display: block !important;
     visibility: visible !important;
     position: absolute !important;
@@ -218,7 +218,7 @@
     box-sizing: border-box !important;
   }
 
-  .a4-print-container *, #printable-statement *, #printable-voucher * {
+  .a4-print-container *, #printable-statement *, #printable-voucher *, #printable-package * {
     visibility: visible !important;
   }
 
