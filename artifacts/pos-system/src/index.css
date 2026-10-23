@@ -847,4 +847,18 @@
   }
 }
 
+/* ─── Mobile Responsiveness Enhancements ─────── */
+@media (max-width: 768px) {
+  .table-responsive-wrapper,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  text-size-adjust: 100%;
+}
+
+
 
