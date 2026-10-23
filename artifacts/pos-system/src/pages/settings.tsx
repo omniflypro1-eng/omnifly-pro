@@ -45,9 +45,9 @@ export default function Settings() {
   // Combine DB currencies with standard defaults
   const allCurrenciesList = useMemo(() => {
     const defaultCurrenciesList = [
-      { id: "sar", name: "ريال سعودي", symbol: "SAR", type: "local", exchange_rate: 1.0 },
-      { id: "usd", name: "دولار أمريكي", symbol: "USD", type: "foreign", exchange_rate: 3.75 },
-      { id: "yer", name: "ريال يمني", symbol: "YER", type: "foreign", exchange_rate: 0.00263 },
+      { id: "yer", name: "ريال يمني", symbol: "YER", type: "local", exchange_rate: 1.0 },
+      { id: "sar", name: "ريال سعودي", symbol: "SAR", type: "foreign", exchange_rate: 5.0 },
+      { id: "usd", name: "دولار أمريكي", symbol: "USD", type: "foreign", exchange_rate: 1.88 },
       { id: "aed", name: "درهم إماراتي", symbol: "AED", type: "foreign", exchange_rate: 1.02 },
       { id: "eur", name: "يورو أوروبي", symbol: "EUR", type: "foreign", exchange_rate: 4.10 },
       { id: "kwd", name: "دينار كويتي", symbol: "KWD", type: "foreign", exchange_rate: 12.25 },
@@ -150,7 +150,7 @@ export default function Settings() {
       if (cur && cur.exchange_rate) {
         setCustomConversionRate(cur.exchange_rate);
       } else if (settings.currency === "SAR" || settings.currency?.includes("سعودي")) {
-        setCustomConversionRate(4);
+        setCustomConversionRate(5);
       }
     }
   }, [settings, allCurrenciesList]);
@@ -423,7 +423,9 @@ export default function Settings() {
                       if (found && found.exchange_rate) {
                         setCustomConversionRate(found.exchange_rate);
                       } else if (newVal === "SAR" || newVal?.includes("سعودي")) {
-                        setCustomConversionRate(4);
+                        setCustomConversionRate(5);
+                      } else if (newVal === "YER" || newVal?.includes("يمني")) {
+                        setCustomConversionRate(1);
                       }
                     }}
                     className="flex h-11 w-full rounded-xl border border-emerald-300 bg-white dark:bg-slate-800 px-3.5 py-2 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
@@ -450,11 +452,11 @@ export default function Settings() {
                         step="any"
                         value={customConversionRate}
                         onChange={e => setCustomConversionRate(e.target.value === "" ? "" : Number(e.target.value))}
-                        placeholder="مثال: 4 أو 250 للريال السعودي"
+                        placeholder="مثال: 5 أو 4 أو 200/250 للريال السعودي"
                         className="bg-white dark:bg-slate-800 font-mono font-bold text-emerald-800 dark:text-emerald-300 border-emerald-300 h-9 text-sm"
                       />
                       <p className="text-[10px] text-muted-foreground">
-                        ملاحظة: يمكنك إدخال 4 (معامل الألف) أو 250 (سعر صرف السعودي مقابل اليمني).
+                        ملاحظة: يمكنك إدخال 5 أو 4 (معامل الألف) أو 200/250 (سعر صرف السعودي مقابل اليمني).
                       </p>
                     </div>
 
@@ -471,9 +473,11 @@ export default function Settings() {
                         <span className="text-emerald-700 dark:text-emerald-300 text-sm">
                           {(() => {
                             const target = (form.currency || "SAR").toUpperCase();
-                            const r = Number(customConversionRate) || 4;
-                            let res = 4000;
-                            if (target.includes("SAR") || target.includes("سعودي")) {
+                            const r = Number(customConversionRate) || 5;
+                            let res = 1000000;
+                            if (target.includes("YER") || target.includes("يمني")) {
+                              return `${(1000000).toLocaleString("ar-SA")} ريال يمني (العملة الأساسية)`;
+                            } else if (target.includes("SAR") || target.includes("سعودي")) {
                               if (r <= 20) res = Math.round(1000000 * (r / 1000));
                               else if (r >= 50) res = Math.round(1000000 / r);
                               else res = Math.round(1000000 * r);
@@ -481,6 +485,8 @@ export default function Settings() {
                               if (r <= 20) res = Math.round(1000000 * (r / 1000));
                               else if (r >= 50) res = Math.round(1000000 / r);
                               else res = Math.round(1000000 * r);
+                            } else {
+                              res = Math.round(1000000 * r);
                             }
                             return `${res.toLocaleString("ar-SA")} ${form.currency || "SAR"}`;
                           })()}

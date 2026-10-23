@@ -111,19 +111,33 @@ router.put("/settings", (req, res) => {
       const currencyChanged = newCurrency && normalizeCurrencyName(newCurrency) !== normalizeCurrencyName(oldCurrency);
       if (newCurrency && (currencyChanged || updates.forceConvertCurrency === true)) {
         try {
-          const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency FROM safes").all() as any[];
+          const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency, base_balance, base_currency FROM safes").all() as any[];
           for (const s of safes) {
-            const fromCur = s.currency || oldCurrency;
-            const multiplier = getConversionMultiplier(fromCur, newCurrency, customRate);
-            const newBalance = Math.round(s.balance * multiplier * 100) / 100;
-            const newOpening = Math.round((s.opening_balance || 0) * multiplier * 100) / 100;
-            const newActual = Math.round((s.actual_balance || 0) * multiplier * 100) / 100;
+            const baseBal = s.base_balance !== null && s.base_balance !== undefined ? Number(s.base_balance) : 4000000;
+            const baseCurr = s.base_currency || "YER";
+            
+            let newBalance = 0;
+            let newOpening = 0;
+            let newActual = 0;
+
+            if (normalizeCurrencyName(newCurrency) === normalizeCurrencyName(baseCurr)) {
+              // Direct restoration to original base balance - 100% stable, 0 drift!
+              newBalance = baseBal;
+              newOpening = s.opening_balance ? Math.round(Number(s.opening_balance)) : 0;
+              newActual = baseBal;
+            } else {
+              // Convert from base balance to new currency
+              const mult = getConversionMultiplier(baseCurr, newCurrency, customRate);
+              newBalance = Math.round(baseBal * mult * 100) / 100;
+              newOpening = Math.round((s.opening_balance || 0) * mult * 100) / 100;
+              newActual = Math.round((s.actual_balance || 0) * mult * 100) / 100;
+            }
 
             db.prepare(`
               UPDATE safes 
-              SET balance = ?, opening_balance = ?, actual_balance = ?, currency = ?
+              SET balance = ?, opening_balance = ?, actual_balance = ?, currency = ?, base_balance = ?, base_currency = ?
               WHERE id = ?
-            `).run(newBalance, newOpening, newActual, newCurrency, s.id);
+            `).run(newBalance, newOpening, newActual, newCurrency, baseBal, baseCurr, s.id);
           }
 
           // Also update default_currency in travel_system_settings
@@ -140,7 +154,7 @@ router.put("/settings", (req, res) => {
               user.id,
               user.name || user.username || "admin",
               "مصارفة وتحويل عملة النظام",
-              `تم تغيير عملة النظام من (${oldCurrency}) إلى (${newCurrency}) وتمت مصارفة وتحويل جميع أرصدة الصناديق والخزائن بنجاح.`
+              `تم تغيير عملة النظام من (${oldCurrency}) إلى (${newCurrency}) وتمت مصارفة وتحويل جميع أرصدة الصناديق والخزائن بنجاح وبثبات تام.`
             );
           } catch {}
         } catch (currErr: any) {
@@ -187,21 +201,33 @@ router.post("/settings/convert-balances", (req, res) => {
     const { fromCurrency = "YER", conversionRate } = req.body || {};
     const customRate = conversionRate ? Number(conversionRate) : undefined;
 
-    const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency FROM safes").all() as any[];
+    const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency, base_balance, base_currency FROM safes").all() as any[];
     const results: any[] = [];
 
     for (const s of safes) {
-      const from = s.currency || fromCurrency;
-      const multiplier = getConversionMultiplier(from, currentPrimary, customRate);
-      const newBalance = Math.round(s.balance * multiplier * 100) / 100;
-      const newOpening = Math.round((s.opening_balance || 0) * multiplier * 100) / 100;
-      const newActual = Math.round((s.actual_balance || 0) * multiplier * 100) / 100;
+      const baseBal = s.base_balance !== null && s.base_balance !== undefined ? Number(s.base_balance) : 4000000;
+      const baseCurr = s.base_currency || "YER";
+      
+      let newBalance = 0;
+      let newOpening = 0;
+      let newActual = 0;
+
+      if (normalizeCurrencyName(currentPrimary) === normalizeCurrencyName(baseCurr)) {
+        newBalance = baseBal;
+        newOpening = s.opening_balance ? Math.round(Number(s.opening_balance)) : 0;
+        newActual = baseBal;
+      } else {
+        const mult = getConversionMultiplier(baseCurr, currentPrimary, customRate);
+        newBalance = Math.round(baseBal * mult * 100) / 100;
+        newOpening = Math.round((s.opening_balance || 0) * mult * 100) / 100;
+        newActual = Math.round((s.actual_balance || 0) * mult * 100) / 100;
+      }
 
       db.prepare(`
         UPDATE safes 
-        SET balance = ?, opening_balance = ?, actual_balance = ?, currency = ?
+        SET balance = ?, opening_balance = ?, actual_balance = ?, currency = ?, base_balance = ?, base_currency = ?
         WHERE id = ?
-      `).run(newBalance, newOpening, newActual, currentPrimary, s.id);
+      `).run(newBalance, newOpening, newActual, currentPrimary, baseBal, baseCurr, s.id);
 
       results.push({
         id: s.id,

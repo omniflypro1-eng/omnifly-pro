@@ -130,45 +130,50 @@ export function getConversionMultiplier(
   const toRecord = currencies.find(c => normalizeCurrencyName(c.symbol) === to || normalizeCurrencyName(c.name) === to);
 
   // 1. YER <-> SAR
-  if (from === "YER" && to === "SAR") {
-    const rate = customRate || toRecord?.exchange_rate || 4.0;
+  if ((from === "YER" && to === "SAR") || (from === "SAR" && to === "YER")) {
+    const sarRecord = (from === "SAR" ? fromRecord : toRecord) || currencies.find(c => normalizeCurrencyName(c.symbol) === "SAR");
+    let rate = Number(sarRecord?.exchange_rate) || 5.0;
+    // Only use customRate if it is a meaningful exchange rate and not 1.0 (trivial local currency rate)
+    if (customRate && customRate > 0 && customRate !== 1.0) {
+      rate = customRate;
+    }
+    let yerToSar = 0.005; // default 5 SAR per 1,000 YER (or 1 SAR = 200 YER)
     if (rate <= 20) {
-      // In Yemen: Rate '4' means 4 SAR per 1,000 YER (1,000,000 * 4 / 1000 = 4,000 SAR)
-      return rate / 1000.0;
+      yerToSar = rate / 1000.0;
+    } else if (rate >= 50) {
+      yerToSar = 1.0 / rate;
+    } else if (rate < 0.1) {
+      yerToSar = rate;
     }
-    if (rate >= 50) {
-      // In Yemen: Rate '250' means 250 YER per 1 SAR (1,000,000 / 250 = 4,000 SAR)
-      return 1.0 / rate;
-    }
-    return rate; // e.g. 0.004
-  }
 
-  if (from === "SAR" && to === "YER") {
-    const rate = customRate || fromRecord?.exchange_rate || 4.0;
-    if (rate <= 20) {
-      // In Yemen: 4,000 SAR * 1000 / 4 = 1,000,000 YER
-      return 1000.0 / rate;
+    if (from === "YER" && to === "SAR") {
+      return yerToSar;
+    } else {
+      return 1.0 / yerToSar;
     }
-    if (rate >= 50) {
-      // In Yemen: 4,000 SAR * 250 = 1,000,000 YER
-      return rate;
-    }
-    return 1.0 / rate;
   }
 
   // 2. YER <-> USD
-  if (from === "YER" && to === "USD") {
-    const rate = customRate || toRecord?.exchange_rate || 1.88;
-    if (rate <= 20) return rate / 1000.0;
-    if (rate >= 50) return 1.0 / rate;
-    return rate;
-  }
+  if ((from === "YER" && to === "USD") || (from === "USD" && to === "YER")) {
+    const usdRecord = (from === "USD" ? fromRecord : toRecord) || currencies.find(c => normalizeCurrencyName(c.symbol) === "USD");
+    let rate = Number(usdRecord?.exchange_rate) || 1.88;
+    if (customRate && customRate > 0 && customRate !== 1.0) {
+      rate = customRate;
+    }
+    let yerToUsd = 1.88 / 1000.0;
+    if (rate <= 20) {
+      yerToUsd = rate / 1000.0;
+    } else if (rate >= 50) {
+      yerToUsd = 1.0 / rate;
+    } else if (rate < 0.1) {
+      yerToUsd = rate;
+    }
 
-  if (from === "USD" && to === "YER") {
-    const rate = customRate || fromRecord?.exchange_rate || 1.88;
-    if (rate <= 20) return 1000.0 / rate;
-    if (rate >= 50) return rate;
-    return 1.0 / rate;
+    if (from === "YER" && to === "USD") {
+      return yerToUsd;
+    } else {
+      return 1.0 / yerToUsd;
+    }
   }
 
   // 3. International Pegged & Free Floating Exchange Rates

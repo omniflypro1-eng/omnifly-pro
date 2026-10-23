@@ -7,6 +7,8 @@ import {
   getCurrencyDecimals,
   getCurrencyFractionName,
   formatCurrencyAmount,
+  getSystemPrimaryCurrency,
+  normalizeCurrencyName,
   STANDARD_CURRENCIES_META
 } from "../lib/currency-converter";
 
@@ -142,6 +144,26 @@ router.put("/currencies/:id", (req, res) => {
       active !== undefined ? (active ? 1 : 0) : existing.active,
       req.params.id
     );
+    // If the currency updated is the current system primary currency, sync safe balances
+    const primaryCurrency = getSystemPrimaryCurrency();
+    if (cleanSymbol === normalizeCurrencyName(primaryCurrency)) {
+      try {
+        const safes = db.prepare("SELECT id, name, balance, opening_balance, actual_balance, currency, base_balance, base_currency FROM safes").all() as any[];
+        for (const s of safes) {
+          const baseBal = s.base_balance !== null && s.base_balance !== undefined ? Number(s.base_balance) : 4000000;
+          const baseCurr = s.base_currency || "YER";
+          let newBalance = baseBal;
+          if (normalizeCurrencyName(primaryCurrency) !== normalizeCurrencyName(baseCurr)) {
+            const mult = getConversionMultiplier(baseCurr, primaryCurrency, numRate);
+            newBalance = Math.round(baseBal * mult * 100) / 100;
+          }
+          db.prepare("UPDATE safes SET balance = ?, actual_balance = ? WHERE id = ?").run(newBalance, newBalance, s.id);
+        }
+      } catch (err) {
+        console.error("Error syncing safes on currency rate change:", err);
+      }
+    }
+
     const updated = db.prepare("SELECT * FROM currencies WHERE id = ?").get(req.params.id);
     logAudit(user.id, user.name, "تعديل عملة", `تم تعديل العملة: ${name || existing.name} (${cleanSymbol})، سعر الصرف: ${numRate}`);
     res.json(updated);

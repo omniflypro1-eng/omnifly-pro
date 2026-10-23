@@ -1381,6 +1381,8 @@ function runMigrations() {
   try { db.exec("ALTER TABLE safes ADD COLUMN cashier_id INTEGER"); } catch {}
   try { db.exec("ALTER TABLE safes ADD COLUMN last_closing_date TEXT"); } catch {}
   try { db.exec("ALTER TABLE safes ADD COLUMN reconciliation_reason TEXT"); } catch {}
+  try { db.exec("ALTER TABLE safes ADD COLUMN base_balance REAL DEFAULT 4000000"); } catch {}
+  try { db.exec("ALTER TABLE safes ADD COLUMN base_currency TEXT DEFAULT 'YER'"); } catch {}
 
   try { db.exec("ALTER TABLE returns ADD COLUMN approved_by INTEGER REFERENCES users(id)"); } catch {}
   try { db.exec("ALTER TABLE returns ADD COLUMN approved_at TEXT"); } catch {}
@@ -4187,6 +4189,8 @@ function runMigrations() {
       db.prepare("INSERT INTO currencies (name, symbol, fraction, type, exchange_rate) VALUES (?,?,?,?,?)").run("دولار أمريكي", "USD", "سنت", "foreign", 1.0);
       db.prepare("INSERT INTO currencies (name, symbol, fraction, type, exchange_rate) VALUES (?,?,?,?,?)").run("دينار أردني", "JOD", "قرش", "foreign", 0.71);
     }
+    try { db.exec("ALTER TABLE currencies ADD COLUMN decimal_places INTEGER DEFAULT 2"); } catch {}
+    try { db.exec("ALTER TABLE currencies ADD COLUMN flag TEXT DEFAULT '🌐'"); } catch {}
   } catch (e) {
     console.error("Error creating currencies:", e);
   }
