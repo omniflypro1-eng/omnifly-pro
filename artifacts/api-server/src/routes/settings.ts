@@ -113,6 +113,83 @@ router.put("/settings", (req, res) => {
             db.prepare("UPDATE document_print_settings SET company_name = ? WHERE id = 1").run(String(v));
           } catch {}
         }
+
+        // Handle Primary Currency Change & Money Conversion across Safes and System
+        if (k === "currency" && v) {
+          try {
+            const oldCurrRow = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as { value: string } | undefined;
+            const oldCurrency = oldCurrRow?.value || "ريال يمني";
+            const newCurrency = String(v);
+
+            if (newCurrency !== oldCurrency) {
+              // Fetch exchange rate from currencies database
+              let rateFactor = 1.0;
+              let dbCurrencies: any[] = [];
+              try {
+                dbCurrencies = db.prepare("SELECT * FROM currencies WHERE active = 1").all();
+              } catch {}
+
+              const matchCurrency = (term: string) => {
+                const cleaned = term.trim().toLowerCase();
+                return dbCurrencies.find((c: any) =>
+                  c.symbol?.toLowerCase() === cleaned ||
+                  c.name?.toLowerCase() === cleaned ||
+                  (cleaned.includes("سعودي") && (c.symbol === "SAR" || c.name?.includes("سعودي"))) ||
+                  (cleaned.includes("يمني") && (c.symbol === "YER" || c.name?.includes("يمني"))) ||
+                  (cleaned.includes("دولار") && (c.symbol === "USD" || c.name?.includes("دولار"))) ||
+                  (cleaned.includes("درهم") && (c.symbol === "AED" || c.name?.includes("درهم"))) ||
+                  (cleaned.includes("كويتي") && (c.symbol === "KWD" || c.name?.includes("كويتي")))
+                );
+              };
+
+              const targetCur = matchCurrency(newCurrency);
+              const sourceCur = matchCurrency(oldCurrency);
+
+              if (targetCur && targetCur.exchange_rate) {
+                rateFactor = Number(targetCur.exchange_rate);
+              } else if (sourceCur && sourceCur.exchange_rate) {
+                rateFactor = Number(sourceCur.exchange_rate);
+              }
+
+              // Fallback logic for YER <-> SAR conversion if exchange rate is default
+              if (!rateFactor || rateFactor <= 0 || isNaN(rateFactor) || rateFactor === 1.0) {
+                if ((oldCurrency.includes("يمني") || oldCurrency === "YER") && (newCurrency.includes("سعودي") || newCurrency === "SAR")) {
+                  rateFactor = 250.0;
+                } else if ((oldCurrency.includes("سعودي") || oldCurrency === "SAR") && (newCurrency.includes("يمني") || newCurrency === "YER")) {
+                  rateFactor = 0.004;
+                } else {
+                  rateFactor = 1.0;
+                }
+              }
+
+              if (rateFactor && rateFactor !== 1.0) {
+                // Convert safe balances & update currency label
+                db.prepare(`
+                  UPDATE safes 
+                  SET 
+                    balance = ROUND(balance / ?, 2),
+                    opening_balance = ROUND(opening_balance / ?, 2),
+                    actual_balance = ROUND(actual_balance / ?, 2),
+                    currency = ?
+                `).run(rateFactor, rateFactor, rateFactor, newCurrency);
+
+                // Update travel system settings default currency
+                try {
+                  db.prepare("UPDATE travel_system_settings SET default_currency = ?").run(newCurrency);
+                } catch {}
+
+                logAudit(
+                  user.id,
+                  user.name,
+                  "مصارفة وتحويل عملة النظام",
+                  `تم تغيير عملة النظام من (${oldCurrency}) إلى (${newCurrency}) بسعر صرف (${rateFactor})، وتمت مصارفة وتحويل جميع أرصدة الصناديق والخزائن بنجاح.`
+                );
+              }
+            }
+          } catch (currErr: any) {
+            console.error("Error converting system currency balances:", currErr);
+          }
+        }
       }
       invalidateBusinessDayConfigCache();
     }

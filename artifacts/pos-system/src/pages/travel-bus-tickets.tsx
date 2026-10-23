@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { AdminLayout } from "@/components/admin-layout";
+import { SearchableAccountSelect } from "@/components/ui/searchable-account-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1421,30 +1422,20 @@ export default function TravelBusTicketsPage() {
                     </h3>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700 flex justify-between">
-                          <span>العميل الدافع (Customer) *</span>
-                          <button type="button" onClick={() => setQuickCustomerModalOpen(true)} className="text-[10px] text-blue-600 hover:underline">
-                            + جديد
-                          </button>
-                        </label>
-                        <select
-                          required
-                          value={form.customer_id}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setForm({ ...form, customer_id: val });
-                          }}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2.5 py-1 text-xs font-bold"
-                        >
-                          <option value="">-- اختر العميل --</option>
-                          {customers.map((c: any) => (
-                            <option key={`bus-cust-${c.id}`} value={c.id}>
-                              {c.name} {c.phone ? `(${c.phone})` : ""} {c.affiliation_type === 'agency' ? `🏬 [تابع لمكتب: ${c.office_name || 'وكيل وسيط'}]` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <SearchableAccountSelect
+                        label="العميل الدافع (Customer)"
+                        required
+                        type="customer"
+                        value={form.customer_id}
+                        accounts={customers}
+                        placeholder="-- اضغط لاختيار العميل من الدليل --"
+                        title="دليل العملاء - اختيار العميل"
+                        onQuickAdd={() => setQuickCustomerModalOpen(true)}
+                        quickAddLabel="+ جديد"
+                        onSelect={(cust) => {
+                          setForm(f => ({ ...f, customer_id: cust ? String(cust.id) : "" }));
+                        }}
+                      />
 
                       <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-700 flex justify-between">
@@ -1583,27 +1574,21 @@ export default function TravelBusTicketsPage() {
                       الطرف الثاني: شركة النقل والتكلفة (Supplier/Company)
                     </h3>
 
-                    <div className="space-y-1 mb-3">
-                      <label className="text-[11px] font-bold text-slate-700 flex justify-between">
-                        <span>شركة النقل البري (المورد) *</span>
-                        <button type="button" onClick={() => setQuickCompanyModalOpen(true)} className="text-[10px] text-emerald-600 hover:underline">
-                          + جديد
-                        </button>
-                      </label>
-                      <select
+                      <SearchableAccountSelect
+                        label="شركة النقل البري (المورد)"
                         required
+                        type="supplier"
                         value={form.company_id}
-                        onChange={e => {
-                          setForm({ ...form, company_id: e.target.value });
+                        accounts={transportCompanies}
+                        placeholder="-- اضغط لاختيار شركة النقل البري من الدليل --"
+                        title="دليل شركات النقل والموردين"
+                        onQuickAdd={() => setQuickCompanyModalOpen(true)}
+                        quickAddLabel="+ جديد"
+                        onSelect={(comp) => {
+                          setForm(f => ({ ...f, company_id: comp ? String(comp.id) : "" }));
                         }}
-                        className="flex h-9 w-full rounded-md border border-input bg-white px-2 py-1 text-xs font-bold"
-                      >
-                        <option value="">-- اختر شركة النقل --</option>
-                        {transportCompanies.map((c: any) => (
-                          <option key={`bus-comp-${c.id}`} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                        className="mb-3"
+                      />
 
                     <div className="grid grid-cols-2 gap-3 mb-3">
                       <div className="space-y-1">

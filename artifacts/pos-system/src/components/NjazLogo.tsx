@@ -5,10 +5,6 @@ interface NjazLogoProps {
   size?: "sm" | "md" | "lg" | "xl";
   showText?: boolean;
   theme?: "light" | "dark";
-  customLogoUrl?: string;
-  siteName?: string;
-  siteSlogan?: string;
-  socialHandle?: string;
 }
 
 export function NjazSymbol({ size = 48, className = "" }: { size?: number; className?: string }) {
@@ -65,66 +61,53 @@ export function NjazLogo({
   className = "",
   size = "md",
   showText = true,
-  theme = "light",
-  customLogoUrl,
-  siteName = "نـجــــاز",
-  siteSlogan = "للمشاوير والسفريات والسياحة",
-  socialHandle = "@Njaz"
+  theme = "light"
 }: NjazLogoProps) {
   const iconSizes = {
-    sm: 32,
-    md: 42,
-    lg: 56,
-    xl: 72
+    sm: 36,
+    md: 48,
+    lg: 64,
+    xl: 84
   };
 
   const isDark = theme === "dark";
-  const [imgError, setImgError] = React.useState(false);
 
   return (
-    <div className={`flex items-center gap-1.5 sm:gap-2.5 select-none ${className}`} dir="rtl">
-      {/* Geometric Symbol or Uploaded Logo Image */}
-      <div className="relative p-1 rounded-xl sm:rounded-2xl bg-gradient-to-br from-white to-slate-100 shadow-xs border border-slate-200/80 shrink-0 flex items-center justify-center overflow-hidden">
-        {customLogoUrl && !imgError ? (
-          <img
-            src={customLogoUrl}
-            alt={siteName}
-            onError={() => setImgError(true)}
-            style={{ width: iconSizes[size], height: iconSizes[size] }}
-            className="object-contain rounded-lg sm:rounded-xl max-w-full max-h-full"
-          />
-        ) : (
-          <NjazSymbol size={iconSizes[size]} />
-        )}
+    <div className={`flex items-center gap-3 select-none ${className}`} dir="rtl">
+      {/* Geometric Symbol */}
+      <div className="relative p-1 rounded-2xl bg-gradient-to-br from-white to-slate-100 shadow-xs border border-slate-200/80">
+        <NjazSymbol size={iconSizes[size]} />
       </div>
 
       {showText && (
-        <div className="flex flex-col leading-tight text-right min-w-0">
-          {/* Main Title */}
-          <div className="flex items-center gap-1 sm:gap-1.5 flex-nowrap">
-            <span className="font-black text-base xs:text-lg sm:text-2xl text-sky-600 tracking-tight shrink-0">
-              {siteName.includes("نجاز") ? "نـجــــاز" : siteName}
+        <div className="flex flex-col leading-tight text-right">
+          {/* Main Title: نـجـاز */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-black text-2xl sm:text-3xl text-sky-600 tracking-tight">
+              نـجــــاز
             </span>
-            <span className="text-[9px] xs:text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-orange-100 text-orange-700 border border-orange-200 shrink-0">
-              {socialHandle ? socialHandle.replace(/^@/, "") : "Njaz"}
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-orange-100 text-orange-700 border border-orange-200">
+              Njaz
             </span>
           </div>
 
-          {/* Subtitle */}
-          <span className={`hidden xs:block text-[10px] sm:text-xs font-extrabold truncate ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-            {siteSlogan || "للمشاوير والسفريات والسياحة"}
+          {/* Subtitle: للمشاوير والسفريات والسياحة */}
+          <span className={`text-xs sm:text-sm font-extrabold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+            للمشاوير والسفريات والسياحة
           </span>
 
-          {/* Handle & Quick Badges */}
-          <div className="hidden sm:flex items-center gap-2 mt-0.5 text-[9px] text-orange-600 font-black">
-            <span>{socialHandle || "@Njaz"}</span>
+          {/* Handle: @Njaz */}
+          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-orange-600 font-black">
+            <span>@Njaz</span>
             <div className="flex items-center gap-1 text-sky-600">
-              <span className="w-1 h-1 rounded-full bg-slate-300" />
-              <span>مشاوير</span>
               <span className="w-1 h-1 rounded-full bg-slate-300" />
               <span>طيران</span>
               <span className="w-1 h-1 rounded-full bg-slate-300" />
+              <span>مشاوير ونقل</span>
+              <span className="w-1 h-1 rounded-full bg-slate-300" />
               <span>فنادق</span>
+              <span className="w-1 h-1 rounded-full bg-slate-300" />
+              <span>تأشيرات</span>
             </div>
           </div>
         </div>

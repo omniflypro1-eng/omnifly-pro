@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from "react";
 import { AdminLayout } from "@/components/admin-layout";
+import { SearchableAccountSelect } from "@/components/ui/searchable-account-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1307,21 +1308,24 @@ export default function TravelHotelsPage() {
 
                     {/* Customer Details */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 mb-1 block">العميل الدافع (الحساب) *</label>
-                        <select
-                          value={form.customer_id}
-                          onChange={e => handleCustomerSelect(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 py-1 text-xs font-bold text-blue-950"
-                        >
-                          <option value="">-- اختر العميل --</option>
-                          {customers.map((c: any) => (
-                            <option key={c.id} value={c.id}>
-                              👤 {c.name} ({c.phone || c.customer_type || 'عميل'}) {c.affiliation_type === 'agency' ? `🏬 [تابع لمكتب: ${c.office_name || 'وكيل وسيط'}]` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <SearchableAccountSelect
+                        label="العميل الدافع (الحساب)"
+                        required
+                        type="customer"
+                        value={form.customer_id}
+                        accounts={customers}
+                        placeholder="-- اضغط لاختيار العميل من الدليل --"
+                        title="دليل العملاء - اختيار العميل"
+                        onQuickAdd={() => setQuickCustomerModal(true)}
+                        quickAddLabel="+ إضافة عميل جديد"
+                        onSelect={(cust) => {
+                          if (!cust) {
+                            handleCustomerSelect("");
+                          } else {
+                            handleCustomerSelect(String(cust.id));
+                          }
+                        }}
+                      />
 
                       <div>
                         <label className="text-xs font-bold text-slate-700 mb-1 block">اسم النزيل الفعلي (Guest Name) *</label>
@@ -1530,21 +1534,28 @@ export default function TravelHotelsPage() {
 
                     {/* Hotel Details */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 mb-1 block">الفندق من الدليل *</label>
-                        <select
-                          value={form.hotel_db_id}
-                          onChange={e => handleHotelSelect(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 py-1 text-xs font-bold text-amber-950"
-                        >
-                          <option value="">-- اختر الفندق --</option>
-                          {hotelsCatalog.map((h: any) => (
-                            <option key={h.id} value={h.id}>
-                              🏨 {h.name_ar} {h.city ? `(${h.city})` : ''} [{h.star_rating || 3}★]
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <SearchableAccountSelect
+                        label="الفندق من الدليل"
+                        required
+                        type="supplier"
+                        value={form.hotel_db_id}
+                        accounts={hotelsCatalog.map((h: any) => ({
+                          ...h,
+                          name: h.name_ar || h.name || h.hotel_name || "فندق",
+                          code: h.city ? `(${h.city})` : ""
+                        }))}
+                        placeholder="-- اضغط لاختيار الفندق من الدليل --"
+                        title="دليل الفنادق والمنتجعات"
+                        onQuickAdd={() => setQuickHotelModal(true)}
+                        quickAddLabel="+ إضافة فندق للدليل"
+                        onSelect={(hotel) => {
+                          if (!hotel) {
+                            handleHotelSelect("");
+                          } else {
+                            handleHotelSelect(String(hotel.id));
+                          }
+                        }}
+                      />
 
                       <div>
                         <label className="text-xs font-bold text-slate-700 mb-1 block">اسم الفندق الظاهر *</label>

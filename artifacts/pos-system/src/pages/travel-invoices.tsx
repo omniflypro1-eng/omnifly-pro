@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AdminLayout } from "@/components/admin-layout";
+import { SearchableAccountSelect } from "@/components/ui/searchable-account-select";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1045,41 +1046,24 @@ export default function TravelInvoicesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {/* Customer Dropdown with Quick Add */}
                   <div className="space-y-1 md:col-span-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-xs font-bold text-slate-800">
-                        اسم العميل (الطرف الأول / المدين) *
-                      </Label>
-                      <button
-                        type="button"
-                        onClick={() => setQuickCustomerModalOpen(true)}
-                        className="text-[11px] text-emerald-700 hover:underline font-bold flex items-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" /> إضافة عميل جديد سريعاً
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <select
-                        value={customerId}
-                        onChange={e => handleCustomerSelect(e.target.value)}
-                        className="h-9 rounded-md border border-input bg-white px-2.5 text-xs font-semibold text-slate-900 focus:ring-1 focus:ring-emerald-500"
-                      >
-                        <option value="">-- اختر العميل من القائمة ({customers.length} مسجل) --</option>
-                        {customers.map((c: any) => (
-                          <option key={c.id} value={c.id}>
-                            👤 {c.name} {c.phone ? `(${c.phone})` : ""} {c.office_name ? `[${c.office_name}]` : ""}
-                          </option>
-                        ))}
-                        <option value="custom">✍️ إدخال اسم عميل يدوي / نقدي...</option>
-                      </select>
-
-                      <Input
-                        value={customerName}
-                        onChange={e => setCustomerName(e.target.value)}
-                        placeholder="أو اكتب اسم العميل الرباعي هنا..."
-                        className="h-9 text-xs font-semibold"
-                      />
-                    </div>
+                    <SearchableAccountSelect
+                      label="اسم العميل (الطرف الأول / المدين)"
+                      required
+                      type="customer"
+                      value={customerId}
+                      accounts={customers}
+                      placeholder="-- اضغط للبحث واختيار العميل من الدليل --"
+                      title="دليل العملاء - اختيار العميل"
+                      onQuickAdd={() => setQuickCustomerModalOpen(true)}
+                      quickAddLabel="+ إضافة عميل جديد"
+                      onSelect={(cust) => {
+                        if (!cust) {
+                          handleCustomerSelect("");
+                        } else {
+                          handleCustomerSelect(String(cust.id));
+                        }
+                      }}
+                    />
                   </div>
 
                   {/* Invoice Date */}

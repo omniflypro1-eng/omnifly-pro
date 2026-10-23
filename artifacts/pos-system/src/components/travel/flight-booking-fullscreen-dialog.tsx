@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { SearchableAccountSelect } from "@/components/ui/searchable-account-select";
 import { 
   Plane, Plus, Search, ChevronRight, ChevronLeft, Trash2, 
   Save, X, Printer, UserPlus, CheckCircle2, AlertCircle, 
@@ -495,44 +496,29 @@ export function FlightBookingFullscreenDialog({
                 </div>
 
                 {/* Customer Selector with Quick Add */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-black text-slate-700">
-                      اختيار العميل (Customer) <span className="text-red-500">*</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddCustomer(true)}
-                      className="text-xs text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 hover:underline"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      + إضافة عميل جديد
-                    </button>
-                  </div>
-                  <select
-                    required
-                    value={form.customer_id}
-                    onChange={e => {
-                      const cid = e.target.value;
-                      const cust = customers.find(c => String(c.id) === cid);
-                      setForm(f => ({
-                        ...f,
-                        customer_id: cid,
-                        customer_statement: cust 
-                          ? `قيمة تذكرة طيران للعميل: ${cust.name} ${f.pnr ? `(PNR: ${f.pnr})` : ""}`
-                          : f.customer_statement
-                      }));
-                    }}
-                    className="flex h-11 w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none transition-all"
-                  >
-                    <option value="">-- اضغط لاختيار العميل من الدليل --</option>
-                    {customers.map((c: any, idx: number) => (
-                      <option key={`c-${c.id || idx}-${idx}`} value={c.id}>
-                        {c.name} {c.phone ? `(${c.phone})` : ""} {c.affiliation_type === 'agency' ? `🏬 [تابع لمكتب: ${c.office_name || 'وكيل وسيط'}]` : ""} {c.customer_type === "company" ? "[شركة]" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SearchableAccountSelect
+                  label="اختيار العميل (Customer)"
+                  required
+                  type="customer"
+                  value={form.customer_id}
+                  accounts={customers}
+                  placeholder="-- اضغط للبحث واختيار العميل من الدليل --"
+                  title="دليل العملاء - اختيار العميل"
+                  onQuickAdd={() => setShowAddCustomer(true)}
+                  quickAddLabel="+ إضافة عميل جديد"
+                  onSelect={(cust) => {
+                    if (!cust) {
+                      setForm(f => ({ ...f, customer_id: "" }));
+                      return;
+                    }
+                    const cid = String(cust.id);
+                    setForm(f => ({
+                      ...f,
+                      customer_id: cid,
+                      customer_statement: `قيمة تذكرة طيران للعميل: ${cust.name} ${f.pnr ? `(PNR: ${f.pnr})` : ""}`
+                    }));
+                  }}
+                />
 
                 {/* Actual Passenger */}
                 <div className="space-y-1.5">
@@ -754,38 +740,28 @@ export function FlightBookingFullscreenDialog({
                 </div>
 
                 {/* Airline / Supplier Selector */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-black text-slate-700">
-                      شركة الطيران / المورد (من دليل الحسابات) <span className="text-red-500">*</span>
-                    </label>
-                    <span className="text-[10px] text-blue-700 font-mono">الذمم الدائنة للطيران</span>
-                  </div>
-                  <select
-                    required
-                    value={form.supplier_id}
-                    onChange={e => {
-                      const sid = e.target.value;
-                      const sup = airlines.find(a => String(a.id) === sid);
-                      setForm(f => ({
-                        ...f,
-                        supplier_id: sid,
-                        airline_supplier: sup ? sup.name : f.airline_supplier,
-                        supplier_statement: sup 
-                          ? `تكلفة تذكرة طيران من ${sup.name} ${f.pnr ? `(PNR: ${f.pnr})` : ""}`
-                          : f.supplier_statement
-                      }));
-                    }}
-                    className="flex h-11 w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3.5 text-sm font-bold text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all"
-                  >
-                    <option value="">-- اضغط لاختيار شركة الطيران / المورد --</option>
-                    {airlines.map((a: any, idx: number) => (
-                      <option key={`a-${a.id || idx}-${idx}`} value={a.id}>
-                        {a.code} - {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SearchableAccountSelect
+                  label="شركة الطيران / المورد (من دليل الحسابات)"
+                  required
+                  type="supplier"
+                  value={form.supplier_id}
+                  accounts={airlines}
+                  placeholder="-- اضغط للبحث واختيار شركة الطيران / المورد --"
+                  title="دليل الموردين وشركات الطيران"
+                  onSelect={(sup) => {
+                    if (!sup) {
+                      setForm(f => ({ ...f, supplier_id: "" }));
+                      return;
+                    }
+                    const sid = String(sup.id);
+                    setForm(f => ({
+                      ...f,
+                      supplier_id: sid,
+                      airline_supplier: sup.name || f.airline_supplier,
+                      supplier_statement: `تكلفة تذكرة طيران من ${sup.name} ${f.pnr ? `(PNR: ${f.pnr})` : ""}`
+                    }));
+                  }}
+                />
 
                 {/* Quick Helper for Airline Name fallback */}
                 <div className="space-y-1.5">

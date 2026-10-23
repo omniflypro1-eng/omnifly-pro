@@ -4856,20 +4856,51 @@ function runMigrations() {
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
 
-      CREATE TABLE IF NOT EXISTS website_offers (
+      CREATE TABLE IF NOT EXISTS website_promotions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         subtitle TEXT,
         badge TEXT,
-        discount TEXT,
+        discount_text TEXT,
         image_url TEXT,
-        action_type TEXT DEFAULT 'tab',
-        action_value TEXT DEFAULT 'rides',
+        link_url TEXT,
         is_active INTEGER DEFAULT 1,
         sort_order INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
     `);
+
+    // Ensure safe column migrations on website_settings
+    const websiteCols = [
+      { name: "topbar_text", type: "TEXT DEFAULT 'خدمة العملاء والمشاوير 24/7'" },
+      { name: "social_handle", type: "TEXT DEFAULT '@Njaz'" },
+      { name: "facebook_url", type: "TEXT DEFAULT 'https://facebook.com/Njaz'" },
+      { name: "x_url", type: "TEXT DEFAULT 'https://x.com/Njaz'" },
+      { name: "instagram_url", type: "TEXT DEFAULT 'https://instagram.com/Njaz'" },
+      { name: "logo_url", type: "TEXT DEFAULT ''" },
+      { name: "rides_image_url", type: "TEXT DEFAULT ''" },
+      { name: "flight_image_url", type: "TEXT DEFAULT ''" },
+      { name: "hotel_image_url", type: "TEXT DEFAULT ''" },
+      { name: "packages_image_url", type: "TEXT DEFAULT ''" },
+      { name: "visas_image_url", type: "TEXT DEFAULT ''" },
+      { name: "inquiry_title", type: "TEXT DEFAULT 'إرسال الطلب لفريق نجاز'" },
+      { name: "inquiry_subtitle", type: "TEXT DEFAULT 'وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.'" },
+      { name: "footer_desc", type: "TEXT DEFAULT 'وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.'" },
+      { name: "footer_unified_id", type: "TEXT DEFAULT 'معرفنا الموحد: @Njaz'" },
+      { name: "footer_quick_services_title", type: "TEXT DEFAULT 'الخدمات السريعة'" },
+      { name: "footer_contact_title", type: "TEXT DEFAULT 'التواصل والمقر'" },
+      { name: "footer_address", type: "TEXT DEFAULT 'المملكة العربية السعودية - خدمات النقل والمطارات'" },
+      { name: "footer_guarantee_title", type: "TEXT DEFAULT 'ضمانات نجاز للعملاء'" },
+      { name: "footer_guarantee_desc", type: "TEXT DEFAULT 'جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.'" },
+      { name: "footer_license_badge", type: "TEXT DEFAULT 'حجوزات آمنة ومرخصة 100%'" },
+      { name: "footer_copyright", type: "TEXT DEFAULT 'جميع الحقوق محفوظة © 2026 وكالة نجاز للمشاوير والسفريات والسياحة (@Njaz).'" }
+    ];
+
+    for (const col of websiteCols) {
+      try {
+        db.exec(`ALTER TABLE website_settings ADD COLUMN ${col.name} ${col.type}`);
+      } catch {}
+    }
 
     // Ensure default settings row exists
     const webSetCount = (db.prepare("SELECT COUNT(*) as c FROM website_settings").get() as { c: number }).c;
@@ -4881,78 +4912,95 @@ function runMigrations() {
           packages_enabled, visas_enabled, bus_enabled, insurance_enabled,
           flight_markup_val, flight_markup_type, hotel_markup_val, hotel_markup_type,
           package_markup_val, package_markup_type, payment_card_enabled, payment_bank_enabled,
-          payment_cash_enabled, bank_name, bank_iban, bank_account_name, promo_code, promo_discount_percent
+          payment_cash_enabled, bank_name, bank_iban, bank_account_name, promo_code, promo_discount_percent,
+          topbar_text, social_handle, facebook_url, x_url, instagram_url,
+          inquiry_title, inquiry_subtitle, footer_desc, footer_unified_id,
+          footer_quick_services_title, footer_contact_title, footer_address,
+          footer_guarantee_title, footer_guarantee_desc, footer_license_badge, footer_copyright
         ) VALUES (
-          1, 'وكالة أومني فلاي برو للسياحة والسفر',
-          'بوابتكم الذكية لحجوزات الطيران والفنادق والتأشيرات المعتمدة حول العالم',
-          '+966 50 123 4567', '966501234567', 'reservations@omnifly-travel.sa',
-          'الرياض - طريق الملك فهد - برج الأعمال السياحية',
-          'اكتشف العالم بأفضل الأسعار وأسهل خيارات الحجز',
-          'احجز تذاكر الطيران، الفنادق الفاخرة، باقات العمرة والسياحة، واستخرج تأشيرتك فورياً بكل سهولة وأمان',
+          1, 'وكالة نجاز للمشاوير والسفريات والسياحة',
+          'نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة',
+          '+966 50 123 4567', '966501234567', 'info@njaz-travel.com',
+          'المملكة العربية السعودية - خدمات النقل والمطارات',
+          'مشاويرك، رحلاتك، وفنادقك.. بكل إنجاز وسهولة!',
+          'حجوزات طيران محلية ودولية، مشاوير ونقل سياحي مريح، فنادق فاخرة، وباقات عمرة وتأشيرات بأفضل الأسعار وأعلى سرعة إنجاز',
           1, 1, 1, 1, 1, 1,
           5, 'percent', 8, 'percent', 5, 'percent',
           1, 1, 1,
-          'مصرف الراجحي', 'SA0380000000608010167519', 'مؤسسة أومني فلاي للسياحة والسفر',
-          'OMNIFLY10', 10
+          'مصرف الراجحي', 'SA0380000000608010167519', 'وكالة نجاز للمشاوير والسفريات والسياحة',
+          'NJAZ2026', 10,
+          'خدمة العملاء والمشاوير 24/7', '@Njaz', 'https://facebook.com/Njaz', 'https://x.com/Njaz', 'https://instagram.com/Njaz',
+          'إرسال الطلب لفريق نجاز', 'وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.',
+          'وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.',
+          'معرفنا الموحد: @Njaz', 'الخدمات السريعة', 'التواصل والمقر', 'المملكة العربية السعودية - خدمات النقل والمطارات',
+          'ضمانات نجاز للعملاء', 'جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.',
+          'حجوزات آمنة ومرخصة 100%', 'جميع الحقوق محفوظة © 2026 وكالة نجاز للمشاوير والسفريات والسياحة (@Njaz).'
         )
+      `).run();
+    } else {
+      // Update with Njaz defaults if columns are empty
+      db.prepare(`
+        UPDATE website_settings SET
+          site_name = COALESCE(NULLIF(site_name, ''), 'وكالة نجاز للمشاوير والسفريات والسياحة'),
+          topbar_text = COALESCE(NULLIF(topbar_text, ''), 'خدمة العملاء والمشاوير 24/7'),
+          social_handle = COALESCE(NULLIF(social_handle, ''), '@Njaz'),
+          facebook_url = COALESCE(NULLIF(facebook_url, ''), 'https://facebook.com/Njaz'),
+          x_url = COALESCE(NULLIF(x_url, ''), 'https://x.com/Njaz'),
+          instagram_url = COALESCE(NULLIF(instagram_url, ''), 'https://instagram.com/Njaz'),
+          inquiry_title = COALESCE(NULLIF(inquiry_title, ''), 'إرسال الطلب لفريق نجاز'),
+          inquiry_subtitle = COALESCE(NULLIF(inquiry_subtitle, ''), 'وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.'),
+          footer_desc = COALESCE(NULLIF(footer_desc, ''), 'وكالة نجاز للمشاوير والسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.'),
+          footer_unified_id = COALESCE(NULLIF(footer_unified_id, ''), 'معرفنا الموحد: @Njaz'),
+          footer_quick_services_title = COALESCE(NULLIF(footer_quick_services_title, ''), 'الخدمات السريعة'),
+          footer_contact_title = COALESCE(NULLIF(footer_contact_title, ''), 'التواصل والمقر'),
+          footer_address = COALESCE(NULLIF(footer_address, ''), 'المملكة العربية السعودية - خدمات النقل والمطارات'),
+          footer_guarantee_title = COALESCE(NULLIF(footer_guarantee_title, ''), 'ضمانات نجاز للعملاء'),
+          footer_guarantee_desc = COALESCE(NULLIF(footer_guarantee_desc, ''), 'جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.'),
+          footer_license_badge = COALESCE(NULLIF(footer_license_badge, ''), 'حجوزات آمنة ومرخصة 100%'),
+          footer_copyright = COALESCE(NULLIF(footer_copyright, ''), 'جميع الحقوق محفوظة © 2026 وكالة نجاز للمشاوير والسفريات والسياحة (@Njaz).')
+        WHERE id = 1
       `).run();
     }
 
-    // Ensure default promotional offers & ads banners exist (4 offers)
-    try {
-      const offersCount = (db.prepare("SELECT COUNT(*) as c FROM website_offers").get() as { c: number }).c;
-      if (offersCount === 0) {
-        const insOffer = db.prepare(`
-          INSERT INTO website_offers (title, subtitle, badge, discount, image_url, action_type, action_value, is_active, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        insOffer.run(
-          "عرض خاص: توصيل واستقبال المطارات VIP",
-          "خدمة فاخرة 24/7 بسيارات حديثة وسائقين معتمدين وتتبع دقيق للرحلات",
-          "الأكثر طلباً",
-          "خصم 20%",
-          "/assets/omnifly_hero_modern_1788663939856-aIfelTPm.jpg",
-          "tab",
-          "rides",
-          1,
-          1
-        );
-        insOffer.run(
-          "باقات العمرة والزيارة المتكاملة",
-          "شاملة السكن بجوار الحرم والمشاوير الخاصة مع استقبال وتوديع المطار",
-          "VIP عائلي",
-          "خصم 15%",
-          "/assets/omnifly_hajj_umrah_1788663965150-PuQNTAsW.jpg",
-          "tab",
-          "packages",
-          1,
-          2
-        );
-        insOffer.run(
-          "عروض تذاكر الطيران المباشرة",
-          "أفضل أسعار الخطوط السعودية وطيران ناس وفلاي أديل بحجز فوري معتمد",
-          "حجز فوري",
-          "مؤكد PNR",
-          "/assets/omnifly_catalog_modules_1788663953219-CjsKLR8n.jpg",
-          "tab",
-          "flights",
-          1,
-          3
-        );
-        insOffer.run(
-          "مشاوير بين المدن وتوصيل المحافظات",
-          "رحلات مريحة وآمنة وسيارات VIP مجهزة للتنقل بين كافة مدن ومحافظات المملكة",
-          "حصري",
-          "خصم 25%",
-          "/assets/omnifly_hero_modern_1788663939856-aIfelTPm.jpg",
-          "tab",
-          "rides",
-          1,
-          4
-        );
+    // Seed default promotions if table is empty
+    const promoCount = (db.prepare("SELECT COUNT(*) as c FROM website_promotions").get() as { c: number }).c;
+    if (promoCount === 0) {
+      const defaultPromos = [
+        {
+          title: "عرض مشاوير مطارات الرياض وجدة VIP",
+          subtitle: "سائقون محترفون، سيارات حديثة 2025/2026، واستقبال بالاسم واللوحة",
+          badge: "خصم 20%",
+          discount_text: "وفر 20% على كل مشوار",
+          image_url: "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=800&q=80",
+          link_url: "#rides",
+          sort_order: 1
+        },
+        {
+          title: "باقات العمرة والزيارة الشاملة مع النقل الخاص",
+          subtitle: "إقامة فندقية فاخرة قريبة من الحرمين مع خدمات تنقلات VIP ذهاباً وإياباً",
+          badge: "باقة النخبة",
+          discount_text: "شامل السكن والتنقل",
+          image_url: "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?auto=format&fit=crop&w=800&q=80",
+          link_url: "#packages",
+          sort_order: 2
+        },
+        {
+          title: "خصم تذاكر الطيران المباشرة لجميع الوجهات",
+          subtitle: "حجوزات فورية مؤكدة برقم PNR رسمي معتمد وبأفضل أسعار الخطوط العالمية",
+          badge: "عرض خاص",
+          discount_text: "كود: NJAZ2026",
+          image_url: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=800&q=80",
+          link_url: "#flights",
+          sort_order: 3
+        }
+      ];
+      const insertPromo = db.prepare(`
+        INSERT INTO website_promotions (title, subtitle, badge, discount_text, image_url, link_url, is_active, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+      `);
+      for (const p of defaultPromos) {
+        insertPromo.run(p.title, p.subtitle, p.badge, p.discount_text, p.image_url, p.link_url, p.sort_order);
       }
-    } catch (e) {
-      console.error("Error seeding default website_offers:", e);
     }
   } catch (e) {
     console.error("Error creating website tables:", e);
@@ -5378,6 +5426,7 @@ export function syncSupplierAccounts(): void {
     try { db.exec("ALTER TABLE travel_transport_companies ADD COLUMN account_code TEXT"); } catch {}
     try { db.exec("ALTER TABLE travel_hotels_db ADD COLUMN account_code TEXT"); } catch {}
     try { db.exec("ALTER TABLE travel_partner_offices ADD COLUMN account_code TEXT"); } catch {}
+    try { db.exec("ALTER TABLE travel_airlines ADD COLUMN account_code TEXT"); } catch {}
 
     const acc21100 = db.prepare("SELECT id FROM accounts WHERE code = '21100'").get();
     if (!acc21100) {
@@ -5404,6 +5453,51 @@ export function syncSupplierAccounts(): void {
       }
       return String(maxNum + 1);
     };
+
+    // 0. Travel Airlines (شركات الطيران والوكلاء)
+    try {
+      const airlinesList = db.prepare("SELECT * FROM travel_airlines").all() as any[];
+      for (const air of airlinesList) {
+        const airName = (air.name_ar || air.agent_name || air.name_en || air.iata_code || "").trim() || (`شركة طيران #${air.id}`);
+        let code = air.account_code;
+        let existingAcc = code ? db.prepare("SELECT * FROM accounts WHERE code = ?").get(code) as any : null;
+
+        if (!existingAcc) {
+          const accByName = db.prepare("SELECT * FROM accounts WHERE parent_code = '21100' AND name = ?").get(airName) as any;
+          if (accByName) {
+            code = accByName.code;
+          } else {
+            code = getNextSubCode();
+            db.prepare(`
+              INSERT INTO accounts (code, name, type, parent_code, balance, active, is_parent, auto_add, level)
+              VALUES (?, ?, 'liability', '21100', 0, 1, 0, 1, 3)
+            `).run(code, airName);
+          }
+          db.prepare("UPDATE travel_airlines SET account_code = ? WHERE id = ?").run(code, air.id);
+        } else {
+          if (existingAcc.name !== airName) {
+            db.prepare("UPDATE accounts SET name = ? WHERE code = ?").run(airName, code);
+          }
+        }
+
+        // Also ensure an entry exists in general suppliers table
+        try {
+          const suppByName = db.prepare("SELECT id FROM suppliers WHERE name = ? OR account_code = ?").get(airName, code) as any;
+          if (!suppByName) {
+            db.prepare(`
+              INSERT INTO suppliers (name, phone, email, notes, account_code, rating, balance)
+              VALUES (?, ?, ?, 'شركة طيران / ناقل جوي - تم الربط التلقائي بدليل الحسابات', ?, 5, 0)
+            `).run(airName, air.phone || null, air.email || null, code);
+          } else {
+            db.prepare("UPDATE suppliers SET account_code = ? WHERE id = ?").run(code, suppByName.id);
+          }
+        } catch (sErr) {
+          console.error("Error syncing airline to suppliers table:", sErr);
+        }
+      }
+    } catch (e) {
+      console.error("Error syncing travel_airlines:", e);
+    }
 
     // 1. Suppliers
     const suppliers = db.prepare("SELECT * FROM suppliers").all() as any[];

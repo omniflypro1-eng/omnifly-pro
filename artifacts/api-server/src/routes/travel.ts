@@ -1633,9 +1633,32 @@ router.delete("/travel/documents/:id", (req, res) => {
 
 
 // ==========================================
-// 6. AIRLINES MANAGEMENT (شركات الطيران)
 // ==========================================
+// 6. AIRLINES MANAGEMENT & SUB-ACCOUNTS (شركات الطيران ودليل الحسابات)
+// ==========================================
+router.get("/travel/sub-accounts/:code", (req, res) => {
+  try {
+    const parentCode = req.params.code || "21100";
+    if (parentCode.startsWith("211") || parentCode === "21100") {
+      syncSupplierAccounts();
+    }
+    const rows = db.prepare(`
+      SELECT id, code, name, type, parent_code, balance, active
+      FROM accounts
+      WHERE parent_code = ? OR (code LIKE ? AND code != ?)
+      ORDER BY code ASC, name ASC
+    `).all(parentCode, `${parentCode}%`, parentCode);
+    res.json(rows);
+  } catch (err: any) {
+    console.error("Error in /travel/sub-accounts:", err);
+    res.status(500).json({ error: "فشل جلب الحسابات الفرعية" });
+  }
+});
+
 router.get("/travel/airlines", (_req, res) => {
+  try {
+    syncSupplierAccounts();
+  } catch {}
   const rows = db.prepare("SELECT * FROM travel_airlines ORDER BY name_ar ASC").all();
   res.json(rows);
 });
@@ -1661,6 +1684,12 @@ router.post("/travel/airlines", (req, res) => {
     Number(default_commission_percent || 0), booking_conditions || null, notes || null
   );
 
+  try {
+    syncSupplierAccounts();
+  } catch (err) {
+    console.error("Error syncing supplier accounts after airline insert:", err);
+  }
+
   const newAirline = db.prepare("SELECT * FROM travel_airlines WHERE id = ?").get(info.lastInsertRowid);
   res.status(201).json(newAirline);
 });
@@ -1680,6 +1709,12 @@ router.put("/travel/airlines/:id", (req, res) => {
     country || null, phone || null, email || null, agent_name || null,
     Number(default_commission_percent || 0), booking_conditions || null, notes || null, active !== undefined ? active : 1, req.params.id
   );
+
+  try {
+    syncSupplierAccounts();
+  } catch (err) {
+    console.error("Error syncing supplier accounts after airline update:", err);
+  }
 
   const updated = db.prepare("SELECT * FROM travel_airlines WHERE id = ?").get(req.params.id);
   res.json(updated);

@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
+import { useGetSettings } from "@workspace/api-client-react";
 import { Loader2, DollarSign, Plane, Ticket, Globe, Hotel, TrendingUp, AlertTriangle, Users, Wallet, ShieldAlert, Calendar, CheckCircle2, Bus, Luggage, RotateCcw, ArrowLeft, Sparkles, Building2 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
@@ -20,6 +21,9 @@ function fmt(n?: number) {
 const COLORS = ["#1e3a5f", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export default function TravelDashboardPage() {
+  const { data: settings } = useGetSettings();
+  const currencySymbol = settings?.currency || "SAR";
+
   const { data, isLoading } = useQuery<any>({
     queryKey: ["travel-dashboard-stats"],
     queryFn: () => fetchWithAuth("/api/travel/dashboard-stats")
@@ -64,7 +68,7 @@ export default function TravelDashboardPage() {
             <Card className="border-r-4 border-r-primary shadow-sm">
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">مبيعات اليوم</p>
-                <p className="text-lg font-bold font-mono text-slate-900 mt-1">{fmt(kpis.todaySales)} ريال</p>
+                <p className="text-lg font-bold font-mono text-slate-900 mt-1">{fmt(kpis.todaySales)} {currencySymbol}</p>
                 <p className="text-[11px] text-muted-foreground">{kpis.todayBookings} حجز اليوم</p>
               </CardContent>
             </Card>
@@ -72,28 +76,28 @@ export default function TravelDashboardPage() {
             <Card className="border-r-4 border-r-blue-500 shadow-sm">
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">مبيعات الشهر</p>
-                <p className="text-lg font-bold font-mono text-blue-700 mt-1">{fmt(kpis.monthSales)} ريال</p>
+                <p className="text-lg font-bold font-mono text-blue-700 mt-1">{fmt(kpis.monthSales)} {currencySymbol}</p>
               </CardContent>
             </Card>
 
             <Card className="border-r-4 border-r-emerald-500 shadow-sm">
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">عمولة المكتب (الشهر)</p>
-                <p className="text-lg font-bold font-mono text-emerald-700 mt-1">{fmt(kpis.monthCommission)} ريال</p>
+                <p className="text-lg font-bold font-mono text-emerald-700 mt-1">{fmt(kpis.monthCommission)} {currencySymbol}</p>
               </CardContent>
             </Card>
 
             <Card className="border-r-4 border-r-indigo-500 shadow-sm">
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">صافي الأرباح</p>
-                <p className="text-lg font-bold font-mono text-indigo-700 mt-1">{fmt(kpis.netProfit)} ريال</p>
+                <p className="text-lg font-bold font-mono text-indigo-700 mt-1">{fmt(kpis.netProfit)} {currencySymbol}</p>
               </CardContent>
             </Card>
 
             <Card className="border-r-4 border-r-amber-500 shadow-sm">
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">مستحق على العملاء</p>
-                <p className="text-lg font-bold font-mono text-amber-700 mt-1">{fmt(kpis.customerDebts)} ريال</p>
+                <p className="text-lg font-bold font-mono text-amber-700 mt-1">{fmt(kpis.customerDebts)} {currencySymbol}</p>
               </CardContent>
             </Card>
 

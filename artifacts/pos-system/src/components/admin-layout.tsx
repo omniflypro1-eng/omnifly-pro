@@ -318,12 +318,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const allSystemModules: SystemModule[] = [
     {
       id: "sys_website",
-      title: "موقع نجاز للعملاء Portal CMS",
+      title: "إدارة الموقع الإلكتروني للعملاء",
       icon: Globe,
       systemKey: "sys_website",
       items: [
-        { name: "إدارة موقع نجاز والمشاوير CMS", href: "/website-management", icon: Globe, highlight: true },
-        { name: "معاينة موقع نجاز (@Njaz Portal)", href: "/portal", icon: ExternalLink, highlight: true },
+        { name: "إدارة الموقع الإلكتروني", href: "/website-management", icon: Globe, highlight: true },
+        { name: "معاينة الموقع الإلكتروني", href: "/portal", icon: ExternalLink, highlight: true },
         { name: "بوابة المسافر وتتبع التأشيرات B2C", href: "/travel-b2c-portal", icon: UserCheck },
         { name: "بوابة الشركات والمؤسسات B2B Portal", href: "/travel-b2b-portal", icon: Building2 },
         { name: "مركز تنبيهات الواتساب WhatsApp & SMS", href: "/travel-notifications-hub", icon: MessageSquare }

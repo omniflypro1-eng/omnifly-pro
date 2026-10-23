@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { AdminLayout } from "@/components/admin-layout";
 import { useAuth } from "@/components/auth-provider";
 import {
   useGetSettings, useUpdateSettings, getGetSettingsQueryKey,
+  useGetCurrencies,
   useGetReceiptCopyConfigs, useUpdateReceiptCopyConfig, useCreateReceiptCopyConfig, useDeleteReceiptCopyConfig, getGetReceiptCopyConfigsQueryKey,
   useGetDepartmentPrintConfigs, useUpdateDepartmentPrintConfig, useCreateDepartmentPrintConfig, useDeleteDepartmentPrintConfig, getGetDepartmentPrintConfigsQueryKey,
   useGetCategories, useGetPrintersList,
@@ -23,7 +24,7 @@ import {
   Save, Plus, Trash2, Pencil, Printer, Copy, Building2, Settings2, Upload, X, ShieldCheck,
   Sparkles, Image as ImageIcon, Clock, Moon, Sun, CheckCircle2, AlertCircle, Plane,
   DollarSign, ShoppingCart, Users, Briefcase, FileSpreadsheet, ShieldAlert, Check, RefreshCw,
-  HelpCircle, ArrowRight, CalendarCheck, KeyRound, Fingerprint
+  HelpCircle, ArrowRight, CalendarCheck, KeyRound, Fingerprint, Coins
 } from "lucide-react";
 import { fetchWithAuth } from "@workspace/api-client-react";
 
@@ -34,11 +35,33 @@ export default function Settings() {
   const { user } = useAuth();
   const isDeveloper = user?.role === "developer" || user?.username === "developer";
   const { data: settings, isLoading } = useGetSettings();
+  const { data: dbCurrencies = [] } = useGetCurrencies();
   const updateMutation = useUpdateSettings();
   const qc = useQueryClient();
   const { toast } = useToast();
 
   const devLogoInputRef = useRef<HTMLInputElement>(null);
+
+  // Combine DB currencies with standard defaults
+  const allCurrenciesList = useMemo(() => {
+    const defaultCurrenciesList = [
+      { id: "sar", name: "ريال سعودي", symbol: "SAR", type: "local", exchange_rate: 1.0 },
+      { id: "usd", name: "دولار أمريكي", symbol: "USD", type: "foreign", exchange_rate: 3.75 },
+      { id: "yer", name: "ريال يمني", symbol: "YER", type: "foreign", exchange_rate: 0.00263 },
+      { id: "aed", name: "درهم إماراتي", symbol: "AED", type: "foreign", exchange_rate: 1.02 },
+      { id: "eur", name: "يورو أوروبي", symbol: "EUR", type: "foreign", exchange_rate: 4.10 },
+      { id: "kwd", name: "دينار كويتي", symbol: "KWD", type: "foreign", exchange_rate: 12.25 },
+      { id: "qar", name: "ريال قطري", symbol: "QAR", type: "foreign", exchange_rate: 1.03 },
+      { id: "egp", name: "جنيه مصري", symbol: "EGP", type: "foreign", exchange_rate: 0.076 },
+    ];
+    const list = [...dbCurrencies];
+    defaultCurrenciesList.forEach(def => {
+      if (!list.some((c: any) => c.symbol === def.symbol || c.name === def.name)) {
+        list.push(def);
+      }
+    });
+    return list;
+  }, [dbCurrencies]);
 
   const [form, setForm] = useState<any>({
     businessName: "",
@@ -302,15 +325,19 @@ export default function Settings() {
 
             <Card>
               <CardHeader>
-                <CardTitle>معلومات النشاط التجاري</CardTitle>
+                <CardTitle className="text-base font-bold flex items-center justify-between">
+                  <span>معلومات النشاط التجاري والعملة الرئيسية للنظام</span>
+                  <Badge variant="outline" className="text-emerald-700 bg-emerald-50 border-emerald-300 font-bold">
+                    العملة المعتمدة
+                  </Badge>
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
                 {([
                   ["businessName", "اسم النشاط / النظام *"],
                   ["address", "العنوان"],
                   ["phone", "رقم الهاتف"],
                   ["taxNumber", "الرقم الضريبي"],
-                  ["currency", "العملة"],
                 ] as [keyof SettingsInput, string][]).map(([field, label]) => {
                   return (
                     <div key={field} className="space-y-1">
@@ -324,6 +351,39 @@ export default function Settings() {
                     </div>
                   );
                 })}
+
+                {/* Main System Currency Selection Dropdown */}
+                <div className="space-y-2 p-3.5 bg-emerald-50/40 dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-slate-800">
+                  <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-emerald-600" />
+                      العملة الرئيسية للنظام (تضم جميع العملات المضافة في تهيئة العملات واسعار الصرف) *
+                    </span>
+                    <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">
+                      Main Currency
+                    </span>
+                  </label>
+
+                  <select
+                    value={form.currency || "SAR"}
+                    onChange={e => setField("currency", e.target.value)}
+                    className="flex h-11 w-full rounded-xl border border-slate-300 bg-white dark:bg-slate-800 px-3.5 py-2 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                  >
+                    {allCurrenciesList.map((c: any) => {
+                      const valueKey = c.symbol || c.name;
+                      return (
+                        <option key={`cur-opt-${c.id || c.symbol}-${c.name}`} value={valueKey}>
+                          {c.name} ({c.symbol}) {c.exchange_rate ? `— سعر الصرف: ${c.exchange_rate}` : ""} {c.type === "local" ? "🟢 [العملة المحلية]" : "🌐 [عملة أجنبية]"}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed pt-0.5">
+                    💡 عند اختيار العملة وحفظ الإعدادات، يتم اعتماد عملة النظام المختارة لتكون الرئيسية بحيث يتم عرض وتحويل البيانات المالية والتقارير ولوحات القيادة للعملة الرئيسية المختارة بشكل دقيق.
+                  </p>
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-sm font-medium">نسبة الضريبة (%)</label>
                   <Input
