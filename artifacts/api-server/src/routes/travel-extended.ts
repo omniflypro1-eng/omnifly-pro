@@ -2306,52 +2306,69 @@ router.get("/travel/global-search", (req, res) => {
 
   const searchTerm = `%${q}%`;
 
+  let customers: any[] = [];
+  let passengers: any[] = [];
+  let bookings: any[] = [];
+  let visas: any[] = [];
+  let hotels: any[] = [];
+
   try {
     // 1. Customers
-    const customers = db.prepare(`
-      SELECT id, name, phone, email, passport_number, nationality, 'customer' as result_type
-      FROM customers
-      WHERE name LIKE ? OR phone LIKE ? OR passport_number LIKE ? OR email LIKE ?
-      LIMIT 10
-    `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    try {
+      customers = db.prepare(`
+        SELECT id, name, phone, email, passport_number, nationality, 'customer' as result_type
+        FROM customers
+        WHERE name LIKE ? OR phone LIKE ? OR passport_number LIKE ? OR email LIKE ?
+        LIMIT 10
+      `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    } catch {}
 
     // 2. Passengers
-    const passengers = db.prepare(`
-      SELECT id, full_name_ar as name, passport_number, phone, nationality, 'passenger' as result_type
-      FROM travel_passengers
-      WHERE full_name_ar LIKE ? OR full_name_en LIKE ? OR passport_number LIKE ? OR phone LIKE ?
-      LIMIT 10
-    `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    try {
+      passengers = db.prepare(`
+        SELECT id, COALESCE(full_name_ar, full_name_en, name, 'مسافر') as name, passport_number, phone, nationality, 'passenger' as result_type
+        FROM travel_passengers
+        WHERE full_name_ar LIKE ? OR full_name_en LIKE ? OR passport_number LIKE ? OR phone LIKE ?
+        LIMIT 10
+      `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    } catch {}
 
     // 3. Bookings & Tickets
-    const bookings = db.prepare(`
-      SELECT id, booking_code as code, pnr, customer_name, passenger_name, ticket_number, destination, service_type, 'booking' as result_type
-      FROM travel_bookings
-      WHERE booking_code LIKE ? OR pnr LIKE ? OR ticket_number LIKE ? OR customer_name LIKE ? OR passenger_name LIKE ? OR destination LIKE ?
-      LIMIT 10
-    `).all(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    try {
+      bookings = db.prepare(`
+        SELECT id, booking_code as code, pnr, customer_name, passenger_name, ticket_number, destination, service_type, 'booking' as result_type
+        FROM travel_bookings
+        WHERE booking_code LIKE ? OR pnr LIKE ? OR ticket_number LIKE ? OR customer_name LIKE ? OR passenger_name LIKE ? OR destination LIKE ?
+        LIMIT 10
+      `).all(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    } catch {}
 
     // 4. Visas
-    const visas = db.prepare(`
-      SELECT id, visa_code as code, passport_number, passenger_name, country, visa_type, status, 'visa' as result_type
-      FROM travel_visas
-      WHERE visa_code LIKE ? OR passport_number LIKE ? OR passenger_name LIKE ? OR country LIKE ?
-      LIMIT 10
-    `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    try {
+      visas = db.prepare(`
+        SELECT id, visa_code as code, passport_number, passenger_name, country, visa_type, status, 'visa' as result_type
+        FROM travel_visas
+        WHERE visa_code LIKE ? OR passport_number LIKE ? OR passenger_name LIKE ? OR country LIKE ?
+        LIMIT 10
+      `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    } catch {}
 
     // 5. Hotels
-    const hotels = db.prepare(`
-      SELECT id, name_ar as name, city, country, phone, 'hotel' as result_type
-      FROM travel_hotels_db
-      WHERE name_ar LIKE ? OR name_en LIKE ? OR city LIKE ? OR phone LIKE ?
-      LIMIT 10
-    `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    try {
+      hotels = db.prepare(`
+        SELECT id, COALESCE(name_ar, name_en, 'فندق') as name, city, country, phone, 'hotel' as result_type
+        FROM travel_hotels_db
+        WHERE name_ar LIKE ? OR name_en LIKE ? OR city LIKE ? OR phone LIKE ?
+        LIMIT 10
+      `).all(searchTerm, searchTerm, searchTerm, searchTerm);
+    } catch {}
 
     res.json({ customers, passengers, bookings, visas, hotels });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    res.json({ customers, passengers, bookings, visas, hotels, error: e.message });
   }
 });
+
 
 // ============================================================================
 // MODULE 25: SMART ANALYTICS DASHBOARD (التقارير الذكية)
