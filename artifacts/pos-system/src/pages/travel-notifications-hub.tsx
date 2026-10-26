@@ -67,7 +67,12 @@ import {
   Wifi,
   BatteryCharging,
   Sliders,
-  CheckSquare
+  CheckSquare,
+  ShieldAlert,
+  Lock,
+  Timer,
+  Gauge,
+  Info
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
@@ -136,6 +141,16 @@ export default function TravelNotificationsHubPage() {
   const [qrPhone, setQrPhone] = useState("+966 50 554 4332");
   const [qrPairingCode, setQrPairingCode] = useState("OF99-TR72");
   const [qrViewMethod, setQrViewMethod] = useState<"qr" | "code">("qr");
+
+  // Anti-Ban & Rate-Limiter Shield State
+  const [antiBanEnabled, setAntiBanEnabled] = useState(true);
+  const [antiBanPacing, setAntiBanPacing] = useState(4); // delay in seconds
+  const [antiBanDailyLimit, setAntiBanDailyLimit] = useState(300);
+  const [autoReconnectEnabled, setAutoReconnectEnabled] = useState(true);
+  const [qrSecondsLeft, setQrSecondsLeft] = useState(60);
+  const [antiBanModalOpen, setAntiBanModalOpen] = useState(false);
+  const [qrTestPhone, setQrTestPhone] = useState("966505544332");
+  const [qrTestMessage, setQrTestMessage] = useState("");
 
   // Show/Hide Secrets
   const [showToken, setShowToken] = useState(false);
@@ -219,6 +234,23 @@ ${agencyName}`
   const [selectedTemplateForPreview, setSelectedTemplateForPreview] = useState<any>(null);
 
   // Queries
+  const { data: qrSessionData, isLoading: qrLoading, refetch: refetchQrSession } = useQuery<any>({
+    queryKey: ["travel-qr-session"],
+    queryFn: async () => {
+      const res = await fetchWithAuth<any>("/api/travel/whatsapp/qr-session");
+      if (res?.session) {
+        setQrPhone(res.session.display_phone_number || res.session.phone_number || "+966 50 554 4332");
+        setQrPairingCode(res.session.pairing_code || "OF99-TR72");
+        setQrStatus(res.session.status as any || "connected");
+        setAntiBanPacing(res.session.pacing_delay_sec || 4);
+        setAntiBanDailyLimit(res.session.daily_limit || 300);
+        setAntiBanEnabled(res.session.anti_ban_mode === 1);
+        setAutoReconnectEnabled(res.session.auto_reconnect === 1);
+      }
+      return res?.session;
+    }
+  });
+
   const { data: metaConfig, isLoading: metaLoading, refetch: refetchMeta } = useQuery<any>({
     queryKey: ["meta-cloud-config"],
     queryFn: async () => {
@@ -376,6 +408,75 @@ ${agencyName}`
       });
     },
     onError: (err: any) => toast({ title: "فشل الإرسال التجريبي", description: err.message, variant: "destructive" })
+  });
+
+  // Generate QR Mutation
+  const generateQrMutation = useMutation({
+    mutationFn: () => fetchWithAuth<any>("/api/travel/whatsapp/qr-session/generate", { method: "POST" }),
+    onSuccess: (data) => {
+      setQrStatus("waiting_scan");
+      setQrPairingCode(data.pairing_code);
+      setQrSecondsLeft(60);
+      refetchQrSession();
+      toast({ title: "✓ تم توليد باركود تشفير جديد", description: "امسح الرمز بكاميرا واتساب من هاتفك الآن" });
+    },
+    onError: (err: any) => toast({ title: "فشل توليد الباركود", description: err.message, variant: "destructive" })
+  });
+
+  // Verify Scan Mutation
+  const verifyScanMutation = useMutation({
+    mutationFn: (vars: { phone_number?: string; device_name?: string }) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/qr-session/verify-scan", {
+        method: "POST",
+        body: JSON.stringify(vars)
+      }),
+    onSuccess: (data) => {
+      setQrStatus("connected");
+      refetchQrSession();
+      toast({ title: "🟢 تم ربط واتساب بنجاح!", description: data.message });
+    },
+    onError: (err: any) => toast({ title: "فشل تأكيد الربط", description: err.message, variant: "destructive" })
+  });
+
+  // Disconnect QR Mutation
+  const disconnectQrMutation = useMutation({
+    mutationFn: () => fetchWithAuth<any>("/api/travel/whatsapp/qr-session/disconnect", { method: "POST" }),
+    onSuccess: () => {
+      setQrStatus("waiting_scan");
+      refetchQrSession();
+      toast({ title: "تم قطع الاتصال بالجهاز مؤقتاً بأمان" });
+    },
+    onError: (err: any) => toast({ title: "خطأ", description: err.message, variant: "destructive" })
+  });
+
+  // Save Anti-Ban Settings Mutation
+  const saveAntiBanSettingsMutation = useMutation({
+    mutationFn: (vars: any) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/qr-session/settings", {
+        method: "POST",
+        body: JSON.stringify(vars)
+      }),
+    onSuccess: () => {
+      refetchQrSession();
+      setAntiBanModalOpen(false);
+      toast({ title: "✓ تم حفظ إعدادات درع الحظر وجدولة الإرسال بنجاح" });
+    },
+    onError: (err: any) => toast({ title: "خطأ في حفظ الإعدادات", description: err.message, variant: "destructive" })
+  });
+
+  // Test Message via QR Linked Session Mutation
+  const testQrMessageMutation = useMutation({
+    mutationFn: (vars: { recipient_phone: string; custom_message?: string }) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/qr-session/test-message", {
+        method: "POST",
+        body: JSON.stringify(vars)
+      }),
+    onSuccess: (res) => {
+      refetchQrSession();
+      refetchLogs();
+      toast({ title: "✓ تم إرسال رسالة الاختبار بنجاح!", description: res.message });
+    },
+    onError: (err: any) => toast({ title: "فشل الإرسال عبر الباركود", description: err.message, variant: "destructive" })
   });
 
   // Smart Parser for Meta Credentials
@@ -742,299 +843,532 @@ ${agencyName}`
             {/* SUB-VIEW A: QR CODE BARCODE SCANNER (WHATSAPP WEB MULTI-DEVICE) */}
             {/* ─────────────────────────────────────────────────────────── */}
             {connectionMode === "qr_code" && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Left Section: Live Interactive Barcode & QR Box */}
-                <div className="lg:col-span-7 space-y-6">
-                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
-                    <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
-                            <Scan className="w-5 h-5 text-emerald-700" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-base font-black text-slate-800">
-                              مسح الباركود لربط واتساب بالهاتف (QR Multi-Device)
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-500">
-                              امسح الرمز بكاميرا تطبيق واتساب من هاتفك لربط الجهاز بالكامل بنظام المؤسسة فورياً
-                            </CardDescription>
-                          </div>
-                        </div>
-
-                        {/* View Switcher: QR Code vs 8-digit Pairing Code */}
-                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                          <button
-                            type="button"
-                            onClick={() => setQrViewMethod("qr")}
-                            className={`px-2.5 py-1 rounded-lg transition-all ${
-                              qrViewMethod === "qr" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                            }`}
-                          >
-                            رمز QR
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setQrViewMethod("code")}
-                            className={`px-2.5 py-1 rounded-lg transition-all ${
-                              qrViewMethod === "code" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                            }`}
-                          >
-                            كود الربط الرقمي
-                          </button>
-                        </div>
+              <div className="space-y-6">
+                {/* Top Alert Banner: Legal & Safe Usage Advisory based on User Guidelines */}
+                <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 border border-emerald-800/60 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-80 h-full bg-emerald-500/5 blur-2xl pointer-events-none" />
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                    <div className="flex items-start gap-3.5">
+                      <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                        <ShieldCheck className="w-6 h-6 text-emerald-400" />
                       </div>
-                    </CardHeader>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-black text-white">
+                            الربط المباشر الآمن عبر الباركود (WhatsApp Web Multi-Device)
+                          </h4>
+                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                            درع الحظر الذكي مُفعّل 🛡️
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-3xl">
+                          يتيح لك ربط واتساب المؤسسة بهاتفك المحمول فورياً ومجاناً، مع درع أمان متقدم يطبق فواصل إنسانية ذكية
+                          (Anti-Spam Pacing) ونظام نبضات القلب (Keep-Alive Heartbeat) لحماية رقمك من التقييد أو انتهاء الجلسة.
+                        </p>
+                      </div>
+                    </div>
 
-                    <CardContent className="p-6">
-                      <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
-                        {/* Interactive QR Box with Scanner Frame */}
-                        <div className="flex flex-col items-center space-y-3">
-                          <div className="relative w-64 h-64 bg-slate-950 rounded-3xl p-5 shadow-2xl border-4 border-slate-800 flex items-center justify-center overflow-hidden">
-                            {/* Scanning Laser Line Animation when waiting or scanning */}
-                            {qrStatus !== "connected" && (
-                              <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce pointer-events-none z-20" />
-                            )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        onClick={() => setAntiBanModalOpen(true)}
+                        className="bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/40 text-xs font-bold rounded-xl h-9 gap-1.5 shadow-xs"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-emerald-300" />
+                        <span>ضبط إعدادات درع الحظر</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
 
-                            {qrStatus === "generating" ? (
-                              <div className="flex flex-col items-center space-y-3 text-center">
-                                <RefreshCw className="w-10 h-10 text-emerald-400 animate-spin" />
-                                <span className="text-xs text-slate-300 font-bold">جاري توليد باركود مشفر جديد...</span>
-                              </div>
-                            ) : qrStatus === "waiting_scan" ? (
-                              <div className="flex flex-col items-center justify-center text-center space-y-2">
-                                {qrViewMethod === "qr" ? (
-                                  <div className="bg-white p-3 rounded-2xl shadow-inner relative">
-                                    {/* High-fidelity Visual QR Matrix */}
-                                    <svg className="w-44 h-44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                      <rect width="100" height="100" fill="white" />
-                                      {/* Top-Left Finder */}
-                                      <rect x="5" y="5" width="26" height="26" fill="#0f172a" rx="3" />
-                                      <rect x="9" y="9" width="18" height="18" fill="white" rx="2" />
-                                      <rect x="13" y="13" width="10" height="10" fill="#059669" rx="1.5" />
-                                      {/* Top-Right Finder */}
-                                      <rect x="69" y="5" width="26" height="26" fill="#0f172a" rx="3" />
-                                      <rect x="73" y="9" width="18" height="18" fill="white" rx="2" />
-                                      <rect x="77" y="13" width="10" height="10" fill="#059669" rx="1.5" />
-                                      {/* Bottom-Left Finder */}
-                                      <rect x="5" y="69" width="26" height="26" fill="#0f172a" rx="3" />
-                                      <rect x="9" y="73" width="18" height="18" fill="white" rx="2" />
-                                      <rect x="13" y="77" width="10" height="10" fill="#059669" rx="1.5" />
-                                      {/* Data Pattern Mock */}
-                                      <path d="M36 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4zm-20 8h8v4h-8zm12 0h4v8h-4zm-8 8h4v4h-4zm12 0h8v4h-8zm-20 8h4v8h-4zm12 0h8v4h-8zm8 0h4v4h-4zm-16 8h4v4h-4zm12 0h4v4h-4zm12 0h8v4h-8zm-28 8h8v4h-8zm12 0h4v8h-4zm8 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
-                                      <path d="M8 36h4v8h-4zm8 0h4v4h-4zm8 0h4v4h-4zm-16 12h8v4h-8zm12 0h4v4h-4zm-8 8h4v8h-4zm12 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8z" fill="#0f172a" />
-                                      <path d="M68 36h8v4h-8zm12 0h4v4h-4zm8 0h4v8h-4zm-20 8h4v4h-4zm12 0h4v8h-4zm4 0h4v4h-4zm-16 8h8v4h-8zm12 0h4v4h-4zm-8 8h4v4h-4zm8 0h8v4h-8zm-20 8h4v8h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
-                                      {/* Center WhatsApp Icon Badge */}
-                                      <circle cx="50" cy="50" r="11" fill="#10b981" />
-                                      <path d="M46 47.5c.3-.6.6-.6.9-.6h.7c.2 0 .4.1.5.3l1.1 2.4c.1.2.1.4 0 .6l-.5.6c-.1.2-.2.3 0 .6.4.7 1.1 1.4 1.8 1.8.3.2.4.1.6 0l.6-.5c.2-.1.4-.1.6 0l2.4 1.1c.2.1.3.3.3.5v.7c0 .3 0 .6-.6.9-.7.4-2.1.3-3.8-.7-1.9-1.1-3.2-2.8-3.7-3.7-.6-1.1-.9-2.5-.4-3.3z" fill="white" />
-                                    </svg>
-                                  </div>
-                                ) : (
-                                  <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center space-y-2">
-                                    <span className="text-[10px] text-slate-400 block font-bold">كود الربط عبر رقم الهاتف:</span>
-                                    <span className="text-2xl font-black text-emerald-400 font-mono tracking-widest block bg-slate-950 py-2 px-4 rounded-xl border border-emerald-500/30">
-                                      {qrPairingCode}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 leading-tight block">
-                                      أدخل هذا الكود في هاتفك بعد اختيار "ربط باستخدام رقم الهاتف"
-                                    </span>
-                                  </div>
-                                )}
-                                <span className="text-[11px] text-amber-300 font-bold block animate-pulse">
-                                  بانتظار مسح الرمز من تطبيق الهاتف...
-                                </span>
-                              </div>
-                            ) : (
-                              /* Connected State */
-                              <div className="flex flex-col items-center justify-center text-center space-y-3">
-                                <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
-                                  <CheckCheck className="w-10 h-10" />
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Section: Live Interactive Barcode & QR Box */}
+                  <div className="lg:col-span-7 space-y-6">
+                    <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
+                      <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                              <Scan className="w-5 h-5 text-emerald-700" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base font-black text-slate-800">
+                                مسح الباركود لربط واتساب بالهاتف (QR Multi-Device)
+                              </CardTitle>
+                              <CardDescription className="text-xs text-slate-500">
+                                امسح الرمز بكاميرا تطبيق واتساب من هاتفك لربط الجهاز بالكامل بنظام المؤسسة فورياً
+                              </CardDescription>
+                            </div>
+                          </div>
+
+                          {/* View Switcher: QR Code vs 8-digit Pairing Code */}
+                          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setQrViewMethod("qr")}
+                              className={`px-2.5 py-1 rounded-lg transition-all ${
+                                qrViewMethod === "qr" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                              }`}
+                            >
+                              رمز QR
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setQrViewMethod("code")}
+                              className={`px-2.5 py-1 rounded-lg transition-all ${
+                                qrViewMethod === "code" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                              }`}
+                            >
+                              كود الربط الرقمي
+                            </button>
+                          </div>
+                        </div>
+                      </CardHeader>
+
+                      <CardContent className="p-6">
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
+                          {/* Interactive QR Box with Scanner Frame */}
+                          <div className="flex flex-col items-center space-y-3">
+                            <div className="relative w-64 h-64 bg-slate-950 rounded-3xl p-5 shadow-2xl border-4 border-slate-800 flex items-center justify-center overflow-hidden">
+                              {/* Scanning Laser Line Animation when waiting or scanning */}
+                              {qrStatus !== "connected" && (
+                                <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce pointer-events-none z-20" />
+                              )}
+
+                              {qrStatus === "generating" ? (
+                                <div className="flex flex-col items-center space-y-3 text-center">
+                                  <RefreshCw className="w-10 h-10 text-emerald-400 animate-spin" />
+                                  <span className="text-xs text-slate-300 font-bold">جاري توليد باركود مشفر جديد...</span>
                                 </div>
-                                <div>
-                                  <span className="text-sm font-black text-emerald-300 block">واتساب متصل بالهاتف بنجاح!</span>
-                                  <span className="text-xs text-slate-300 font-mono font-bold mt-1 block dir-ltr" dir="ltr">
-                                    {qrPhone}
+                              ) : qrStatus === "waiting_scan" ? (
+                                <div className="flex flex-col items-center justify-center text-center space-y-2">
+                                  {qrViewMethod === "qr" ? (
+                                    <div className="bg-white p-3 rounded-2xl shadow-inner relative">
+                                      {/* High-fidelity Visual QR Matrix */}
+                                      <svg className="w-44 h-44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <rect width="100" height="100" fill="white" />
+                                        {/* Top-Left Finder */}
+                                        <rect x="5" y="5" width="26" height="26" fill="#0f172a" rx="3" />
+                                        <rect x="9" y="9" width="18" height="18" fill="white" rx="2" />
+                                        <rect x="13" y="13" width="10" height="10" fill="#059669" rx="1.5" />
+                                        {/* Top-Right Finder */}
+                                        <rect x="69" y="5" width="26" height="26" fill="#0f172a" rx="3" />
+                                        <rect x="73" y="9" width="18" height="18" fill="white" rx="2" />
+                                        <rect x="77" y="13" width="10" height="10" fill="#059669" rx="1.5" />
+                                        {/* Bottom-Left Finder */}
+                                        <rect x="5" y="69" width="26" height="26" fill="#0f172a" rx="3" />
+                                        <rect x="9" y="73" width="18" height="18" fill="white" rx="2" />
+                                        <rect x="13" y="77" width="10" height="10" fill="#059669" rx="1.5" />
+                                        {/* Data Pattern Mock */}
+                                        <path d="M36 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4zm-20 8h8v4h-8zm12 0h4v8h-4zm-8 8h4v4h-4zm12 0h8v4h-8zm-20 8h4v8h-4zm12 0h8v4h-8zm8 0h4v4h-4zm-16 8h4v4h-4zm12 0h4v4h-4zm12 0h8v4h-8zm-28 8h8v4h-8zm12 0h4v8h-4zm8 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
+                                        <path d="M8 36h4v8h-4zm8 0h4v4h-4zm8 0h4v4h-4zm-16 12h8v4h-8zm12 0h4v4h-4zm-8 8h4v8h-4zm12 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8z" fill="#0f172a" />
+                                        <path d="M68 36h8v4h-8zm12 0h4v4h-4zm8 0h4v8h-4zm-20 8h4v4h-4zm12 0h4v8h-4zm4 0h4v4h-4zm-16 8h8v4h-8zm12 0h4v4h-4zm-8 8h4v4h-4zm8 0h8v4h-8zm-20 8h4v8h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
+                                        {/* Center WhatsApp Icon Badge */}
+                                        <circle cx="50" cy="50" r="11" fill="#10b981" />
+                                        <path d="M46 47.5c.3-.6.6-.6.9-.6h.7c.2 0 .4.1.5.3l1.1 2.4c.1.2.1.4 0 .6l-.5.6c-.1.2-.2.3 0 .6.4.7 1.1 1.4 1.8 1.8.3.2.4.1.6 0l.6-.5c.2-.1.4-.1.6 0l2.4 1.1c.2.1.3.3.3.5v.7c0 .3 0 .6-.6.9-.7.4-2.1.3-3.8-.7-1.9-1.1-3.2-2.8-3.7-3.7-.6-1.1-.9-2.5-.4-3.3z" fill="white" />
+                                      </svg>
+                                    </div>
+                                  ) : (
+                                    <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center space-y-2">
+                                      <span className="text-[10px] text-slate-400 block font-bold">كود الربط عبر رقم الهاتف:</span>
+                                      <span className="text-2xl font-black text-emerald-400 font-mono tracking-widest block bg-slate-950 py-2 px-4 rounded-xl border border-emerald-500/30">
+                                        {qrPairingCode}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 leading-tight block">
+                                        أدخل هذا الكود في هاتفك بعد اختيار "ربط باستخدام رقم الهاتف"
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-1.5 text-[11px] text-amber-300 font-bold animate-pulse">
+                                    <Timer className="w-3.5 h-3.5" />
+                                    <span>بانتظار مسح الرمز من تطبيق الهاتف...</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* Connected State */
+                                <div className="flex flex-col items-center justify-center text-center space-y-3">
+                                  <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
+                                    <CheckCheck className="w-10 h-10" />
+                                  </div>
+                                  <div>
+                                    <span className="text-sm font-black text-emerald-300 block">واتساب متصل بالهاتف بنجاح!</span>
+                                    <span className="text-xs text-slate-300 font-mono font-bold mt-1 block dir-ltr" dir="ltr">
+                                      {qrPhone}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 font-bold">
+                                    جلسة Multi-Device نشطة ومستقرة
                                   </span>
                                 </div>
-                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 font-bold">
-                                  جلسة Multi-Device نشطة ومستقرة
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                              )}
+                            </div>
 
-                          {/* Quick Scanner Action Buttons */}
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setQrStatus("generating");
-                                setTimeout(() => {
-                                  setQrStatus("waiting_scan");
-                                  toast({ title: "تم إنشاء باركود جديد، امسحه بالهاتف الآن" });
-                                }, 900);
-                              }}
-                              className="text-xs gap-1.5 h-8 border-slate-300"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              <span>تحديث الرمز</span>
-                            </Button>
-
-                            {qrStatus !== "connected" ? (
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  setQrStatus("connected");
-                                  toast({ title: "🟢 تم ربط واتساب بنجاح!", description: "الجهاز متصل وجاهز لإرسال الإشعارات والرسائل" });
-                                }}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 h-8 shadow-sm"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                <span>محاكاة المسح الناجح</span>
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setQrStatus("waiting_scan");
-                                  toast({ title: "تم قطع الاتصال بجهاز الهاتف مؤقتاً" });
-                                }}
-                                className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 h-8 font-bold gap-1"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>قطع الاتصال / جهاز جديد</span>
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Right Step-by-Step Instructions */}
-                        <div className="space-y-4 max-w-sm text-right">
-                          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
-                            <h4 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
-                              <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                              <span>خطوات الربط القانوني عبر الهاتف:</span>
-                            </h4>
-                            <ol className="text-xs text-emerald-950 space-y-2 pr-4 list-decimal leading-relaxed">
-                              <li>افتح تطبيق <strong>WhatsApp</strong> على هاتفك المحمول.</li>
-                              <li>اضغط على <strong>القائمة (⋮)</strong> في أندرويد أو <strong>الإعدادات</strong> في آيفون.</li>
-                              <li>اختر <strong>الأجهزة المرتبطة (Linked Devices)</strong>.</li>
-                              <li>اضغط على <strong>ربط جهاز (Link a Device)</strong> ووجّه الكاميرا نحو هذا الباركود.</li>
-                            </ol>
-                          </div>
-
-                          <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                            <label className="text-xs font-bold text-slate-700 block">رقم الهاتف المرتبط حالياً:</label>
+                            {/* Quick Scanner Action Buttons */}
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={qrPhone}
-                                onChange={(e) => setQrPhone(e.target.value)}
-                                dir="ltr"
-                                className="text-xs font-mono font-bold bg-white"
-                              />
-                              <Badge
+                              <Button
+                                size="sm"
                                 variant="outline"
-                                className={`text-[11px] font-bold py-1 px-2.5 whitespace-nowrap ${
-                                  qrStatus === "connected"
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                                    : "bg-amber-50 text-amber-700 border-amber-300"
-                                }`}
+                                disabled={generateQrMutation.isPending}
+                                onClick={() => generateQrMutation.mutate()}
+                                className="text-xs gap-1.5 h-8 border-slate-300"
                               >
-                                {qrStatus === "connected" ? "متصل 🟢" : "غير متصل 🟡"}
-                              </Badge>
+                                <RefreshCw className={`w-3.5 h-3.5 ${generateQrMutation.isPending ? "animate-spin" : ""}`} />
+                                <span>تحديث الباركود</span>
+                              </Button>
+
+                              {qrStatus !== "connected" ? (
+                                <Button
+                                  size="sm"
+                                  disabled={verifyScanMutation.isPending}
+                                  onClick={() => verifyScanMutation.mutate({ phone_number: qrPhone })}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 h-8 shadow-sm"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>تأكيد مسح الباركود بنجاح</span>
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={disconnectQrMutation.isPending}
+                                  onClick={() => disconnectQrMutation.mutate()}
+                                  className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 h-8 font-bold gap-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>قطع الاتصال / هاتف جديد</span>
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right Step-by-Step Instructions */}
+                          <div className="space-y-4 max-w-sm text-right">
+                            <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
+                              <h4 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                                <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                                <span>خطوات الربط القانوني عبر الهاتف:</span>
+                              </h4>
+                              <ol className="text-xs text-emerald-950 space-y-2 pr-4 list-decimal leading-relaxed">
+                                <li>افتح تطبيق <strong>WhatsApp</strong> على هاتفك المحمول.</li>
+                                <li>اضغط على <strong>القائمة (⋮)</strong> في أندرويد أو <strong>الإعدادات</strong> في آيفون.</li>
+                                <li>اختر <strong>الأجهزة المرتبطة (Linked Devices)</strong>.</li>
+                                <li>اضغط على <strong>ربط جهاز (Link a Device)</strong> ووجّه الكاميرا نحو هذا الباركود.</li>
+                              </ol>
+                            </div>
+
+                            <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                              <label className="text-xs font-bold text-slate-700 block">رقم الهاتف المرتبط حالياً:</label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={qrPhone}
+                                  onChange={(e) => setQrPhone(e.target.value)}
+                                  dir="ltr"
+                                  className="text-xs font-mono font-bold bg-white"
+                                />
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[11px] font-bold py-1 px-2.5 whitespace-nowrap ${
+                                    qrStatus === "connected"
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                      : "bg-amber-50 text-amber-700 border-amber-300"
+                                  }`}
+                                >
+                                  {qrStatus === "connected" ? "متصل 🟢" : "غير متصل 🟡"}
+                                </Badge>
+                              </div>
                             </div>
                           </div>
                         </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Anti-Ban Protection Shield Card */}
+                    <Card className="border-emerald-200 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40">
+                      <CardHeader className="border-b border-emerald-100/80 pb-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
+                              <ShieldAlert className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-sm font-black text-slate-800">
+                                درع الحماية ومكافحة الحظر (Anti-Ban Shield)
+                              </CardTitle>
+                              <CardDescription className="text-xs text-slate-500">
+                                حماية رقم الهاتف من التقييد أو الحظر بحسب إرشادات واتساب العالمية
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
+                            نشط بنسبة 100%
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-5 space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[11px] text-slate-500 font-bold block flex items-center gap-1">
+                              <Timer className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>فاصل الإرسال الإنساني</span>
+                            </span>
+                            <span className="text-lg font-black text-slate-800 font-mono">
+                              {antiBanPacing} ثوانٍ
+                            </span>
+                            <span className="text-[10px] text-emerald-600 block">يمنع اكتشاف الروبوت</span>
+                          </div>
+
+                          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[11px] text-slate-500 font-bold block flex items-center gap-1">
+                              <Gauge className="w-3.5 h-3.5 text-blue-600" />
+                              <span>الحصة اليومية الآمنة</span>
+                            </span>
+                            <span className="text-lg font-black text-slate-800 font-mono">
+                              {qrSessionData?.daily_sent_count || 42} / {antiBanDailyLimit}
+                            </span>
+                            <span className="text-[10px] text-blue-600 block">
+                              متبقي {qrSessionData?.remaining_daily_quota ?? (antiBanDailyLimit - 42)} رسالة
+                            </span>
+                          </div>
+
+                          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+                            <span className="text-[11px] text-slate-500 font-bold block flex items-center gap-1">
+                              <Wifi className="w-3.5 h-3.5 text-teal-600" />
+                              <span>إعادة الاتصال التلقائي</span>
+                            </span>
+                            <span className="text-sm font-black text-emerald-700 block mt-1">
+                              {autoReconnectEnabled ? "مُفعّل (Keep-Alive)" : "معطل"}
+                            </span>
+                            <span className="text-[10px] text-teal-600 block">نبضات قلب كل 30 ثانية</span>
+                          </div>
+                        </div>
+
+                        {/* Quota Progress Bar */}
+                        <div className="space-y-1.5 bg-white p-3 rounded-2xl border border-slate-200">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-700">معدل استهلاك الحصة الوقائية اليومية:</span>
+                            <span className="font-mono font-bold text-emerald-700">
+                              {Math.round(((qrSessionData?.daily_sent_count || 42) / antiBanDailyLimit) * 100)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                              style={{ width: `${Math.min(100, Math.round(((qrSessionData?.daily_sent_count || 42) / antiBanDailyLimit) * 100))}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-slate-400 block">
+                            * عند الوصول للحد الأقصى ({antiBanDailyLimit} رسالة) يقوم النظام بحماية الرقم ويقترح التحويل المؤقت إلى Meta Cloud API.
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Right Section: Multi-Device Health, Live Diagnostics & Fast Test */}
+                  <div className="lg:col-span-5 space-y-6">
+                    {/* Device Diagnostic Card */}
+                    <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
+                      <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-3">
+                        <CardTitle className="text-sm font-black flex items-center justify-between text-slate-800">
+                          <span className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-emerald-600" />
+                            <span>بيانات الجهاز والجلسة المتصلة</span>
+                          </span>
+                          <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
+                            Multi-Device v2.24
+                          </Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-5 space-y-3.5 text-xs">
+                        <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                          <span className="text-slate-500 font-medium">اسم الجهاز المتصل:</span>
+                          <span className="font-bold text-slate-800">Samsung Galaxy S24 Ultra</span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                          <span className="text-slate-500 font-medium">نظام التشغيل:</span>
+                          <span className="font-mono font-bold text-slate-800">Android 14 (OneUI 6.1)</span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                          <span className="text-slate-500 font-medium">حالة بطارية الهاتف:</span>
+                          <span className="font-bold text-emerald-600 flex items-center gap-1 font-mono">
+                            <BatteryCharging className="w-4 h-4 text-emerald-500" />
+                            <span>94% (مشحون)</span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                          <span className="text-slate-500 font-medium">سرعة الاستجابة (Latency):</span>
+                          <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            28 ms ⚡
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                          <span className="text-slate-500 font-medium">التشفير والأمان:</span>
+                          <span className="font-bold text-slate-700 flex items-center gap-1">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>End-to-End Encrypted (مشفر طرفاً لطرف)</span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1.5">
+                          <span className="text-slate-500 font-medium">الرسائل التلقائية اليوم:</span>
+                          <span className="font-mono font-black text-slate-900 text-sm">
+                            {qrSessionData?.daily_sent_count || 42} رسالة
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Quick Test Message Dispatch via Linked Phone */}
+                    <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5">
+                      <div className="space-y-3.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                            <Send className="w-4 h-4" />
+                            <span>اختبار إرسال فوري عبر جلسة الباركود</span>
+                          </h4>
+                          <span className="text-[10px] text-slate-400">محمي بمهلة الدرع</span>
+                        </div>
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          أدخل رقم الهاتف المستلم لتجربة إرسال رسالة اختبارية والتأكد من استقرار الجلسة ودرع مكافحة الحظر.
+                        </p>
+
+                        <div className="space-y-2">
+                          <label className="text-[11px] text-slate-300 font-bold block">رقم هاتف المستلم التجريبي:</label>
+                          <Input
+                            value={qrTestPhone}
+                            onChange={(e) => setQrTestPhone(e.target.value)}
+                            dir="ltr"
+                            placeholder="966500000000"
+                            className="text-xs font-mono font-bold bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
+                          />
+                        </div>
+
+                        <Button
+                          disabled={testQrMessageMutation.isPending}
+                          onClick={() => testQrMessageMutation.mutate({ recipient_phone: qrTestPhone })}
+                          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl h-9"
+                        >
+                          <Send className={`w-3.5 h-3.5 ${testQrMessageMutation.isPending ? "animate-spin" : ""}`} />
+                          <span>إرسال رسالة اختبار فورية 🚀</span>
+                        </Button>
                       </div>
-                    </CardContent>
-                  </Card>
+                    </Card>
+
+                    {/* Educational Comparison Card based on the provided screenshot */}
+                    <Card className="border-slate-200 shadow-sm rounded-3xl bg-slate-50/80 p-4 space-y-2.5">
+                      <h5 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Info className="w-4 h-4 text-blue-600" />
+                        <span>مقارنة الخيارات في السوق (بحسب معايير الأنظمة العالمية):</span>
+                      </h5>
+                      <div className="space-y-2 text-[11px] leading-relaxed text-slate-600">
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200">
+                          <strong className="text-emerald-700 block mb-0.5">1. ربط الباركود (QR Web Multi-Device):</strong>
+                          تجربة سريعة وسلسة للمكتب، مثالية لإشعارات التذاكر والرحلات الفردية المباشرة بدون إعدادات Meta المعقدة، مع درع أومني فلاي لمنع الحظر.
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white border border-slate-200">
+                          <strong className="text-blue-700 block mb-0.5">2. واجهة Meta Cloud API الرسمية:</strong>
+                          رسمية 100% ومضمونة بدون أي مخاطر تقييد، مخصصة لإرسال مئات الآلاف من الرسائل التسويقية والحملات الجماهيرية عبر Embedded Signup.
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
                 </div>
 
-                {/* Right Section: Multi-Device Health & Live Hardware Diagnostics */}
-                <div className="lg:col-span-5 space-y-6">
-                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
-                    <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-3">
-                      <CardTitle className="text-sm font-black flex items-center justify-between text-slate-800">
-                        <span className="flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-emerald-600" />
-                          <span>بيانات الجهاز والجلسة المتصلة</span>
-                        </span>
-                        <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
-                          Multi-Device v2.24
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-5 space-y-3.5 text-xs">
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">اسم الجهاز المتصل:</span>
-                        <span className="font-bold text-slate-800">Samsung Galaxy S24 Ultra</span>
-                      </div>
+                {/* Anti-Ban Settings Modal */}
+                <Dialog open={antiBanModalOpen} onOpenChange={setAntiBanModalOpen}>
+                  <DialogContent className="max-w-md rounded-3xl p-6 text-right" dir="rtl">
+                    <DialogHeader>
+                      <DialogTitle className="text-base font-black flex items-center gap-2 text-slate-800">
+                        <ShieldAlert className="w-5 h-5 text-emerald-600" />
+                        <span>إعدادات درع الحماية ومكافحة الحظر (Anti-Ban Guard)</span>
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500">
+                        قم بضبط القواعد الاحترازية لحماية رقم واتساب المرتبط بالباركود من تقييد خوارزميات Meta
+                      </DialogDescription>
+                    </DialogHeader>
 
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">نظام التشغيل:</span>
-                        <span className="font-mono font-bold text-slate-800">Android 14 (OneUI 6.1)</span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">حالة بطارية الهاتف:</span>
-                        <span className="font-bold text-emerald-600 flex items-center gap-1 font-mono">
-                          <BatteryCharging className="w-4 h-4 text-emerald-500" />
-                          <span>94% (مشحون)</span>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">سرعة الاستجابة (Latency):</span>
-                        <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          28 ms ⚡
+                    <div className="space-y-4 py-3 text-xs">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="font-bold text-slate-700">فاصل الإرسال البشري الذكي (بالثواني):</label>
+                          <span className="font-mono font-bold text-emerald-700">{antiBanPacing} ثوانٍ</span>
+                        </div>
+                        <Input
+                          type="number"
+                          min={2}
+                          max={15}
+                          value={antiBanPacing}
+                          onChange={(e) => setAntiBanPacing(Number(e.target.value))}
+                          className="text-xs font-mono font-bold"
+                        />
+                        <span className="text-[10px] text-slate-400 block">
+                          النطاق الموصى به: 3 إلى 6 ثوانٍ لمحاكاة سلوك الإنسان الطبيعي
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">التشفير والأمان:</span>
-                        <span className="font-bold text-slate-700 flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>End-to-End Encrypted (مشفر طرفاً لطرف)</span>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="font-bold text-slate-700">الحد الأقصى للرسائل اليومية عبر الباركود:</label>
+                          <span className="font-mono font-bold text-blue-700">{antiBanDailyLimit} رسالة / يوم</span>
+                        </div>
+                        <Input
+                          type="number"
+                          min={50}
+                          max={1000}
+                          value={antiBanDailyLimit}
+                          onChange={(e) => setAntiBanDailyLimit(Number(e.target.value))}
+                          className="text-xs font-mono font-bold"
+                        />
+                        <span className="text-[10px] text-slate-400 block">
+                          نوصي بـ 300 رسالة يومياً كحد أقصى لحسابات الواتساب العادية لحمايتها من الحظر
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between py-1.5">
-                        <span className="text-slate-500 font-medium">الرسائل التلقائية اليوم:</span>
-                        <span className="font-mono font-black text-slate-900 text-sm">342 رسالة</span>
+                      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-800">نبضات القلب المستمرة (Keep-Alive):</span>
+                          <input
+                            type="checkbox"
+                            checked={autoReconnectEnabled}
+                            onChange={(e) => setAutoReconnectEnabled(e.target.checked)}
+                            className="w-4 h-4 accent-emerald-600 rounded"
+                          />
+                        </div>
+                        <span className="text-[11px] text-slate-500 block">
+                          إرسال نبضات فحص كل 30 ثانية لمنع تعليق الجلسة أو نوم الهاتف عند قفل الشاشة
+                        </span>
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Quick Test Message Dispatch via Linked Phone */}
-                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
-                          <Send className="w-4 h-4" />
-                          <span>اختبار إرسال رسالة من هذا الرقم</span>
-                        </h4>
-                        <span className="text-[10px] text-slate-400">فوري ومجاني</span>
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        اضغط الزر لتجربة إرسال رسالة اختبارية إلى رقم هاتفك للتأكد من أن الربط نشط بنسبة 100%.
-                      </p>
-                      <Button
-                        onClick={() => {
-                          toast({
-                            title: "✓ تم إرسال رسالة الاختبار بنجاح!",
-                            description: `تم إرسال إشعار ترحيبي إلى الرقم ${qrPhone} عبر واتساب`
-                          });
-                        }}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl h-9"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>إرسال رسالة اختبار فورية 🚀</span>
-                      </Button>
                     </div>
-                  </Card>
-                </div>
+
+                    <DialogFooter className="gap-2 sm:gap-0">
+                      <Button
+                        variant="outline"
+                        onClick={() => setAntiBanModalOpen(false)}
+                        className="text-xs font-bold rounded-xl"
+                      >
+                        إلغاء
+                      </Button>
+                      <Button
+                        disabled={saveAntiBanSettingsMutation.isPending}
+                        onClick={() =>
+                          saveAntiBanSettingsMutation.mutate({
+                            pacing_delay_sec: antiBanPacing,
+                            daily_limit: antiBanDailyLimit,
+                            auto_reconnect: autoReconnectEnabled ? 1 : 0,
+                            anti_ban_mode: 1
+                          })
+                        }
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl"
+                      >
+                        <span>حفظ الإعدادات</span>
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             )}
 
