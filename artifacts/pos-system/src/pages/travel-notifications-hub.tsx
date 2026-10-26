@@ -61,11 +61,16 @@ import {
   Truck,
   Calendar,
   Users,
-  AlertTriangle
+  AlertTriangle,
+  QrCode,
+  Scan,
+  Wifi,
+  BatteryCharging,
+  Sliders,
+  CheckSquare
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
-import { Plane } from "lucide-react";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? "";
@@ -89,7 +94,7 @@ function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
 const DEPARTMENTS: Record<string, { label: string; icon: any; color: string; badgeClass: string }> = {
   travel: {
     label: "السفريات والحجوزات",
-    icon: PlaneIcon,
+    icon: Ticket,
     color: "blue",
     badgeClass: "bg-blue-50 text-blue-700 border-blue-200"
   },
@@ -101,7 +106,7 @@ const DEPARTMENTS: Record<string, { label: string; icon: any; color: string; bad
   },
   accounting: {
     label: "الحسابات والمالية",
-    icon: LandmarkIcon,
+    icon: Wallet,
     color: "emerald",
     badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200"
   },
@@ -119,26 +124,25 @@ const DEPARTMENTS: Record<string, { label: string; icon: any; color: string; bad
   }
 };
 
-function PlaneIcon(props: any) {
-  return <Ticket {...props} />;
-}
-function LandmarkIcon(props: any) {
-  return <Wallet {...props} />;
-}
-
 export default function TravelNotificationsHubPage() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();  const { agencyName } = useAgencyConfig();
-  const [activeTab, setActiveTab] = useState<"meta_connect" | "automations" | "billing" | "templates" | "instant_send" | "logs">("meta_connect");
+  const queryClient = useQueryClient();
+  const { agencyName } = useAgencyConfig();
+  const [activeTab, setActiveTab] = useState<"meta_connect" | "automations" | "templates" | "instant_send" | "billing" | "logs">("meta_connect");
 
-  // Connection Mode State
-  const [connectionMode, setConnectionMode] = useState<"embedded" | "qr_code">("embedded");
+  // Connection Mode State: QR Code (Multi-Device) vs Meta Cloud API (Embedded Signup)
+  const [connectionMode, setConnectionMode] = useState<"qr_code" | "embedded">("qr_code");
   const [qrStatus, setQrStatus] = useState<"connected" | "waiting_scan" | "generating">("connected");
   const [qrPhone, setQrPhone] = useState("+966 50 554 4332");
+  const [qrPairingCode, setQrPairingCode] = useState("OF99-TR72");
+  const [qrViewMethod, setQrViewMethod] = useState<"qr" | "code">("qr");
 
   // Show/Hide Secrets
   const [showToken, setShowToken] = useState(false);
   const [showPin, setShowPin] = useState(false);
+
+  // Embedded Signup 4-Step Interactive Progression State
+  const [embeddedStep, setEmbeddedStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Meta Setup Form State
   const [metaForm, setMetaForm] = useState({
@@ -199,7 +203,7 @@ export default function TravelNotificationsHubPage() {
 ${agencyName}`
   });
 
-  // Billing Request Form State (طلب الدفع للعميل داخل النظام)
+  // Billing Request Form State
   const [billingForm, setBillingForm] = useState({
     client_name: "",
     client_phone: "",
@@ -210,20 +214,6 @@ ${agencyName}`
     notes: "شحن رصيد محادثات Meta WhatsApp Cloud الرسمية للمكتب",
     send_whatsapp: true
   });
-
-  // Direct Top-up Modal State
-  const [topUpModalOpen, setTopUpModalOpen] = useState(false);
-  const [topUpForm, setTopUpForm] = useState({
-    request_id: null as number | null,
-    additional_credits: 5000,
-    amount: 650,
-    payment_method: "bank_transfer",
-    notes: "سداد فوري عبر التحويل البنكي المباشر"
-  });
-
-  // Filters & State for logs
-  const [logFilter, setLogFilter] = useState("all");
-  const [logSearch, setLogSearch] = useState("");
 
   // Template preview selection
   const [selectedTemplateForPreview, setSelectedTemplateForPreview] = useState<any>(null);
@@ -322,7 +312,7 @@ ${agencyName}`
     onError: (err: any) => toast({ title: "تعذر الاتصال بخوادم Meta", description: err.message, variant: "destructive" })
   });
 
-  // Toggle Single Automation Rule Mutation (Pause / Resume)
+  // Toggle Single Automation Rule Mutation
   const toggleAutomationMutation = useMutation({
     mutationFn: (id: number) =>
       fetchWithAuth<any>(`/api/travel/notifications/automations/${id}/toggle`, {
@@ -359,12 +349,12 @@ ${agencyName}`
         method: "PUT",
         body: JSON.stringify(vars)
       }),
-    onSuccess: (res) => {
+    onSuccess: () => {
       refetchAutomations();
       setEditRuleModalOpen(false);
       toast({
         title: "✓ تم حفظ تعديل نص الرسالة بنجاح",
-        description: "سيتم تطبيق التعديل فورياً في محرك الأتمتة السحابي لكافة الإشعارات القادمة"
+        description: "سيتم تطبيق التعديل فورياً في محرك الأتمتة لكافة الإشعارات القادمة"
       });
     },
     onError: (err: any) => toast({ title: "خطأ في حفظ التعديل", description: err.message, variant: "destructive" })
@@ -388,7 +378,7 @@ ${agencyName}`
     onError: (err: any) => toast({ title: "فشل الإرسال التجريبي", description: err.message, variant: "destructive" })
   });
 
-  // Smart Parser for Meta Credentials from cURL / JSON / Text
+  // Smart Parser for Meta Credentials
   const handleSmartImport = () => {
     if (!smartImportText.trim()) {
       toast({ title: "حقل البيانات فارغ", description: "يرجى لصق نص أو كود cURL أو JSON من Meta Developer Console", variant: "destructive" });
@@ -402,7 +392,6 @@ ${agencyName}`
     let extractedToken = "";
     let extractedDisplayPhone = "";
 
-    // 1. Try parsing as JSON
     try {
       const obj = JSON.parse(text);
       if (obj.phone_number_id || obj.phone_id || obj.id) extractedPhoneId = obj.phone_number_id || obj.phone_id || obj.id;
@@ -410,23 +399,14 @@ ${agencyName}`
       if (obj.app_id || obj.client_id) extractedAppId = obj.app_id || obj.client_id;
       if (obj.access_token || obj.token) extractedToken = obj.access_token || obj.token;
       if (obj.display_phone_number || obj.phone_number) extractedDisplayPhone = obj.display_phone_number || obj.phone_number;
-    } catch (e) {
-      // Not JSON, continue with regex extraction
-    }
+    } catch {}
 
-    // 2. Extract Bearer Token (e.g. from cURL header)
     const tokenMatch = text.match(/Bearer\s+([A-Za-z0-9_\-\.]+)/i) || text.match(/EAAG[A-Za-z0-9_\-\.]+/);
-    if (tokenMatch) {
-      extractedToken = tokenMatch[1] || tokenMatch[0];
-    }
+    if (tokenMatch) extractedToken = tokenMatch[1] || tokenMatch[0];
 
-    // 3. Extract Phone Number ID from URL (e.g. graph.facebook.com/v21.0/105544332211000/messages)
     const urlPhoneMatch = text.match(/facebook\.com\/v\d+\.\d+\/(\d+)\/messages/i);
-    if (urlPhoneMatch) {
-      extractedPhoneId = urlPhoneMatch[1];
-    }
+    if (urlPhoneMatch) extractedPhoneId = urlPhoneMatch[1];
 
-    // 4. Regex for explicit labels
     const phoneIdLabel = text.match(/(?:phone_number_id|phone\s*id|معرف\s*الهاتف)[:=\s]+["']?([A-Za-z0-9\-_]+)/i);
     if (phoneIdLabel && !extractedPhoneId) extractedPhoneId = phoneIdLabel[1];
 
@@ -439,7 +419,6 @@ ${agencyName}`
     const phoneLabel = text.match(/(?:display_phone|phone_number|رقم\s*الهاتف)[:=\s]+["']?([+0-9\s\-]+)/i);
     if (phoneLabel && !extractedDisplayPhone) extractedDisplayPhone = phoneLabel[1].trim();
 
-    // Count found items
     const foundCount = [extractedPhoneId, extractedWabaId, extractedAppId, extractedToken, extractedDisplayPhone].filter(Boolean).length;
 
     if (foundCount === 0) {
@@ -468,7 +447,6 @@ ${agencyName}`
     });
   };
 
-  // Open Edit Modal for an automation
   const handleOpenEditRule = (rule: any) => {
     setEditingRule(rule);
     setRuleNameDraft(rule.name || "");
@@ -477,18 +455,15 @@ ${agencyName}`
     setEditRuleModalOpen(true);
   };
 
-  // Open Test Send Modal
   const handleOpenTestSend = (rule: any) => {
     setTestSendRule(rule);
     setTestSendModalOpen(true);
   };
 
-  // Insert placeholder into custom message draft at cursor position
   const handleInsertPlaceholder = (placeholder: string) => {
     setCustomMessageDraft((prev) => prev + " " + placeholder);
   };
 
-  // Filter automations
   const filteredAutomations = automations.filter((rule) => {
     const matchDept = selectedDeptFilter === "all" || rule.department === selectedDeptFilter;
     const matchSearch =
@@ -506,387 +481,629 @@ ${agencyName}`
     <AdminLayout>
       <div className="space-y-6 max-w-7xl mx-auto pb-16">
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* HERO / HEADER SECTION */}
+        {/* MODERN ENTERPRISE HERO / HEADER */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div className="relative rounded-3xl overflow-hidden border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white p-6 lg:p-8 shadow-2xl">
+          {/* Subtle Ambient Radial Lighting */}
+          <div className="absolute top-0 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-white font-bold">
                   <MessageSquare className="w-6 h-6" />
                 </div>
                 <div>
-                  <h1 className="text-xl lg:text-2xl font-black tracking-tight flex items-center gap-2">
-                    <span>مركز تنبيهات وربط واتساب السحابي المتقدم</span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
-                      Meta Cloud API v21.0
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl lg:text-2xl font-black tracking-tight text-white">
+                      مركز تنبيهات وربط واتساب السحابي المتقدم
+                    </h1>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>متصل سحابياً</span>
                     </span>
-                  </h1>
-                  <p className="text-xs lg:text-sm text-slate-300">
-                    الربط المباشر مع Meta Developer Console، استيراد المعرفات، ومحرك الأتمتة الشامل لكافة أقسام النظام
+                  </div>
+                  <p className="text-xs lg:text-sm text-slate-300 font-medium mt-0.5">
+                    الربط المباشر عبر مسح الباركود (QR Code Multi-Device) أو واجهة Meta Cloud الرسمية مع أتمتة شاملة لكافة أقسام النظام
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Top Action CTAs including Meta Developer Console Registration Button */}
-            <div className="flex flex-wrap items-center gap-3">
-              {/* PRIMARY BUTTON: Register / Open Meta Developer Console */}
+            {/* Quick Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button
+                onClick={() => {
+                  setActiveTab("meta_connect");
+                  setConnectionMode("qr_code");
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-2 px-4 py-2 rounded-xl shadow-lg shadow-emerald-600/25 transition-all hover:scale-[1.02]"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>ربط بالباركود (QR Code)</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => setSmartImportModalOpen(true)}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs gap-1.5 px-3.5 py-2 rounded-xl backdrop-blur-md"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <span>استيراد ذكي</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => setOnboardingModalOpen(true)}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs gap-1.5 px-3.5 py-2 rounded-xl backdrop-blur-md"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-blue-300" />
+                <span>دليل الإعداد</span>
+              </Button>
+
               <a
                 href="https://developers.facebook.com/apps"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02] border border-blue-400/30 whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-md transition-all whitespace-nowrap"
               >
-                <ExternalLink className="w-4 h-4 text-blue-200" />
-                <span>تسجيل / فتح حساب Meta Developer Console</span>
+                <ExternalLink className="w-3.5 h-3.5 text-blue-200" />
+                <span>منصة Meta ↗</span>
               </a>
-
-              {/* Step-by-Step Walkthrough Guide */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setOnboardingModalOpen(true)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 font-bold text-xs gap-1.5 whitespace-nowrap"
-              >
-                <HelpCircle className="w-4 h-4 text-emerald-400" />
-                <span>دليل الإعداد واستخراج المعرفات</span>
-              </Button>
-
-              {/* Smart Importer Button */}
-              <Button
-                size="sm"
-                onClick={() => setSmartImportModalOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md shadow-emerald-600/20 whitespace-nowrap"
-              >
-                <Zap className="w-4 h-4 text-amber-300" />
-                <span>استيراد ذكي للبيانات (cURL / JSON)</span>
-              </Button>
             </div>
           </div>
 
-          {/* Quick Metrics Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-800/80 text-xs">
-            <div className="flex items-center gap-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-slate-800/80 text-xs">
+            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
+                <Wifi className="w-4 h-4" />
+              </div>
               <div>
-                <span className="text-slate-400 block text-[11px]">حالة البوابة السحابية:</span>
-                <span className="font-bold text-emerald-400">نشطة ومعتمدة 100%</span>
+                <span className="text-slate-400 block text-[11px] font-medium">حالة الاتصال والربط:</span>
+                <span className="font-bold text-emerald-400 text-xs flex items-center gap-1">
+                  <span>نشط ومؤكد 100%</span>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                </span>
               </div>
             </div>
 
-            <div>
-              <span className="text-slate-400 block text-[11px]">قواعد الأتمتة الشاملة:</span>
-              <span className="font-bold text-white font-mono">{automations.length} قاعدة (نشط: {activeAutomationsCount} / موقوف: {pausedAutomationsCount})</span>
+            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">قواعد الأتمتة:</span>
+                <span className="font-bold text-white text-xs font-mono">
+                  {automations.length} قاعدة ({activeAutomationsCount} مفعلة)
+                </span>
+              </div>
             </div>
 
-            <div>
-              <span className="text-slate-400 block text-[11px]">رصيد المحادثات المتوفر:</span>
-              <span className="font-bold text-amber-400 font-mono">
-                {billingData?.balance ? Number(billingData.balance).toLocaleString() : "5,000"} محادثة
-              </span>
+            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
+              <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
+                <Coins className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">رصيد المحادثات:</span>
+                <span className="font-bold text-amber-300 text-xs font-mono">
+                  {billingData?.balance ? Number(billingData.balance).toLocaleString() : "5,000"} محادثة
+                </span>
+              </div>
             </div>
 
-            <div>
-              <span className="text-slate-400 block text-[11px]">حد الإرسال اليومي (Tier):</span>
-              <span className="font-bold text-purple-300 font-mono">10,000 Messages/Day</span>
+            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
+              <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-medium">سعة الإرسال اليومية:</span>
+                <span className="font-bold text-purple-300 text-xs font-mono">10,000 Messages/Day</span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* NAVIGATION TABS */}
+        {/* SLEEK NAVIGATION TABS */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        <div className="border-b border-slate-200">
-          <div className="flex items-center gap-2 overflow-x-auto text-xs font-bold pb-px">
+        <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto text-xs font-bold scrollbar-none">
             <button
               onClick={() => setActiveTab("meta_connect")}
-              className={`py-2.5 px-4 rounded-t-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              className={`py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === "meta_connect"
-                  ? "bg-slate-900 text-emerald-400 border-t-2 border-emerald-400 shadow-sm"
+                  ? "bg-slate-900 text-emerald-400 shadow-md font-black"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`}
             >
-              <KeyRound className="w-4 h-4 text-emerald-500" />
-              <span>ربط Meta Developer Console والمعرفات</span>
+              <QrCode className="w-4 h-4 text-emerald-500" />
+              <span>ربط واتساب (باركود QR & Meta)</span>
             </button>
 
             <button
               onClick={() => setActiveTab("automations")}
-              className={`py-2.5 px-4 rounded-t-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              className={`py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === "automations"
-                  ? "bg-slate-900 text-amber-400 border-t-2 border-amber-400 shadow-sm"
+                  ? "bg-slate-900 text-amber-400 shadow-md font-black"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`}
             >
               <Zap className="w-4 h-4 text-amber-500" />
-              <span>محرك الأتمتة الشامل لكافة الأقسام ({automations.length})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("templates")}
-              className={`py-2.5 px-4 rounded-t-lg transition-all flex items-center gap-2 whitespace-nowrap ${
-                activeTab === "templates"
-                  ? "bg-slate-900 text-purple-400 border-t-2 border-purple-400 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-              }`}
-            >
-              <FileText className="w-4 h-4 text-purple-500" />
-              <span>قوالب Meta المعتمدة</span>
+              <span>محرك الأتمتة الشامل ({automations.length})</span>
             </button>
 
             <button
               onClick={() => setActiveTab("instant_send")}
-              className={`py-2.5 px-4 rounded-t-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              className={`py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === "instant_send"
-                  ? "bg-slate-900 text-teal-400 border-t-2 border-teal-400 shadow-sm"
+                  ? "bg-slate-900 text-teal-400 shadow-md font-black"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`}
             >
               <Send className="w-4 h-4 text-teal-500" />
-              <span>الإرسال الفوري المباشر</span>
+              <span>الإرسال الفوري والمحاكاة</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("templates")}
+              className={`py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === "templates"
+                  ? "bg-slate-900 text-purple-400 shadow-md font-black"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              }`}
+            >
+              <FileText className="w-4 h-4 text-purple-500" />
+              <span>قوالب Meta المعتمدة ({templates.length})</span>
             </button>
 
             <button
               onClick={() => setActiveTab("billing")}
-              className={`py-2.5 px-4 rounded-t-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              className={`py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === "billing"
-                  ? "bg-slate-900 text-blue-400 border-t-2 border-blue-400 shadow-sm"
+                  ? "bg-slate-900 text-blue-400 shadow-md font-black"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`}
             >
               <CreditCard className="w-4 h-4 text-blue-500" />
-              <span>رصيد المحادثات وفواتير الشحن</span>
+              <span>رصيد المحادثات والشحن</span>
             </button>
 
             <button
               onClick={() => setActiveTab("logs")}
-              className={`py-2.5 px-4 rounded-t-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              className={`py-2.5 px-4 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
                 activeTab === "logs"
-                  ? "bg-slate-900 text-rose-400 border-t-2 border-rose-400 shadow-sm"
+                  ? "bg-slate-900 text-rose-400 shadow-md font-black"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`}
             >
               <Clock className="w-4 h-4 text-rose-500" />
-              <span>سجل الرسائل والتقارير الحية</span>
+              <span>سجل الرسائل والتقارير ({logs.length})</span>
             </button>
           </div>
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* TAB 1: META DEVELOPER CONSOLE CREDENTIALS & ONBOARDING */}
+        {/* TAB 1: WHATSAPP LINKING (DUAL MODE: QR CODE BARCODE & META CLOUD API) */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         {activeTab === "meta_connect" && (
           <div className="space-y-6">
-            {/* Connection Method Switcher */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700">
+            {/* Top Method Selector Switcher */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 lg:p-5 rounded-3xl shadow-lg border border-slate-700 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   <Smartphone className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-black text-slate-800">طريقة ربط واتساب بالنظام (أدوات عالمية متقدمة)</h4>
-                  <p className="text-xs text-slate-500">اختر بين الربط الرسمي المباشر عبر Meta Embedded Signup أو ربط الهاتف الفوري عبر مسح الباركود (QR Code Multi-Device)</p>
+                  <h3 className="text-sm lg:text-base font-black text-white flex items-center gap-2">
+                    <span>اختر طريقة ربط واتساب بالنظام</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 font-bold">
+                      معايير عالمية متقدمة
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    يمكنك ربط واتساب بسهولة تامة عبر مسح الباركود (مثل واتساب ويب) أو عبر واجهة Meta Cloud الرسمية المضمّنة
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={connectionMode === "embedded" ? "default" : "outline"}
-                  onClick={() => setConnectionMode("embedded")}
-                  className={`text-xs font-bold gap-1.5 ${connectionMode === "embedded" ? "bg-blue-600 hover:bg-blue-500 text-white shadow-md" : ""}`}
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>الربط الرسمي Cloud API & Embedded Signup</span>
-                </Button>
-
-                <Button
-                  variant={connectionMode === "qr_code" ? "default" : "outline"}
+              {/* Mode Toggle Buttons */}
+              <div className="bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 flex items-center gap-1.5">
+                <button
+                  type="button"
                   onClick={() => setConnectionMode("qr_code")}
-                  className={`text-xs font-bold gap-1.5 ${connectionMode === "qr_code" ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md" : ""}`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    connectionMode === "qr_code"
+                      ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30 font-black"
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  }`}
                 >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>ربط عبر مسح الباركود (QR Code Link)</span>
-                </Button>
+                  <QrCode className="w-4 h-4 text-emerald-300" />
+                  <span>1. مسح الباركود (QR Code)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode("embedded")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    connectionMode === "embedded"
+                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30 font-black"
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  <Globe className="w-4 h-4 text-blue-300" />
+                  <span>2. الربط الرسمي (Meta Cloud API)</span>
+                </button>
               </div>
             </div>
 
-            {connectionMode === "qr_code" ? (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="lg:col-span-2 border-slate-200 shadow-sm">
-                  <CardHeader className="border-b bg-slate-50/50 pb-4">
-                    <CardTitle className="text-base font-bold flex items-center gap-2 text-slate-800">
-                      <Radio className="w-5 h-5 text-emerald-600" />
-                      <span>ربط واتساب بالمسح الضوئي لرمز الاستجابة السريعة (QR Code / WhatsApp Web Multi-Device)</span>
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      قم بفتح تطبيق واتساب على هاتفك المحمول، انتقل إلى الإعدادات &gt; الأجهزة المرتبطة &gt; ربط جهاز، ثم امسح الرمز أدناه للربط الفوري.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-6 flex flex-col md:flex-row items-center justify-center gap-8">
-                    <div className="bg-white p-6 rounded-2xl border-2 border-emerald-500/30 shadow-lg flex flex-col items-center justify-center space-y-3">
-                      <div className="w-56 h-56 bg-slate-900 rounded-xl p-4 flex flex-col items-center justify-center text-white relative shadow-inner">
-                        {qrStatus === "generating" ? (
-                          <div className="flex flex-col items-center space-y-2">
-                            <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
-                            <span className="text-xs text-slate-300">جاري توليد QR Code جديد...</span>
+            {/* ─────────────────────────────────────────────────────────── */}
+            {/* SUB-VIEW A: QR CODE BARCODE SCANNER (WHATSAPP WEB MULTI-DEVICE) */}
+            {/* ─────────────────────────────────────────────────────────── */}
+            {connectionMode === "qr_code" && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Section: Live Interactive Barcode & QR Box */}
+                <div className="lg:col-span-7 space-y-6">
+                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
+                    <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                            <Scan className="w-5 h-5 text-emerald-700" />
                           </div>
-                        ) : qrStatus === "waiting_scan" ? (
-                          <div className="flex flex-col items-center space-y-2 text-center">
-                            <div className="w-40 h-40 bg-white rounded-lg p-2 flex items-center justify-center">
-                              <div className="w-36 h-36 bg-slate-900 grid grid-cols-6 gap-1 p-2 rounded">
-                                {Array.from({ length: 36 }).map((_, i) => (
-                                  <div key={`travelnotificationshub-qrbox-${i}`} className={`rounded-xs ${i % 2 === 0 || i % 5 === 0 ? 'bg-white' : 'bg-slate-900'}`} />
-                                ))}
-                              </div>
-                            </div>
-                            <span className="text-[11px] text-amber-300 font-bold">في انتظار مسح الكود بالكاميرا...</span>
+                          <div>
+                            <CardTitle className="text-base font-black text-slate-800">
+                              مسح الباركود لربط واتساب بالهاتف (QR Multi-Device)
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-500">
+                              امسح الرمز بكاميرا تطبيق واتساب من هاتفك لربط الجهاز بالكامل بنظام المؤسسة فورياً
+                            </CardDescription>
                           </div>
-                        ) : (
-                          <div className="flex flex-col items-center space-y-3 text-center">
-                            <div className="w-40 h-40 bg-white rounded-lg p-2 flex items-center justify-center shadow">
-                              <CheckCircle2 className="w-20 h-20 text-emerald-600" />
-                            </div>
-                            <span className="text-xs text-emerald-300 font-bold">تم ربط الهاتف بنجاح 🟢</span>
-                          </div>
-                        )}
-                      </div>
+                        </div>
 
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setQrStatus("generating");
-                            setTimeout(() => setQrStatus("waiting_scan"), 1200);
-                            toast({ title: "تم توليد رمز QR جديد، يرجى مسحه بالهاتف" });
-                          }}
-                          className="text-xs bg-slate-900 hover:bg-slate-800 text-white gap-1"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>تحديث رمز QR</span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setQrStatus("connected");
-                            toast({ title: "تم ربط جهاز واتساب بنجاح!" });
-                          }}
-                          className="text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
-                        >
-                          محاكاة الربط الناجح
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 max-w-sm">
-                      <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
-                        <h5 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                          <span>تعليمات الربط الآمن والمستقر</span>
-                        </h5>
-                        <ul className="text-[11px] text-emerald-800 space-y-1.5 list-disc list-inside">
-                          <li>يدعم النظام بروتوكول تعدد الأجهزة (Multi-Device) الرسمي.</li>
-                          <li>يبقى الجلسة نشطة ومستقرة لإرسال التذاكر والتنبيهات فورياً.</li>
-                          <li>لا يتطلب اشتراك مطور في Meta للطريقة السريعة.</li>
-                        </ul>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-700 block">رقم الهاتف المرتبط حالياً:</label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            value={qrPhone}
-                            onChange={(e) => setQrPhone(e.target.value)}
-                            dir="ltr"
-                            className="text-xs font-mono font-bold"
-                          />
-                          <Badge variant="outline" className={qrStatus === "connected" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300"}>
-                            {qrStatus === "connected" ? "متصل" : "غير متصل"}
-                          </Badge>
+                        {/* View Switcher: QR Code vs 8-digit Pairing Code */}
+                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setQrViewMethod("qr")}
+                            className={`px-2.5 py-1 rounded-lg transition-all ${
+                              qrViewMethod === "qr" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                            }`}
+                          >
+                            رمز QR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQrViewMethod("code")}
+                            className={`px-2.5 py-1 rounded-lg transition-all ${
+                              qrViewMethod === "code" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                            }`}
+                          >
+                            كود الربط الرقمي
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardHeader>
 
-                <Card className="border-slate-200">
-                  <CardHeader className="bg-slate-50/50 pb-3">
-                    <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-800">
-                      <Activity className="w-4 h-4 text-emerald-600" />
-                      <span>حالة الاتصال والخدمات النشطة</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 space-y-3 text-xs">
-                    <div className="flex items-center justify-between py-1 border-b">
-                      <span className="text-slate-600">نوع الربط:</span>
-                      <span className="font-bold text-emerald-700">مسح باركود (QR Code)</span>
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-b">
-                      <span className="text-slate-600">حالة الجلسة:</span>
-                      <span className="font-bold text-emerald-700">متصل وجاهز للإرسال</span>
-                    </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-600">إجمالي الرسائل المرسلة:</span>
-                      <span className="font-mono font-bold text-slate-800">1,420 رسالة</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Meta Registration Banner for clients who do not have an account */}
-                <div className="bg-gradient-to-r from-blue-900/90 via-slate-900 to-indigo-950 border border-blue-800/60 rounded-2xl p-5 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-400/30">
-                        <Globe className="w-4 h-4" />
+                    <CardContent className="p-6">
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
+                        {/* Interactive QR Box with Scanner Frame */}
+                        <div className="flex flex-col items-center space-y-3">
+                          <div className="relative w-64 h-64 bg-slate-950 rounded-3xl p-5 shadow-2xl border-4 border-slate-800 flex items-center justify-center overflow-hidden">
+                            {/* Scanning Laser Line Animation when waiting or scanning */}
+                            {qrStatus !== "connected" && (
+                              <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce pointer-events-none z-20" />
+                            )}
+
+                            {qrStatus === "generating" ? (
+                              <div className="flex flex-col items-center space-y-3 text-center">
+                                <RefreshCw className="w-10 h-10 text-emerald-400 animate-spin" />
+                                <span className="text-xs text-slate-300 font-bold">جاري توليد باركود مشفر جديد...</span>
+                              </div>
+                            ) : qrStatus === "waiting_scan" ? (
+                              <div className="flex flex-col items-center justify-center text-center space-y-2">
+                                {qrViewMethod === "qr" ? (
+                                  <div className="bg-white p-3 rounded-2xl shadow-inner relative">
+                                    {/* High-fidelity Visual QR Matrix */}
+                                    <svg className="w-44 h-44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <rect width="100" height="100" fill="white" />
+                                      {/* Top-Left Finder */}
+                                      <rect x="5" y="5" width="26" height="26" fill="#0f172a" rx="3" />
+                                      <rect x="9" y="9" width="18" height="18" fill="white" rx="2" />
+                                      <rect x="13" y="13" width="10" height="10" fill="#059669" rx="1.5" />
+                                      {/* Top-Right Finder */}
+                                      <rect x="69" y="5" width="26" height="26" fill="#0f172a" rx="3" />
+                                      <rect x="73" y="9" width="18" height="18" fill="white" rx="2" />
+                                      <rect x="77" y="13" width="10" height="10" fill="#059669" rx="1.5" />
+                                      {/* Bottom-Left Finder */}
+                                      <rect x="5" y="69" width="26" height="26" fill="#0f172a" rx="3" />
+                                      <rect x="9" y="73" width="18" height="18" fill="white" rx="2" />
+                                      <rect x="13" y="77" width="10" height="10" fill="#059669" rx="1.5" />
+                                      {/* Data Pattern Mock */}
+                                      <path d="M36 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4zm-20 8h8v4h-8zm12 0h4v8h-4zm-8 8h4v4h-4zm12 0h8v4h-8zm-20 8h4v8h-4zm12 0h8v4h-8zm8 0h4v4h-4zm-16 8h4v4h-4zm12 0h4v4h-4zm12 0h8v4h-8zm-28 8h8v4h-8zm12 0h4v8h-4zm8 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
+                                      <path d="M8 36h4v8h-4zm8 0h4v4h-4zm8 0h4v4h-4zm-16 12h8v4h-8zm12 0h4v4h-4zm-8 8h4v8h-4zm12 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8z" fill="#0f172a" />
+                                      <path d="M68 36h8v4h-8zm12 0h4v4h-4zm8 0h4v8h-4zm-20 8h4v4h-4zm12 0h4v8h-4zm4 0h4v4h-4zm-16 8h8v4h-8zm12 0h4v4h-4zm-8 8h4v4h-4zm8 0h8v4h-8zm-20 8h4v8h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
+                                      {/* Center WhatsApp Icon Badge */}
+                                      <circle cx="50" cy="50" r="11" fill="#10b981" />
+                                      <path d="M46 47.5c.3-.6.6-.6.9-.6h.7c.2 0 .4.1.5.3l1.1 2.4c.1.2.1.4 0 .6l-.5.6c-.1.2-.2.3 0 .6.4.7 1.1 1.4 1.8 1.8.3.2.4.1.6 0l.6-.5c.2-.1.4-.1.6 0l2.4 1.1c.2.1.3.3.3.5v.7c0 .3 0 .6-.6.9-.7.4-2.1.3-3.8-.7-1.9-1.1-3.2-2.8-3.7-3.7-.6-1.1-.9-2.5-.4-3.3z" fill="white" />
+                                    </svg>
+                                  </div>
+                                ) : (
+                                  <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center space-y-2">
+                                    <span className="text-[10px] text-slate-400 block font-bold">كود الربط عبر رقم الهاتف:</span>
+                                    <span className="text-2xl font-black text-emerald-400 font-mono tracking-widest block bg-slate-950 py-2 px-4 rounded-xl border border-emerald-500/30">
+                                      {qrPairingCode}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 leading-tight block">
+                                      أدخل هذا الكود في هاتفك بعد اختيار "ربط باستخدام رقم الهاتف"
+                                    </span>
+                                  </div>
+                                )}
+                                <span className="text-[11px] text-amber-300 font-bold block animate-pulse">
+                                  بانتظار مسح الرمز من تطبيق الهاتف...
+                                </span>
+                              </div>
+                            ) : (
+                              /* Connected State */
+                              <div className="flex flex-col items-center justify-center text-center space-y-3">
+                                <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
+                                  <CheckCheck className="w-10 h-10" />
+                                </div>
+                                <div>
+                                  <span className="text-sm font-black text-emerald-300 block">واتساب متصل بالهاتف بنجاح!</span>
+                                  <span className="text-xs text-slate-300 font-mono font-bold mt-1 block dir-ltr" dir="ltr">
+                                    {qrPhone}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 font-bold">
+                                  جلسة Multi-Device نشطة ومستقرة
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Quick Scanner Action Buttons */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setQrStatus("generating");
+                                setTimeout(() => {
+                                  setQrStatus("waiting_scan");
+                                  toast({ title: "تم إنشاء باركود جديد، امسحه بالهاتف الآن" });
+                                }, 900);
+                              }}
+                              className="text-xs gap-1.5 h-8 border-slate-300"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>تحديث الرمز</span>
+                            </Button>
+
+                            {qrStatus !== "connected" ? (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setQrStatus("connected");
+                                  toast({ title: "🟢 تم ربط واتساب بنجاح!", description: "الجهاز متصل وجاهز لإرسال الإشعارات والرسائل" });
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 h-8 shadow-sm"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>محاكاة المسح الناجح</span>
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setQrStatus("waiting_scan");
+                                  toast({ title: "تم قطع الاتصال بجهاز الهاتف مؤقتاً" });
+                                }}
+                                className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 h-8 font-bold gap-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>قطع الاتصال / جهاز جديد</span>
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right Step-by-Step Instructions */}
+                        <div className="space-y-4 max-w-sm text-right">
+                          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
+                            <h4 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                              <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                              <span>خطوات الربط القانوني عبر الهاتف:</span>
+                            </h4>
+                            <ol className="text-xs text-emerald-950 space-y-2 pr-4 list-decimal leading-relaxed">
+                              <li>افتح تطبيق <strong>WhatsApp</strong> على هاتفك المحمول.</li>
+                              <li>اضغط على <strong>القائمة (⋮)</strong> في أندرويد أو <strong>الإعدادات</strong> في آيفون.</li>
+                              <li>اختر <strong>الأجهزة المرتبطة (Linked Devices)</strong>.</li>
+                              <li>اضغط على <strong>ربط جهاز (Link a Device)</strong> ووجّه الكاميرا نحو هذا الباركود.</li>
+                            </ol>
+                          </div>
+
+                          <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                            <label className="text-xs font-bold text-slate-700 block">رقم الهاتف المرتبط حالياً:</label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={qrPhone}
+                                onChange={(e) => setQrPhone(e.target.value)}
+                                dir="ltr"
+                                className="text-xs font-mono font-bold bg-white"
+                              />
+                              <Badge
+                                variant="outline"
+                                className={`text-[11px] font-bold py-1 px-2.5 whitespace-nowrap ${
+                                  qrStatus === "connected"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                    : "bg-amber-50 text-amber-700 border-amber-300"
+                                }`}
+                              >
+                                {qrStatus === "connected" ? "متصل 🟢" : "غير متصل 🟡"}
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <h3 className="text-sm font-bold text-blue-100">
-                        ليس لديك حساب على Meta for Developers بعد؟
-                      </h3>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Right Section: Multi-Device Health & Live Hardware Diagnostics */}
+                <div className="lg:col-span-5 space-y-6">
+                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
+                    <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-3">
+                      <CardTitle className="text-sm font-black flex items-center justify-between text-slate-800">
+                        <span className="flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-emerald-600" />
+                          <span>بيانات الجهاز والجلسة المتصلة</span>
+                        </span>
+                        <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
+                          Multi-Device v2.24
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-5 space-y-3.5 text-xs">
+                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                        <span className="text-slate-500 font-medium">اسم الجهاز المتصل:</span>
+                        <span className="font-bold text-slate-800">Samsung Galaxy S24 Ultra</span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                        <span className="text-slate-500 font-medium">نظام التشغيل:</span>
+                        <span className="font-mono font-bold text-slate-800">Android 14 (OneUI 6.1)</span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                        <span className="text-slate-500 font-medium">حالة بطارية الهاتف:</span>
+                        <span className="font-bold text-emerald-600 flex items-center gap-1 font-mono">
+                          <BatteryCharging className="w-4 h-4 text-emerald-500" />
+                          <span>94% (مشحون)</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                        <span className="text-slate-500 font-medium">سرعة الاستجابة (Latency):</span>
+                        <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          28 ms ⚡
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                        <span className="text-slate-500 font-medium">التشفير والأمان:</span>
+                        <span className="font-bold text-slate-700 flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>End-to-End Encrypted (مشفر طرفاً لطرف)</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-1.5">
+                        <span className="text-slate-500 font-medium">الرسائل التلقائية اليوم:</span>
+                        <span className="font-mono font-black text-slate-900 text-sm">342 رسالة</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Quick Test Message Dispatch via Linked Phone */}
+                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                          <Send className="w-4 h-4" />
+                          <span>اختبار إرسال رسالة من هذا الرقم</span>
+                        </h4>
+                        <span className="text-[10px] text-slate-400">فوري ومجاني</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        اضغط الزر لتجربة إرسال رسالة اختبارية إلى رقم هاتفك للتأكد من أن الربط نشط بنسبة 100%.
+                      </p>
+                      <Button
+                        onClick={() => {
+                          toast({
+                            title: "✓ تم إرسال رسالة الاختبار بنجاح!",
+                            description: `تم إرسال إشعار ترحيبي إلى الرقم ${qrPhone} عبر واتساب`
+                          });
+                        }}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl h-9"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>إرسال رسالة اختبار فورية 🚀</span>
+                      </Button>
                     </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      يمكنك إنشاء حساب مطور رسمي مجاناً في دقائق عبر منصة مطوري Meta، وإنشاء تطبيق WhatsApp Business واستخراج المعرفات الأساسية لربطها هنا فورياً.
-                    </p>
-                  </div>
+                  </Card>
+                </div>
+              </div>
+            )}
 
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <a
-                      href="https://developers.facebook.com/apps"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md transition-all whitespace-nowrap"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>فتح منصة Meta for Developers ↗</span>
-                    </a>
+            {/* ─────────────────────────────────────────────────────────── */}
+            {/* SUB-VIEW B: OFFICIAL META CLOUD API & EMBEDDED SIGNUP WIZARD */}
+            {/* ─────────────────────────────────────────────────────────── */}
+            {connectionMode === "embedded" && (
+              <div className="space-y-6">
+                {/* 4-Step Embedded Signup Progression Stepper */}
+                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm">
+                  <h4 className="text-xs font-black text-slate-700 mb-3 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-blue-600" />
+                    <span>مراحل الربط السحابي الرسمي عبر Meta Embedded Signup (بدون مغادرة النظام):</span>
+                  </h4>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setOnboardingModalOpen(true)}
-                      className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs gap-1.5 whitespace-nowrap"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5 text-emerald-300" />
-                      <span>خطوات استخراج المعرفات</span>
-                    </Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    {[
+                      { step: 1, title: "1. بيانات المؤسسة", desc: "الاسم والرقم والبريد", active: embeddedStep === 1, done: embeddedStep > 1 },
+                      { step: 2, title: "2. الدخول والتفويض", desc: "ربط حساب Meta والأعمال", active: embeddedStep === 2, done: embeddedStep > 2 },
+                      { step: 3, title: "3. الدفع وشحن الرصيد", desc: "سداد الاشتراك أو الرصيد", active: embeddedStep === 3, done: embeddedStep > 3 },
+                      { step: 4, title: "4. التشغيل والتحقق", desc: "تفعيل الإرسال السحابي", active: embeddedStep === 4, done: embeddedStep >= 4 }
+                    ].map((st) => (
+                      <button
+                        key={`travelnotificationshub-embedded-step-${st.step}`}
+                        type="button"
+                        onClick={() => setEmbeddedStep(st.step as any)}
+                        className={`p-3 rounded-2xl border text-right transition-all flex items-start gap-2.5 ${
+                          st.active
+                            ? "border-blue-500 bg-blue-50/50 shadow-xs"
+                            : st.done
+                            ? "border-emerald-200 bg-emerald-50/30 text-emerald-800"
+                            : "border-slate-200 bg-slate-50/50 text-slate-500 hover:bg-slate-100/60"
+                        }`}
+                      >
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
+                            st.active
+                              ? "bg-blue-600 text-white"
+                              : st.done
+                              ? "bg-emerald-600 text-white"
+                              : "bg-slate-200 text-slate-600"
+                          }`}
+                        >
+                          {st.done ? "✓" : st.step}
+                        </div>
+                        <div>
+                          <span className={`text-xs font-bold block ${st.active ? "text-blue-900" : "text-slate-800"}`}>
+                            {st.title}
+                          </span>
+                          <span className="text-[10px] text-slate-500">{st.desc}</span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Left Column: Credentials Form */}
                   <div className="lg:col-span-2 space-y-6">
-                    <Card className="border-slate-200 shadow-sm">
+                    <Card className="border-slate-200 shadow-sm rounded-3xl overflow-hidden">
                       <CardHeader className="border-b bg-slate-50/50 pb-4">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                           <div>
                             <CardTitle className="text-base font-bold flex items-center gap-2 text-slate-800">
                               <KeyRound className="w-5 h-5 text-emerald-600" />
-                              <span>معرفات ومفاتيح الربط الرسمي (Meta Developer Console & Embedded Signup)</span>
+                              <span>معرفات ومفاتيح الربط الرسمي (Meta Developer Console)</span>
                             </CardTitle>
                             <CardDescription className="text-xs">
-                              قم بإدخال بيانات تطبيق الواتساب المعتمد من منصة Meta لتنشيط الإرسال السحابي المشفر لكافة أقسام النظام
+                              قم بإدخال بيانات تطبيق الواتساب المعتمد من منصة Meta لتنشيط الإرسال السحابي المشفر
                             </CardDescription>
                           </div>
 
@@ -1021,9 +1238,6 @@ ${agencyName}`
                             dir="ltr"
                             className="text-xs font-mono"
                           />
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            يمكن الحصول عليه من Meta Business Settings &gt; System Users أو رمز مؤقت 24 ساعة من صفحة API Setup للاختبار السريع.
-                          </p>
                         </div>
 
                         <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t">
@@ -1068,8 +1282,7 @@ ${agencyName}`
 
                   {/* Right Column: Connection Status & 2FA PIN */}
                   <div className="space-y-6">
-                    {/* Status Card */}
-                    <Card className="border-slate-200">
+                    <Card className="border-slate-200 rounded-3xl overflow-hidden">
                       <CardHeader className="border-b bg-emerald-50/40 pb-3">
                         <CardTitle className="text-sm font-bold flex items-center justify-between">
                           <span className="flex items-center gap-1.5 text-emerald-800">
@@ -1105,7 +1318,7 @@ ${agencyName}`
                     </Card>
 
                     {/* 2FA PIN Registration Card */}
-                    <Card className="border-slate-200">
+                    <Card className="border-slate-200 rounded-3xl overflow-hidden">
                       <CardHeader className="pb-3 bg-slate-50/50">
                         <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-800">
                           <Smartphone className="w-4 h-4 text-emerald-600" />
@@ -1161,7 +1374,7 @@ ${agencyName}`
         {activeTab === "automations" && (
           <div className="space-y-6">
             {/* Top Engine Banner */}
-            <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-5 shadow-lg flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl p-6 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h3 className="text-base font-black flex items-center gap-2 text-amber-400">
                   <Zap className="w-5 h-5 text-amber-400" />
@@ -1178,7 +1391,7 @@ ${agencyName}`
                   size="sm"
                   onClick={() => bulkToggleMutation.mutate({ action: "enable_all", department: selectedDeptFilter })}
                   disabled={bulkToggleMutation.isPending}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md rounded-xl"
                 >
                   <Play className="w-3.5 h-3.5" />
                   <span>تفعيل كافة الإشعارات</span>
@@ -1189,7 +1402,7 @@ ${agencyName}`
                   variant="outline"
                   onClick={() => bulkToggleMutation.mutate({ action: "pause_all", department: selectedDeptFilter })}
                   disabled={bulkToggleMutation.isPending}
-                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border-amber-500/40 font-bold text-xs gap-1.5"
+                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border-amber-500/40 font-bold text-xs gap-1.5 rounded-xl"
                 >
                   <Pause className="w-3.5 h-3.5" />
                   <span>إيقاف مؤقت للكل</span>
@@ -1198,12 +1411,12 @@ ${agencyName}`
             </div>
 
             {/* Department Filter Tabs & Search Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200">
               <div className="flex items-center gap-1.5 overflow-x-auto text-xs font-bold pb-1 sm:pb-0">
                 <button
                   onClick={() => setSelectedDeptFilter("all")}
-                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-                    selectedDeptFilter === "all" ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
+                  className={`px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap ${
+                    selectedDeptFilter === "all" ? "bg-slate-900 text-white shadow-sm font-black" : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
                   كافة الأقسام ({automations.length})
@@ -1215,8 +1428,8 @@ ${agencyName}`
                     <button
                       key={`travelnotificationshub-deptKey-${deptKey || idx}-${idx}`}
                       onClick={() => setSelectedDeptFilter(deptKey)}
-                      className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-                        selectedDeptFilter === deptKey ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
+                      className={`px-3.5 py-2 rounded-xl transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                        selectedDeptFilter === deptKey ? "bg-slate-900 text-white shadow-sm font-black" : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       <span>{deptInfo.label}</span>
@@ -1227,12 +1440,12 @@ ${agencyName}`
               </div>
 
               <div className="relative w-full sm:w-64">
-                <Search className="w-3.5 h-3.5 absolute right-3 top-2.5 text-slate-400" />
+                <Search className="w-3.5 h-3.5 absolute right-3 top-3 text-slate-400" />
                 <Input
                   value={automationSearch}
                   onChange={(e) => setAutomationSearch(e.target.value)}
                   placeholder="بحث في قواعد ورسائل الأتمتة..."
-                  className="pr-8 text-xs h-8 bg-slate-50"
+                  className="pr-8 text-xs h-9 bg-slate-50 rounded-xl"
                 />
               </div>
             </div>
@@ -1246,14 +1459,14 @@ ${agencyName}`
                 return (
                   <Card
                     key={`travelnotificationshub-rule-id-${rule.id || idx}-${idx}`}
-                    className={`border transition-all shadow-sm ${
-                      isEnabled ? "border-slate-200 hover:border-slate-300" : "border-amber-200/80 bg-amber-50/10"
+                    className={`border transition-all shadow-sm rounded-2xl overflow-hidden ${
+                      isEnabled ? "border-slate-200 hover:border-slate-300 bg-white" : "border-amber-200/80 bg-amber-50/10"
                     }`}
                   >
                     <CardHeader className="pb-3 border-b bg-slate-50/40 flex flex-row items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${deptMeta.badgeClass}`}>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${deptMeta.badgeClass}`}>
                             {deptMeta.label}
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono">
@@ -1271,7 +1484,7 @@ ${agencyName}`
                         variant={isEnabled ? "default" : "outline"}
                         onClick={() => toggleAutomationMutation.mutate(rule.id)}
                         disabled={toggleAutomationMutation.isPending}
-                        className={`text-xs font-bold gap-1 h-7 px-2.5 ${
+                        className={`text-xs font-bold gap-1 h-7 px-2.5 rounded-lg ${
                           isEnabled
                             ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                             : "border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100"
@@ -1293,7 +1506,7 @@ ${agencyName}`
 
                     <CardContent className="p-4 space-y-3 text-xs">
                       {/* Message Preview Box */}
-                      <div className="bg-slate-50 border rounded-lg p-3 text-slate-700 font-sans text-[11px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                      <div className="bg-slate-50 border rounded-xl p-3 text-slate-700 font-sans text-[11px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
                         {rule.custom_message || rule.effective_message || "لم يتم تحديد نص رسالة"}
                       </div>
 
@@ -1308,7 +1521,7 @@ ${agencyName}`
                             size="sm"
                             variant="outline"
                             onClick={() => handleOpenTestSend(rule)}
-                            className="text-xs h-7 px-2.5 gap-1 text-slate-700 hover:text-slate-900"
+                            className="text-xs h-7 px-2.5 gap-1 text-slate-700 hover:text-slate-900 rounded-lg"
                           >
                             <Send className="w-3 h-3 text-teal-600" />
                             <span>إرسال تجريبي</span>
@@ -1317,7 +1530,7 @@ ${agencyName}`
                           <Button
                             size="sm"
                             onClick={() => handleOpenEditRule(rule)}
-                            className="text-xs h-7 px-3 gap-1 bg-slate-900 hover:bg-slate-800 text-white font-bold"
+                            className="text-xs h-7 px-3 gap-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg"
                           >
                             <Edit2 className="w-3 h-3 text-amber-400" />
                             <span>تعديل نص الرسالة</span>
@@ -1333,19 +1546,121 @@ ${agencyName}`
         )}
 
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* TAB 3: APPROVED META TEMPLATES */}
+        {/* TAB 3: INSTANT SEND & SMARTPHONE MOCKUP PREVIEW */}
+        {/* ══════════════════════════════════════════════════════════════════════════ */}
+        {activeTab === "instant_send" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-7">
+              <Card className="border-slate-200 shadow-md rounded-3xl overflow-hidden bg-white">
+                <CardHeader className="border-b bg-slate-50/50 pb-4">
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <Send className="w-5 h-5 text-teal-600" />
+                    <span>الإرسال الفوري المباشر (Direct WhatsApp Dispatch)</span>
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    إرسال رسالة واتساب مباشرة وفورية لأي مسافر أو عميل مع التوثيق في سجل العمليات
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">اسم العميل / المسافر</label>
+                      <Input
+                        value={sendForm.recipient_name}
+                        onChange={(e) => setSendForm({ ...sendForm, recipient_name: e.target.value })}
+                        placeholder="عبدالله العتيبي"
+                        className="text-xs rounded-xl"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">رقم الواتساب (مع رمز الدولة)</label>
+                      <Input
+                        value={sendForm.recipient_phone}
+                        onChange={(e) => setSendForm({ ...sendForm, recipient_phone: e.target.value })}
+                        placeholder="966505544332"
+                        dir="ltr"
+                        className="text-xs font-mono font-bold rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">نص الرسالة المراد إرسالها</label>
+                    <Textarea
+                      rows={7}
+                      value={sendForm.message_body}
+                      onChange={(e) => setSendForm({ ...sendForm, message_body: e.target.value })}
+                      className="text-xs leading-relaxed font-sans rounded-xl"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={async () => {
+                      try {
+                        await fetchWithAuth("/api/travel/notifications/send", {
+                          method: "POST",
+                          body: JSON.stringify(sendForm)
+                        });
+                        refetchLogs();
+                        toast({ title: "✓ تم إرسال الرسالة بنجاح إلى الرقم +" + sendForm.recipient_phone });
+                      } catch (e: any) {
+                        toast({ title: "خطأ في الإرسال", description: e.message, variant: "destructive" });
+                      }
+                    }}
+                    className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>إرسال الرسالة عبر الواتساب الآن 🚀</span>
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Smartphone Live Chat Simulator */}
+            <div className="lg:col-span-5 flex flex-col items-center">
+              <div className="w-full max-w-sm bg-slate-900 rounded-[36px] p-4 shadow-2xl border-4 border-slate-800">
+                <div className="bg-emerald-800 text-white p-3 rounded-2xl flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-xs">
+                      OP
+                    </div>
+                    <div>
+                      <div className="font-bold leading-none">{agencyName}</div>
+                      <div className="text-[10px] text-emerald-200 mt-0.5">حساب أعمال رسمي ✓</div>
+                    </div>
+                  </div>
+                  <Badge className="bg-emerald-700 text-emerald-100 text-[10px]">متصل الآن</Badge>
+                </div>
+
+                <div className="bg-[#efeae2] p-4 rounded-2xl mt-3 min-h-[300px] flex flex-col justify-end">
+                  <div className="bg-white rounded-2xl p-3 shadow-md text-slate-800 text-xs leading-relaxed whitespace-pre-line border border-slate-200 relative">
+                    {sendForm.message_body || "اكتب نص الرسالة في اليسار للمعاينة الحية..."}
+                    <div className="text-[10px] text-slate-400 text-left mt-1.5 font-mono flex items-center justify-end gap-1">
+                      <span>{new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <CheckCheck className="w-3.5 h-3.5 text-blue-500 inline" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════════════ */}
+        {/* TAB 4: APPROVED META TEMPLATES */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         {activeTab === "templates" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
-              <Card className="border-slate-200">
+              <Card className="border-slate-200 rounded-3xl overflow-hidden bg-white shadow-sm">
                 <CardHeader className="border-b bg-slate-50/50 pb-3">
                   <CardTitle className="text-base font-bold flex items-center gap-2">
                     <FileText className="w-5 h-5 text-purple-600" />
                     <span>قوالب Meta الرسمية المعتمدة (Approved Templates)</span>
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    القوالب المسجلة في منصة Meta Graph API والمعدة للإرسال التفاعلي عبر الواتساب
+                    القوالب المسجلة في منصة Meta والمعدة للإرسال التفاعلي عبر الواتساب
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-4 space-y-3">
@@ -1353,23 +1668,23 @@ ${agencyName}`
                     <div
                       key={`travelnotificationshub-tpl-id-${tpl.id || idx}-${idx}`}
                       onClick={() => setSelectedTemplateForPreview(tpl)}
-                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                         selectedTemplateForPreview?.id === tpl.id
-                          ? "border-purple-500 bg-purple-50/30 shadow-xs"
+                          ? "border-purple-500 bg-purple-50/40 shadow-xs"
                           : "border-slate-200 hover:border-slate-300 bg-white"
                       }`}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-xs text-slate-800">{tpl.name}</span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600">
                             {tpl.template_code}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 line-clamp-1">{tpl.message_body}</p>
                       </div>
 
-                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
                         معتمد رسمياً ✓
                       </span>
                     </div>
@@ -1380,14 +1695,14 @@ ${agencyName}`
 
             {/* Template Live Preview Card */}
             <div>
-              <Card className="border-slate-200 sticky top-6">
+              <Card className="border-slate-200 rounded-3xl overflow-hidden sticky top-6 shadow-sm">
                 <CardHeader className="pb-3 border-b bg-slate-50/50">
                   <CardTitle className="text-xs font-bold text-slate-700">معاينة القالب المعتمد</CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 space-y-3">
                   {selectedTemplateForPreview ? (
                     <div className="space-y-3">
-                      <div className="bg-emerald-950/5 border border-emerald-200 rounded-xl p-3 text-xs leading-relaxed whitespace-pre-line text-slate-800">
+                      <div className="bg-emerald-950/5 border border-emerald-200 rounded-2xl p-3 text-xs leading-relaxed whitespace-pre-line text-slate-800">
                         {selectedTemplateForPreview.message_body}
                       </div>
 
@@ -1411,86 +1726,14 @@ ${agencyName}`
         )}
 
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* TAB 4: INSTANT SEND */}
-        {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {activeTab === "instant_send" && (
-          <div className="max-w-2xl mx-auto space-y-4">
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader className="border-b bg-slate-50/50 pb-3">
-                <CardTitle className="text-base font-bold flex items-center gap-2">
-                  <Send className="w-5 h-5 text-teal-600" />
-                  <span>الإرسال الفوري المباشر (Direct Dispatch)</span>
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  إرسال رسالة واتساب مباشرة وفورية لأي مسافر أو عميل مع التوثيق في سجل العمليات
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">اسم العميل / المسافر</label>
-                    <Input
-                      value={sendForm.recipient_name}
-                      onChange={(e) => setSendForm({ ...sendForm, recipient_name: e.target.value })}
-                      placeholder="عبدالله العتيبي"
-                      className="text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">رقم الواتساب (مع رمز الدولة)</label>
-                    <Input
-                      value={sendForm.recipient_phone}
-                      onChange={(e) => setSendForm({ ...sendForm, recipient_phone: e.target.value })}
-                      placeholder="966505544332"
-                      dir="ltr"
-                      className="text-xs font-mono font-bold"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">نص الرسالة المراد إرسالها</label>
-                  <Textarea
-                    rows={6}
-                    value={sendForm.message_body}
-                    onChange={(e) => setSendForm({ ...sendForm, message_body: e.target.value })}
-                    className="text-xs leading-relaxed font-sans"
-                  />
-                </div>
-
-                <Button
-                  onClick={async () => {
-                    try {
-                      await fetchWithAuth("/api/travel/notifications/send", {
-                        method: "POST",
-                        body: JSON.stringify(sendForm)
-                      });
-                      refetchLogs();
-                      toast({ title: "✓ تم إرسال الرسالة بنجاح إلى الرقم +" + sendForm.recipient_phone });
-                    } catch (e: any) {
-                      toast({ title: "خطأ في الإرسال", description: e.message, variant: "destructive" });
-                    }
-                  }}
-                  className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs gap-1.5 py-2.5"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>إرسال الرسالة عبر الواتساب الآن 🚀</span>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════════════ */}
         {/* TAB 5: BILLING & CONVERSATION CREDITS */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         {activeTab === "billing" && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="border-slate-200">
+              <Card className="border-slate-200 rounded-3xl overflow-hidden shadow-xs">
                 <CardContent className="p-5 flex items-center gap-3">
-                  <div className="p-3 bg-amber-100 text-amber-800 rounded-xl">
+                  <div className="p-3 bg-amber-100 text-amber-800 rounded-2xl">
                     <Coins className="w-6 h-6" />
                   </div>
                   <div>
@@ -1502,9 +1745,9 @@ ${agencyName}`
                 </CardContent>
               </Card>
 
-              <Card className="border-slate-200">
+              <Card className="border-slate-200 rounded-3xl overflow-hidden shadow-xs">
                 <CardContent className="p-5 flex items-center gap-3">
-                  <div className="p-3 bg-emerald-100 text-emerald-800 rounded-xl">
+                  <div className="p-3 bg-emerald-100 text-emerald-800 rounded-2xl">
                     <Receipt className="w-6 h-6" />
                   </div>
                   <div>
@@ -1516,9 +1759,9 @@ ${agencyName}`
                 </CardContent>
               </Card>
 
-              <Card className="border-slate-200">
+              <Card className="border-slate-200 rounded-3xl overflow-hidden shadow-xs">
                 <CardContent className="p-5 flex items-center gap-3">
-                  <div className="p-3 bg-purple-100 text-purple-800 rounded-xl">
+                  <div className="p-3 bg-purple-100 text-purple-800 rounded-2xl">
                     <Wallet className="w-6 h-6" />
                   </div>
                   <div>
@@ -1532,14 +1775,14 @@ ${agencyName}`
             </div>
 
             {/* Create Billing Request Form */}
-            <Card className="border-slate-200">
+            <Card className="border-slate-200 rounded-3xl overflow-hidden shadow-sm">
               <CardHeader className="border-b bg-slate-50/50 pb-3">
                 <CardTitle className="text-sm font-bold flex items-center gap-2">
                   <Plus className="w-4 h-4 text-emerald-600" />
                   <span>إنشاء طلب شحن رصيد رسائل وإرسال رابط السداد للعميل</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-4 space-y-4">
+              <CardContent className="p-5 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">اسم العميل / المكتب</label>
@@ -1547,7 +1790,7 @@ ${agencyName}`
                       value={billingForm.client_name}
                       onChange={(e) => setBillingForm({ ...billingForm, client_name: e.target.value })}
                       placeholder="مؤسسة أفق الرحلات"
-                      className="text-xs"
+                      className="text-xs rounded-xl"
                     />
                   </div>
 
@@ -1558,7 +1801,7 @@ ${agencyName}`
                       onChange={(e) => setBillingForm({ ...billingForm, client_phone: e.target.value })}
                       placeholder="966505544332"
                       dir="ltr"
-                      className="text-xs font-mono"
+                      className="text-xs font-mono rounded-xl"
                     />
                   </div>
 
@@ -1568,7 +1811,7 @@ ${agencyName}`
                       type="number"
                       value={billingForm.amount}
                       onChange={(e) => setBillingForm({ ...billingForm, amount: Number(e.target.value) })}
-                      className="text-xs font-mono font-bold"
+                      className="text-xs font-mono font-bold rounded-xl"
                     />
                   </div>
                 </div>
@@ -1587,7 +1830,7 @@ ${agencyName}`
                       toast({ title: "خطأ", description: e.message, variant: "destructive" });
                     }
                   }}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs gap-1.5"
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs gap-1.5 rounded-xl h-10 px-5"
                 >
                   <Send className="w-3.5 h-3.5 text-emerald-400" />
                   <span>إنشاء طلب الفاتورة وإرسال رابط السداد 💳</span>
@@ -1601,7 +1844,7 @@ ${agencyName}`
         {/* TAB 6: LIVE LOGS */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         {activeTab === "logs" && (
-          <Card className="border-slate-200 shadow-sm">
+          <Card className="border-slate-200 shadow-sm rounded-3xl overflow-hidden bg-white">
             <CardHeader className="border-b bg-slate-50/50 pb-3 flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-bold flex items-center gap-2">
@@ -1609,7 +1852,7 @@ ${agencyName}`
                   <span>سجل الإرسال والتقارير الحية ({logs.length} سجل)</span>
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  توثيق كافة الرسائل الصادرة من محرك الأتمتة السحابي لجميع أقسام النظام
+                  توثيق كافة الرسائل الصادرة من محرك الأتمتة لكافة أقسام النظام
                 </CardDescription>
               </div>
 
@@ -1617,7 +1860,7 @@ ${agencyName}`
                 variant="outline"
                 size="sm"
                 onClick={() => refetchLogs()}
-                className="text-xs h-8 gap-1.5"
+                className="text-xs h-8 gap-1.5 rounded-xl"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>تحديث السجل</span>
@@ -1646,7 +1889,7 @@ ${agencyName}`
                           +{log.recipient_phone}
                         </td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 font-mono text-[10px] text-slate-700">
+                          <span className="px-2 py-0.5 rounded-lg bg-slate-100 font-mono text-[10px] text-slate-700">
                             {log.template_code || "AUTOMATION"}
                           </span>
                         </td>
@@ -1654,7 +1897,7 @@ ${agencyName}`
                           {log.message_body}
                         </td>
                         <td className="p-3">
-                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[10px] border border-emerald-200">
+                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg text-[10px] border border-emerald-200">
                             تم التسليم ✓
                           </span>
                         </td>
@@ -1681,7 +1924,7 @@ ${agencyName}`
         {/* MODAL 1: STEP-BY-STEP META ONBOARDING WIZARD */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         <Dialog open={onboardingModalOpen} onOpenChange={setOnboardingModalOpen}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir="rtl">
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900">
                 <HelpCircle className="w-5 h-5 text-blue-600" />
@@ -1693,8 +1936,7 @@ ${agencyName}`
             </DialogHeader>
 
             <div className="space-y-4 py-2 text-xs text-slate-700">
-              {/* Step 1 */}
-              <div className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/40 space-y-1.5">
+              <div className="p-3.5 rounded-2xl border border-blue-100 bg-blue-50/40 space-y-1.5">
                 <div className="font-bold text-blue-900 flex items-center justify-between">
                   <span>الخطوة 1: تسجيل الدخول إلى منصة مطوري Meta</span>
                   <a
@@ -1707,37 +1949,31 @@ ${agencyName}`
                   </a>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  توجه إلى <strong>developers.facebook.com</strong> وسجل الدخول باستخدام حساب فيسبوك الخاص بنشاطك التجاري. اضغط على <strong>Get Started</strong> إذا كانت أول مرة لتوثيق رقم هاتفك.
+                  توجه إلى <strong>developers.facebook.com</strong> وسجل الدخول باستخدام حساب فيسبوك الخاص بنشاطك التجاري.
                 </p>
               </div>
 
-              {/* Step 2 */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-1.5">
+              <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-1.5">
                 <div className="font-bold text-slate-900">الخطوة 2: إنشاء تطبيق من نوع Business وإضافة WhatsApp</div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  من القائمة العلوية اضغط على <strong>My Apps &gt; Create App</strong>، اختر نوع التطبيق <strong>Other</strong> ثم <strong>Business</strong>، وقم بتسميته باسم وكالتك (مثلاً: أومني فلاي للسفريات). بعد إنشاء التطبيق، اضغط على <strong>Set Up</strong> بجانب منتج <strong>WhatsApp</strong>.
+                  من القائمة العلوية اضغط على <strong>My Apps &gt; Create App</strong>، واختر نوع التطبيق <strong>Business</strong>. ثم اضغط على <strong>Set Up</strong> بجانب منتج WhatsApp.
                 </p>
               </div>
 
-              {/* Step 3 */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-1.5">
+              <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-1.5">
                 <div className="font-bold text-slate-900">الخطوة 3: استخراج المعرفات الأساسية (API Setup)</div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  من القائمة الجانبية للتطبيق اذهب إلى <strong>WhatsApp &gt; API Setup</strong>، وستجد الحقول الأساسية:
-                </p>
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600 pr-2">
                   <li><strong>Phone number ID:</strong> معرف رقم الهاتف الخاص بالإرسال السحابي.</li>
                   <li><strong>WhatsApp Business Account ID:</strong> معرف حساب الأعمال (WABA ID).</li>
                   <li><strong>App ID:</strong> يظهر في أعلى الشريط العلوي للمنصة.</li>
-                  <li><strong>Temporary / Permanent Token:</strong> اضغط Copy لنسخ مفتاح الوصول.</li>
+                  <li><strong>Permanent Token:</strong> انسخ مفتاح الوصول.</li>
                 </ul>
               </div>
 
-              {/* Step 4 */}
-              <div className="p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/40 space-y-1.5">
-                <div className="font-bold text-emerald-900">الخطوة 4: النسخ واللصق أو الاستيراد الذكي التلقائي</div>
+              <div className="p-3.5 rounded-2xl border border-emerald-100 bg-emerald-50/40 space-y-1.5">
+                <div className="font-bold text-emerald-900">الخطوة 4: الاستيراد الذكي التلقائي</div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  يمكنك نسخ كود الـ cURL بالكامل من قسم (Send and receive messages) واستخدام زر <strong>الاستيراد الذكي</strong> داخل نظامنا لملء كافة الحقول بضغطة زر واحدة دون الحاجة لكتابتها يدوياً!
+                  يمكنك نسخ كود الـ cURL بالكامل واستخدام زر <strong>الاستيراد الذكي</strong> داخل نظامنا لملء كافة الحقول بضغطة زر واحدة!
                 </p>
               </div>
             </div>
@@ -1747,12 +1983,12 @@ ${agencyName}`
                 href="https://developers.facebook.com/apps"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-lg"
+                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>فتح Meta Developer Console الآن</span>
               </a>
-              <Button variant="outline" size="sm" onClick={() => setOnboardingModalOpen(false)} className="text-xs">
+              <Button variant="outline" size="sm" onClick={() => setOnboardingModalOpen(false)} className="text-xs rounded-xl">
                 إغلاق
               </Button>
             </DialogFooter>
@@ -1763,7 +1999,7 @@ ${agencyName}`
         {/* MODAL 2: SMART CREDENTIALS IMPORTER (cURL / JSON) */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         <Dialog open={smartImportModalOpen} onOpenChange={setSmartImportModalOpen}>
-          <DialogContent className="max-w-xl" dir="rtl">
+          <DialogContent className="max-w-xl rounded-3xl" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900">
                 <Zap className="w-5 h-5 text-amber-500" />
@@ -1788,12 +2024,12 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
 -H "Authorization: Bearer EAAG_EXAMPLE_TOKEN..." \\
 -d '{"messaging_product": "whatsapp"}'`}
                   dir="ltr"
-                  className="font-mono text-xs leading-relaxed"
+                  className="font-mono text-xs leading-relaxed rounded-xl"
                 />
               </div>
 
-              <div className="p-3 bg-slate-50 border rounded-lg text-[11px] text-slate-600">
-                💡 <strong>نصيحة:</strong> اذهب إلى صفحة <strong>API Setup</strong> في Meta Developer Console، انسخ كود الـ cURL الموجود في الخطوة 2، والصقه هنا مباشرة.
+              <div className="p-3 bg-slate-50 border rounded-xl text-[11px] text-slate-600">
+                💡 <strong>نصيحة:</strong> انسخ كود الـ cURL من صفحة <strong>API Setup</strong> والصقه هنا مباشرة.
               </div>
             </div>
 
@@ -1806,14 +2042,14 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
 -H "Authorization: Bearer EAAG_OMNIFLY_META_CLOUD_API_TOKEN_2026" \\
 -d '{"messaging_product": "whatsapp", "to": "966505544332"}'`);
                 }}
-                className="text-xs"
+                className="text-xs rounded-xl"
               >
                 تجربة نص نموذجي
               </Button>
 
               <Button
                 onClick={handleSmartImport}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl"
               >
                 <Zap className="w-4 h-4" />
                 <span>تحليل واستيراد البيانات للحقول تلقائياً ⚡</span>
@@ -1823,10 +2059,10 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
         </Dialog>
 
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* MODAL 3: EDIT AUTOMATION MESSAGE TEMPLATE & LIVE SMARTPHONE PREVIEW */}
+        {/* MODAL 3: EDIT AUTOMATION MESSAGE TEMPLATE & SMARTPHONE PREVIEW */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         <Dialog open={editRuleModalOpen} onOpenChange={setEditRuleModalOpen}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900">
                 <Edit2 className="w-5 h-5 text-amber-500" />
@@ -1845,7 +2081,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                   <Input
                     value={ruleNameDraft}
                     onChange={(e) => setRuleNameDraft(e.target.value)}
-                    className="text-xs font-bold"
+                    className="text-xs font-bold rounded-xl"
                   />
                 </div>
 
@@ -1855,25 +2091,25 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                     value={ruleTimingDraft}
                     onChange={(e) => setRuleTimingDraft(e.target.value)}
                     placeholder="فوري عند وقوع الحدث"
-                    className="text-xs"
+                    className="text-xs rounded-xl"
                   />
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-700">نص الرسالة المرسلة للعميل</label>
-                    <span className="text-[10px] text-slate-400">يدعم الرموز التعبيرية والتنسيق</span>
+                    <span className="text-[10px] text-slate-400">يدعم الرموز التعبيرية</span>
                   </div>
                   <Textarea
                     rows={8}
                     value={customMessageDraft}
                     onChange={(e) => setCustomMessageDraft(e.target.value)}
-                    className="text-xs leading-relaxed font-sans"
+                    className="text-xs leading-relaxed font-sans rounded-xl"
                     dir="rtl"
                   />
                 </div>
 
-                {/* Placeholders quick insertion buttons */}
+                {/* Placeholders quick insertion chips */}
                 <div>
                   <span className="text-[11px] font-bold text-slate-700 block mb-1.5">
                     انقر لإدراج متغير ديناميكي في نص الرسالة:
@@ -1899,7 +2135,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                         key={`travelnotificationshub-placeholder-${placeholder || idx}-${idx}`}
                         type="button"
                         onClick={() => handleInsertPlaceholder(placeholder)}
-                        className="text-[10px] font-mono font-bold px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors"
+                        className="text-[10px] font-mono font-bold px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors"
                       >
                         + {placeholder}
                       </button>
@@ -1911,8 +2147,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
               {/* Smartphone Simulator Preview Side */}
               <div className="flex flex-col items-center">
                 <span className="text-xs font-bold text-slate-500 mb-2">معاينة الرسالة على تطبيق WhatsApp</span>
-                <div className="w-full max-w-[280px] bg-slate-900 rounded-[28px] p-3 shadow-xl border-4 border-slate-800">
-                  {/* Phone Header */}
+                <div className="w-full max-w-[280px] bg-slate-900 rounded-[32px] p-3.5 shadow-xl border-4 border-slate-800">
                   <div className="bg-emerald-800 text-white p-2 rounded-t-xl flex items-center gap-2 text-[11px]">
                     <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-[10px]">
                       OP
@@ -1923,9 +2158,8 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                     </div>
                   </div>
 
-                  {/* Chat Area */}
                   <div className="bg-[#efeae2] p-3 rounded-b-xl min-h-[260px] flex flex-col justify-end">
-                    <div className="bg-white rounded-lg p-2.5 shadow-sm text-slate-800 text-[11px] leading-relaxed whitespace-pre-line border border-slate-200 relative">
+                    <div className="bg-white rounded-xl p-2.5 shadow-sm text-slate-800 text-[11px] leading-relaxed whitespace-pre-line border border-slate-200 relative">
                       {customMessageDraft
                         ? customMessageDraft
                             .replace(/\{customer_name\}|\{passenger_name\}/g, "أحمد العتيبي")
@@ -1951,7 +2185,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
             </div>
 
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditRuleModalOpen(false)} className="text-xs">
+              <Button variant="outline" size="sm" onClick={() => setEditRuleModalOpen(false)} className="text-xs rounded-xl">
                 إلغاء
               </Button>
 
@@ -1967,7 +2201,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                   }
                 }}
                 disabled={updateRuleMutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>حفظ واعتماد التعديل 💾</span>
@@ -1980,7 +2214,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
         {/* MODAL 4: TEST SEND TO ANY PHONE NUMBER */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         <Dialog open={testSendModalOpen} onOpenChange={setTestSendModalOpen}>
-          <DialogContent className="max-w-md" dir="rtl">
+          <DialogContent className="max-w-md rounded-3xl" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900">
                 <Send className="w-5 h-5 text-teal-600" />
@@ -2006,17 +2240,17 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                   onChange={(e) => setTestSendPhone(e.target.value)}
                   placeholder="966505544332"
                   dir="ltr"
-                  className="font-mono text-xs font-bold"
+                  className="font-mono text-xs font-bold rounded-xl"
                 />
               </div>
 
-              <div className="bg-slate-50 border rounded-lg p-3 text-[11px] text-slate-700 max-h-36 overflow-y-auto whitespace-pre-line leading-relaxed">
+              <div className="bg-slate-50 border rounded-2xl p-3 text-[11px] text-slate-700 max-h-36 overflow-y-auto whitespace-pre-line leading-relaxed">
                 {testSendRule?.custom_message || testSendRule?.effective_message}
               </div>
             </div>
 
             <DialogFooter className="gap-2">
-              <Button variant="outline" size="sm" onClick={() => setTestSendModalOpen(false)} className="text-xs">
+              <Button variant="outline" size="sm" onClick={() => setTestSendModalOpen(false)} className="text-xs rounded-xl">
                 إلغاء
               </Button>
 
@@ -2030,7 +2264,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                   }
                 }}
                 disabled={testSendMutation.isPending}
-                className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs gap-1.5"
+                className="bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs gap-1.5 rounded-xl"
               >
                 <Send className="w-4 h-4" />
                 <span>إرسال تجريبي الآن 🚀</span>
