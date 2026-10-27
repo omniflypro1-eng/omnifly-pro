@@ -174,10 +174,45 @@ export default function TravelNotificationsHubPage() {
   const [qrSecondsLeft, setQrSecondsLeft] = useState(60);
   // Official WhatsApp Web Integration & Station State
   const [keepLoggedIn, setKeepLoggedIn] = useState(true);
-  const [qrActiveView, setQrActiveView] = useState<"live_station" | "official_card" | "methods_guide">("live_station");
+  const [qrActiveView, setQrActiveView] = useState<"live_station" | "official_card" | "methods_guide" | "api_browser_guide">("live_station");
   const [stationIframeKey, setStationIframeKey] = useState(1);
+  const [popupTestStatus, setPopupTestStatus] = useState<"not_tested" | "allowed" | "blocked">("not_tested");
+  const [notificationStatus, setNotificationStatus] = useState<string>(typeof Notification !== "undefined" ? Notification.permission : "default");
   const [webDirectPhone, setWebDirectPhone] = useState("966505544332");
   const [webDirectText, setWebDirectText] = useState("مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من وكالة أومني فلاي للسفريات ✈️");
+
+  const testBrowserPopups = () => {
+    try {
+      const testWin = window.open("about:blank", "popupTestWin", "width=200,height=200");
+      if (testWin && !testWin.closed) {
+        testWin.close();
+        setPopupTestStatus("allowed");
+        toast({
+          title: "✓ تم التحقق: النوافذ المنبثقة مسموحة في كروم!",
+          description: "يمكنك تشغيل محطة واتساب ويب المستقلة بدون أي حجب من المتصفح."
+        });
+      } else {
+        setPopupTestStatus("blocked");
+        toast({
+          title: "⚠️ النوافذ المنبثقة محجوبة في متصفحك",
+          description: "يرجى النقر على أيقونة القفل أو الحظر بجوار عنوان الموقع في كروم واختيار 'سماح دائماً'.",
+          variant: "destructive"
+        });
+      }
+    } catch {
+      setPopupTestStatus("blocked");
+    }
+  };
+
+  const requestNotificationPerm = async () => {
+    if (typeof Notification !== "undefined") {
+      const perm = await Notification.requestPermission();
+      setNotificationStatus(perm);
+      if (perm === "granted") {
+        toast({ title: "✓ تم تفعيل إشعارات سطح المكتب بنجاح!" });
+      }
+    }
+  };
 
   // Open Official WhatsApp Web in a dedicated docked app window
   const openOfficialWhatsAppWeb = () => {
@@ -1009,6 +1044,19 @@ ${agencyName}`
                       <FileSpreadsheet className="w-4 h-4" />
                       <span>📖 دليل ومقارنة طرق السوق (Cloud API vs QR)</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQrActiveView("api_browser_guide")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        qrActiveView === "api_browser_guide"
+                          ? "bg-emerald-600 text-white shadow-xs font-black"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      <KeyRound className="w-4 h-4 text-amber-400" />
+                      <span>🔑 استخراج مفتاح API وتصاريح كروم</span>
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1534,6 +1582,281 @@ ${agencyName}`
                           </Button>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* OPTION 4: API KEY & CHROME PERMISSIONS GUIDE (مفتاح API وتصاريح كروم) */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {qrActiveView === "api_browser_guide" && (
+                  <div className="space-y-6">
+                    {/* Top Explanation Banner */}
+                    <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 text-white shadow-xl space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                          <KeyRound className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-white flex items-center gap-2">
+                            <span>دليل استخراج مفتاح API وتصاريح متصفح جوجل كروم</span>
+                            <Badge className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold">
+                              مرجع تقني شامل
+                            </Badge>
+                          </h3>
+                          <p className="text-xs text-slate-300 mt-0.5">
+                            إليك الإجابة التقنية الشاملة حول كيفية الحصول على مفتاح API، تصاريح المتصفح المطلوبة، وتشغيل جوجل كروم داخل النظام
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* Card 1: How to get Meta API Key */}
+                      <Card className="border-indigo-200/80 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
+                        <div>
+                          <CardHeader className="bg-indigo-50/50 border-b border-indigo-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-indigo-600 text-white font-bold text-xs">
+                                الطريقة الرسمية 100%
+                              </Badge>
+                              <span className="text-[10px] text-slate-500 font-bold">بدون متصفح أو هاتف</span>
+                            </div>
+                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
+                              <Globe className="w-4 h-4 text-indigo-600" />
+                              <span>1. استخراج مفتاح Meta Cloud API</span>
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-600">
+                              مفتاح الـ API يغنيك تماماً عن فتح المتصفح أو ربط الهاتف
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
+                            <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 text-indigo-950 space-y-1">
+                              <span className="font-bold block text-xs">💡 معلومة تقنية هامة:</span>
+                              <p className="text-[11px] leading-relaxed">
+                                لا يوجد "مفتاح API لفتح المتصفح"، ولكن مفتاح Meta Cloud API هو البديل السحابي المباشر الذي يسمح للنظام بإرسال الرسائل والتذاكر فورياً عبر خوادم Meta دون الحاجة لتشغيل أي متصفح أو مسح باركود!
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <span className="font-bold text-slate-900 block text-xs">خطوات الحصول على المفتاح مجاناً:</span>
+                              <ol className="space-y-2 list-decimal list-inside text-[11px] text-slate-600 leading-relaxed pr-1">
+                                <li>
+                                  ادخل إلى موقع <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold underline">developers.facebook.com</a> وسجل الدخول بحساب Facebook.
+                                </li>
+                                <li>
+                                  اضغط <strong>"إنشاء تطبيق (Create App)"</strong> واختر نوع التطبيق: <strong>الأعمال (Business)</strong>.
+                                </li>
+                                <li>
+                                  أضف منتج <strong>WhatsApp</strong> ثم انتقل إلى <strong>API Setup</strong>.
+                                </li>
+                                <li>
+                                  انسخ القيم الثلاث المعروضة:
+                                  <ul className="list-disc list-inside pr-3 text-[10px] text-slate-500 font-mono mt-1 space-y-0.5">
+                                    <li>Access Token (مفتاح الـ API)</li>
+                                    <li>Phone Number ID (معرف رقم الهاتف)</li>
+                                    <li>WABA ID (معرف حساب الأعمال)</li>
+                                  </ul>
+                                </li>
+                              </ol>
+                            </div>
+                          </CardContent>
+                        </div>
+
+                        <div className="p-5 pt-0 space-y-2">
+                          <Button
+                            onClick={() => window.open("https://developers.facebook.com/apps/", "_blank")}
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>فتح موقع مطوري Meta Developers</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => setConnectionMode("embedded")}
+                            className="w-full text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-bold text-xs h-8"
+                          >
+                            <span>الانتقال لإعدادات الربط السحابي الرسمي</span>
+                          </Button>
+                        </div>
+                      </Card>
+
+                      {/* Card 2: Browser Permissions Manager */}
+                      <Card className="border-emerald-200/80 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
+                        <div>
+                          <CardHeader className="bg-emerald-50/50 border-b border-emerald-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-emerald-600 text-white font-bold text-xs">
+                                تصاريح كروم
+                              </Badge>
+                              <span className="text-[10px] text-slate-500 font-bold">حماية المتصفح</span>
+                            </div>
+                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
+                              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                              <span>2. تصاريح المتصفح (Browser Permissions)</span>
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-600">
+                              الصلاحيات المطلوبة للسماح بفتح محطة واتساب ويب
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
+                            <p className="text-[11px] leading-relaxed text-slate-600">
+                              لمنع المواقع من إزعاجك، يحجب متصفح Google Chrome النوافذ المنبثقة والكاميرا تلقائياً. إليك أداة فحص وتفعيل التصاريح:
+                            </p>
+
+                            {/* Live Permission Checks */}
+                            <div className="space-y-2">
+                              {/* Popups Check */}
+                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                                <div>
+                                  <span className="font-bold text-slate-800 block text-xs">النوافذ المنبثقة (Popups):</span>
+                                  <span className="text-[10px] text-slate-500">مطلوبة لفتح محطة واتساب المستقلة</span>
+                                </div>
+                                <div className="text-left">
+                                  {popupTestStatus === "allowed" ? (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">
+                                      مسموح دائماً ✓
+                                    </Badge>
+                                  ) : popupTestStatus === "blocked" ? (
+                                    <Badge className="bg-rose-100 text-rose-800 border-rose-300 font-bold text-[10px]">
+                                      محجوب في كروم ✗
+                                    </Badge>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={testBrowserPopups}
+                                      className="text-[10px] h-7 px-2 border-slate-300"
+                                    >
+                                      فحص الصلاحية
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Desktop Notifications Check */}
+                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                                <div>
+                                  <span className="font-bold text-slate-800 block text-xs">إشعارات سطح المكتب:</span>
+                                  <span className="text-[10px] text-slate-500">لتنبيهك بوصول رسائل العملاء</span>
+                                </div>
+                                <div className="text-left">
+                                  {notificationStatus === "granted" ? (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">
+                                      مُفعّل ✓
+                                    </Badge>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={requestNotificationPerm}
+                                      className="text-[10px] h-7 px-2 bg-emerald-600 text-white"
+                                    >
+                                      طلب الإذن
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Clipboard Access */}
+                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                                <div>
+                                  <span className="font-bold text-slate-800 block text-xs">الوصول للحافظة (Clipboard):</span>
+                                  <span className="text-[10px] text-slate-500">لنسخ أكواد الربط وتوكن الـ API</span>
+                                </div>
+                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">
+                                  نشط بنقرة واحدة ✓
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                              <strong>كيف تسمح بالنوافذ في كروم يدوياً؟</strong>
+                              <br />
+                              اضغط على أيقونة الإعدادات أو القفل 🔒 في شريط عنوان المتصفح &gt; إعدادات الموقع &gt; النوافذ المنبثقة &gt; اختر <strong>"سماح"</strong>.
+                            </div>
+                          </CardContent>
+                        </div>
+
+                        <div className="p-5 pt-0">
+                          <Button
+                            onClick={testBrowserPopups}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>اختبار تصاريح النوافذ المنبثقة الآن</span>
+                          </Button>
+                        </div>
+                      </Card>
+
+                      {/* Card 3: Standalone Chrome App Station Mode */}
+                      <Card className="border-teal-200/80 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
+                        <div>
+                          <CardHeader className="bg-teal-50/50 border-b border-teal-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-teal-600 text-white font-bold text-xs">
+                                نمط التطبيق
+                              </Badge>
+                              <span className="text-[10px] text-slate-500 font-bold">Chrome App Mode</span>
+                            </div>
+                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
+                              <Laptop className="w-4 h-4 text-teal-600" />
+                              <span>3. تشغيل كروم بنمط التطبيق المستقل</span>
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-600">
+                              فتح محطة واتساب ويب كنافذة مستقلة بدون تبويبات
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
+                            <p className="text-[11px] leading-relaxed text-slate-600">
+                              يتيح لك متصفح Google Chrome تشغيل واتساب ويب في نافذة عمل مستقلة تماماً تشبه البرامج المثبتة على الكمبيوتر (بدون شريط علامات تبويب أو أزرار متصفح):
+                            </p>
+
+                            <div className="space-y-2">
+                              <span className="font-bold text-slate-900 block text-xs">طريقة تشغيل أمر كروم في ويندوز:</span>
+                              <div className="p-2.5 bg-slate-900 text-emerald-400 rounded-xl font-mono text-[11px] border border-slate-700 flex items-center justify-between">
+                                <span className="select-all truncate">chrome.exe --app=https://web.whatsapp.com/</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText("chrome.exe --app=https://web.whatsapp.com/");
+                                    toast({ title: "✓ تم نسخ أمر التشغيل" });
+                                  }}
+                                  className="text-slate-400 hover:text-white p-1 shrink-0"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <span className="text-[10px] text-slate-400 block">
+                                اضغط Win + R في لوحة المفاتيح، ثم الصق الأمر واضغط Enter ليفتح واتساب ويب كنافذة مستقلة!
+                              </span>
+                            </div>
+
+                            <div className="p-3 bg-teal-50 rounded-xl border border-teal-200 text-teal-950 space-y-1">
+                              <span className="font-bold block text-xs">تثبيت WhatsApp Web كـ PWA:</span>
+                              <p className="text-[11px] leading-relaxed">
+                                يمكنك فتح <code className="font-mono text-teal-700">web.whatsapp.com</code> في كروم، ثم النقر على النقاط الثلاث &gt; "حفظ ومشاركة" &gt; <strong>"تثبيت WhatsApp Web كتطبيق"</strong> ليظهر في سطح المكتب وشريط المهام.
+                              </p>
+                            </div>
+                          </CardContent>
+                        </div>
+
+                        <div className="p-5 pt-0 space-y-2">
+                          <Button
+                            onClick={openOfficialWhatsAppWeb}
+                            className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>تشغيل محطة واتساب بنمط كروم المستقل</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => setQrActiveView("live_station")}
+                            className="w-full text-slate-700 border-slate-200 hover:bg-slate-50 font-bold text-xs h-8"
+                          >
+                            <span>العودة لمحطة واتساب ويب المباشرة</span>
+                          </Button>
+                        </div>
+                      </Card>
                     </div>
                   </div>
                 )}
