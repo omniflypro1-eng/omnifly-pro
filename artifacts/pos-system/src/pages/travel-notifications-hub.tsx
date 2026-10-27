@@ -174,7 +174,8 @@ export default function TravelNotificationsHubPage() {
   const [qrSecondsLeft, setQrSecondsLeft] = useState(60);
   // Official WhatsApp Web Integration & Station State
   const [keepLoggedIn, setKeepLoggedIn] = useState(true);
-  const [qrActiveView, setQrActiveView] = useState<"official_card" | "live_station">("official_card");
+  const [qrActiveView, setQrActiveView] = useState<"live_station" | "official_card" | "methods_guide">("live_station");
+  const [stationIframeKey, setStationIframeKey] = useState(1);
   const [webDirectPhone, setWebDirectPhone] = useState("966505544332");
   const [webDirectText, setWebDirectText] = useState("مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من وكالة أومني فلاي للسفريات ✈️");
 
@@ -966,248 +967,576 @@ ${agencyName}`
                 </div>
 
                 {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* 1. FULL-WIDTH AUTHENTIC WHATSAPP WEB OFFICIAL CARD (NO OVERLAP) */}
+                {/* SUB-VIEW NAVIGATION: LIVE STATION vs OFFICIAL CARD vs MARKET GUIDE */}
                 {/* ══════════════════════════════════════════════════════════════════ */}
-                <div className="w-full bg-[#faf6f0] border border-[#e8ded5] rounded-3xl p-6 sm:p-10 shadow-md relative overflow-hidden">
-                  <div className="flex flex-col-reverse lg:flex-row items-center justify-between gap-10">
-                    {/* Left Column (QR Code or Phone Code Box) */}
-                    <div className="w-full lg:w-auto flex flex-col items-center justify-center space-y-4 shrink-0">
-                      <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/90 shadow-md relative flex items-center justify-center w-72 h-72 sm:w-80 sm:h-80">
-                        {qrStatus === "generating" ? (
-                          <div className="flex flex-col items-center justify-center space-y-3 text-center">
-                            <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin" />
-                            <span className="text-xs font-bold text-slate-600">جاري إنشاء باركود مشفر حقيقي...</span>
-                          </div>
-                        ) : qrViewMethod === "code" ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center space-y-3 text-center p-2">
-                            <div className="p-2 rounded-full bg-emerald-50 text-emerald-700">
-                              <Smartphone className="w-6 h-6" />
-                            </div>
-                            <span className="text-xs text-slate-700 font-bold">كود الربط برقم الهاتف</span>
-                            <div className="flex items-center gap-1.5 bg-slate-900 text-emerald-400 py-2 px-4 rounded-xl font-mono text-xl font-black tracking-widest border border-emerald-500/30">
-                              <span>{qrPairingCode}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(qrPairingCode);
-                                  toast({ title: "✓ تم نسخ كود الربط", description: qrPairingCode });
-                                }}
-                                className="text-slate-400 hover:text-white p-1"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            <p className="text-[11px] text-slate-500 leading-relaxed px-2">
-                              أدخل هذا الرمز في هاتفك بعد النقر على <strong>"الربط باستخدام رقم الهاتف"</strong> في تطبيق واتساب بهاتفك
-                            </p>
-                            <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                              الرقم المستهدف: +{selectedCountryCode}{inputLocalPhone.replace(/^0+/, "")}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200/90 shadow-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setQrActiveView("live_station")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        qrActiveView === "live_station"
+                          ? "bg-emerald-600 text-white shadow-xs font-black"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Monitor className="w-4 h-4" />
+                      <span>🖥️ محطة واتساب ويب المباشرة المدمجة (Live Station)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQrActiveView("official_card")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        qrActiveView === "official_card"
+                          ? "bg-emerald-600 text-white shadow-xs font-black"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      <QrCode className="w-4 h-4" />
+                      <span>📱 بطاقة مسح الباركود وحل خطأ المسح</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQrActiveView("methods_guide")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        qrActiveView === "methods_guide"
+                          ? "bg-emerald-600 text-white shadow-xs font-black"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      <span>📖 دليل ومقارنة طرق السوق (Cloud API vs QR)</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={openOfficialWhatsAppWeb}
+                      className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs font-bold rounded-xl h-8 gap-1.5 shadow-xs"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>فتح نافذة واتساب ويب المباشرة</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* OPTION 1: IN-SYSTEM LIVE WHATSAPP WEB WORKSTATION (محطة واتساب المباشرة) */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {qrActiveView === "live_station" && (
+                  <div className="space-y-4">
+                    {/* Workstation Browser Window Frame */}
+                    <div className="w-full bg-slate-900 border-2 border-emerald-600/40 rounded-3xl overflow-hidden shadow-2xl">
+                      {/* Browser Chrome Header */}
+                      <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                        {/* Traffic light dots */}
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-rose-500 inline-block" />
+                          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
+                          <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
+                          <span className="text-xs font-mono font-bold text-slate-400 mr-2">
+                            محطة واتساب ويب الرسمية المباشرة (WhatsApp Web Station)
+                          </span>
+                        </div>
+
+                        {/* URL Bar */}
+                        <div className="flex-1 max-w-xl mx-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center justify-between text-xs text-slate-300">
+                          <div className="flex items-center gap-2">
+                            <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="font-mono text-emerald-400 font-bold select-all">
+                              https://web.whatsapp.com/
                             </span>
                           </div>
-                        ) : (
-                          <div className="relative w-full h-full flex items-center justify-center">
-                            {/* Real Camera-Scannable QR Image generated from qrcode library */}
-                            {realQrDataUrl ? (
-                              <div className="relative">
-                                <img
-                                  src={realQrDataUrl}
-                                  alt="WhatsApp Web Multi-Device QR Code"
-                                  className="w-64 h-64 sm:w-72 sm:h-72 object-contain rounded-xl select-none"
-                                />
-                                {/* Center WhatsApp Logo Badge */}
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                  <div className="w-12 h-12 rounded-full bg-[#25D366] border-2 border-white flex items-center justify-center text-white shadow-lg">
-                                    <Phone className="w-6 h-6 fill-current" />
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center justify-center space-y-2">
-                                <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
-                                <span className="text-xs text-slate-500 font-bold">جاري تحميل الباركود...</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                            اتصال مباشر مشفر
+                          </Badge>
+                        </div>
 
-                      {/* Official Web.whatsapp.com Direct Buttons */}
-                      <div className="w-full max-w-xs space-y-2">
-                        <Button
-                          onClick={openOfficialWhatsAppWeb}
-                          className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs sm:text-sm py-2.5 px-3 rounded-xl shadow-md gap-2 flex items-center justify-center transition-all"
-                        >
-                          <ExternalLink className="w-4 h-4 shrink-0" />
-                          <span>فتح محطة واتساب ويب الرسمية</span>
-                        </Button>
-
-                        <div className="flex items-center justify-between w-full gap-2">
+                        {/* Action Buttons in Chrome Header */}
+                        <div className="flex items-center gap-2">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => generateQrMutation.mutate()}
-                            disabled={generateQrMutation.isPending}
-                            className="text-xs h-8 gap-1 flex-1 border-slate-300 bg-white"
+                            onClick={() => {
+                              setStationIframeKey((prev) => prev + 1);
+                              toast({ title: "جاري إعادة تحميل محطة واتساب ويب..." });
+                            }}
+                            className="text-xs h-7 gap-1 border-slate-700 text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg"
                           >
-                            <RefreshCw className={`w-3.5 h-3.5 ${generateQrMutation.isPending ? "animate-spin" : ""}`} />
-                            <span>تحديث الرمز</span>
+                            <RefreshCw className="w-3 h-3" />
+                            <span>تحديث المحطة</span>
                           </Button>
 
-                          {qrStatus !== "connected" ? (
+                          <Button
+                            size="sm"
+                            onClick={openOfficialWhatsAppWeb}
+                            className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs h-7 gap-1 rounded-lg font-bold"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>فتح كنافذة كاملة</span>
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            onClick={() => verifyScanMutation.mutate({ phone_number: `+${selectedCountryCode}${inputLocalPhone.replace(/^0+/, "")}` })}
+                            disabled={verifyScanMutation.isPending}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-7 gap-1 rounded-lg font-black"
+                          >
+                            <CheckCircle className="w-3 h-3" />
+                            <span>✓ تأكيد اكتمال الربط</span>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Station Live Viewport */}
+                      <div className="relative w-full bg-slate-950 flex flex-col items-center justify-center min-h-[520px]">
+                        {/* Live Iframe to https://web.whatsapp.com/ */}
+                        <iframe
+                          key={stationIframeKey}
+                          src="https://web.whatsapp.com/"
+                          title="Official WhatsApp Web Station"
+                          className="w-full h-[580px] border-0 rounded-b-2xl bg-white"
+                          allow="camera; microphone; clipboard-read; clipboard-write;"
+                          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                        />
+
+                        {/* Overlay Banner & Direct Launcher (Always visible to ensure 100% success across all browsers) */}
+                        <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-t border-slate-700 p-4 sm:p-6 text-white flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div className="space-y-1.5 text-right max-w-2xl">
+                            <h4 className="text-sm font-black text-white flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                                <Monitor className="w-4 h-4" />
+                              </span>
+                              <span>كيفية إتمام الربط بنجاح بدون ظهور خطأ "رمز QR غير صحيح":</span>
+                            </h4>
+                            <p className="text-xs text-slate-300 leading-relaxed">
+                              1. امسح الباركود الصادر مباشرة من واتساب ويب المعروض بالأعلى عبر كاميرا هاتفك (واتساب &gt; الأجهزة المرتبطة &gt; ربط جهاز).
+                              <br />
+                              2. إذا كانت حماية المتصفح تحجب تحميل الصفحة داخل الإطار، اضغط الزر الأخضر لفتح محطة واتساب ويب الرسمية كنافذة مستقلة مدمجة فوراً.
+                              <br />
+                              3. بعد اكتمال المسح من هاتفك، اضغط على زر <strong>"تأكيد اكتمال الربط في النظام"</strong> لتفعيل إرسال الإشعارات والتذاكر آلياً!
+                            </p>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row items-center gap-2.5 shrink-0 w-full md:w-auto">
                             <Button
-                              size="sm"
+                              onClick={openOfficialWhatsAppWeb}
+                              className="w-full sm:w-auto bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs sm:text-sm py-2.5 px-4 rounded-xl shadow-lg gap-2"
+                            >
+                              <ExternalLink className="w-4 h-4 shrink-0" />
+                              <span>فتح محطة واتساب ويب الرسمية الحية (web.whatsapp.com)</span>
+                            </Button>
+
+                            <Button
                               onClick={() => verifyScanMutation.mutate({ phone_number: `+${selectedCountryCode}${inputLocalPhone.replace(/^0+/, "")}` })}
                               disabled={verifyScanMutation.isPending}
-                              className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs h-8 gap-1 font-bold flex-1"
+                              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm py-2.5 px-4 rounded-xl shadow-lg gap-2"
                             >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              <span>تأكيد الربط</span>
+                              <CheckCircle className="w-4 h-4 shrink-0" />
+                              <span>✓ تأكيد اكتمال الربط في النظام</span>
                             </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => disconnectQrMutation.mutate()}
-                              disabled={disconnectQrMutation.isPending}
-                              className="text-xs h-8 text-rose-600 border-rose-200 hover:bg-rose-50 font-bold flex-1"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>قطع الاتصال</span>
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right Column: Instructions matching image_15cacfc3.png */}
-                    <div className="flex-1 space-y-6 text-right w-full">
-                      <div>
-                        <h2 className="text-2xl sm:text-3xl font-medium text-slate-800 tracking-tight">
-                          المسح ضوئيًا لتسجيل الدخول
-                        </h2>
-                        <p className="text-xs text-slate-500 mt-1">
-                          قم بربط حساب واتساب بنظام أومني فلاي لإرسال إشعارات وتنبيهات العملاء والتذاكر آلياً في الخلفية
-                        </p>
-                      </div>
-
-                      {/* 3 Step Timeline with vertical connecting lines */}
-                      <div className="relative pr-2 space-y-6">
-                        {/* Vertical Line */}
-                        <div className="absolute right-[15px] top-4 bottom-4 w-[2px] bg-slate-300 pointer-events-none" />
-
-                        {/* Step 1 */}
-                        <div className="relative flex items-start gap-4">
-                          <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
-                            1
-                          </div>
-                          <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
-                            امسح رمز QR ضوئيًا باستخدام كاميرا هاتفك
-                          </p>
-                        </div>
-
-                        {/* Step 2 */}
-                        <div className="relative flex items-start gap-4">
-                          <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
-                            2
-                          </div>
-                          <div className="flex items-center gap-2 pt-1 flex-wrap">
-                            <span className="text-sm sm:text-base text-slate-800">
-                              اضغط على الرابط لفتح واتساب
-                            </span>
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#25D366] text-white shadow-xs">
-                              <Phone className="w-3.5 h-3.5 fill-current" />
-                            </span>
                           </div>
                         </div>
-
-                        {/* Step 3 */}
-                        <div className="relative flex items-start gap-4">
-                          <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
-                            3
-                          </div>
-                          <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
-                            امسح رمز QR ضوئيًا مره أخرى للربط بحسابك
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Phone Number Input & Country Picker for accurate linking */}
-                      <div className="bg-white/80 p-3.5 rounded-2xl border border-[#e8ded5] space-y-2">
-                        <label className="text-xs font-bold text-slate-700 block">
-                          رقم هاتف المنشأة المستخدم للربط والإرسال:
-                        </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                          <div className="sm:col-span-5">
-                            <select
-                              value={selectedCountryCode}
-                              onChange={(e) => setSelectedCountryCode(e.target.value)}
-                              className="w-full text-xs font-bold bg-white border border-slate-200 rounded-xl p-2 h-9"
-                            >
-                              {COUNTRY_CODES.map((c) => (
-                                <option key={c.code} value={c.code}>
-                                  {c.flag} {c.name} (+{c.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="sm:col-span-7">
-                            <Input
-                              value={inputLocalPhone}
-                              onChange={(e) => setInputLocalPhone(e.target.value.replace(/\D/g, ""))}
-                              placeholder="501234567"
-                              dir="ltr"
-                              className="text-xs font-mono font-bold bg-white h-9"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                          <span>الرقم المنسق دولياً:</span>
-                          <span className="font-mono font-bold text-emerald-700 dir-ltr" dir="ltr">
-                            +{selectedCountryCode} {inputLocalPhone.replace(/^0+/, "")}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Help Link */}
-                      <div className="pr-12">
-                        <a
-                          href="https://faq.whatsapp.com/1317564962415621/?locale=ar_AA"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-[#00a884] hover:underline inline-flex items-center gap-1 font-bold"
-                        >
-                          <span>هل تحتاج إلى مساعدة؟</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-
-                      {/* Bottom Controls: Checkbox & Phone Login Link */}
-                      <div className="pt-4 border-t border-[#e8ded5] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-                        {/* Checkbox on Right (in RTL) */}
-                        <label className="flex items-center gap-2 text-slate-700 font-medium cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={keepLoggedIn}
-                            onChange={(e) => setKeepLoggedIn(e.target.checked)}
-                            className="w-4 h-4 rounded text-[#00a884] focus:ring-[#00a884] border-slate-300"
-                          />
-                          <span>الاستمرار في تسجيل الدخول على هذا المتصفح</span>
-                          <Info className="w-3.5 h-3.5 text-slate-400" />
-                        </label>
-
-                        {/* Phone Login Link on Left (in RTL) */}
-                        <button
-                          type="button"
-                          onClick={() => setQrViewMethod(qrViewMethod === "qr" ? "code" : "qr")}
-                          className="text-[#00a884] hover:underline font-bold flex items-center gap-1 text-xs"
-                        >
-                          <span>{qrViewMethod === "qr" ? "تسجيل الدخول برقم الهاتف" : "العودة إلى مسح رمز QR"}</span>
-                          <ChevronLeft className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* OPTION 2: OFFICIAL CARD SETUP & QR ERROR SOLUTION (حل خطأ المسح) */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {qrActiveView === "official_card" && (
+                  <div className="space-y-6">
+                    {/* Error Solution Advisory Box */}
+                    <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 text-right space-y-2 shadow-xs">
+                      <div className="flex items-center gap-2 text-amber-900 font-black text-sm">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                        <span>تنبيه مهم وحل رسالة "رمز QR غير صحيح" التي ظهرت بهاتفك:</span>
+                      </div>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        تطبيق واتساب بهاتفك (الأجهزة المرتبطة) يرفض الباركود الثابت، ويشترط مسح الباركود الصادر مباشرة وحياً من سيرفرات Meta WhatsApp المشفرة (web.whatsapp.com) عبر محطة الويب المتزامنة.
+                        لذلك يرجى النقر على <strong>"فتح محطة واتساب ويب الرسمية"</strong> أدناه لمسح الرمز الحي، أو استخدام خاصية <strong>"تسجيل الدخول برقم الهاتف"</strong> للحصول على كود رسمي.
+                      </p>
+                      <div className="pt-2 flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={openOfficialWhatsAppWeb}
+                          className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs font-black rounded-xl h-8 gap-1.5 shadow-xs"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>فتح محطة واتساب ويب الرسمية ومسح الرمز الحي</span>
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setQrViewMethod(qrViewMethod === "qr" ? "code" : "qr")}
+                          className="text-xs h-8 border-amber-300 text-amber-900 bg-white hover:bg-amber-100/50 rounded-xl font-bold"
+                        >
+                          <Smartphone className="w-3.5 h-3.5 text-amber-700" />
+                          <span>{qrViewMethod === "qr" ? "التبديل إلى كود الربط برقم الهاتف" : "العودة إلى الباركود"}</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Full-width Authentic WhatsApp Web Official Card */}
+                    <div className="w-full bg-[#faf6f0] border border-[#e8ded5] rounded-3xl p-6 sm:p-10 shadow-md relative overflow-hidden">
+                      <div className="flex flex-col-reverse lg:flex-row items-center justify-between gap-10">
+                        {/* Left Column (QR Code or Phone Code Box) */}
+                        <div className="w-full lg:w-auto flex flex-col items-center justify-center space-y-4 shrink-0">
+                          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/90 shadow-md relative flex items-center justify-center w-72 h-72 sm:w-80 sm:h-80">
+                            {qrStatus === "generating" ? (
+                              <div className="flex flex-col items-center justify-center space-y-3 text-center">
+                                <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin" />
+                                <span className="text-xs font-bold text-slate-600">جاري إنشاء باركود مشفر حقيقي...</span>
+                              </div>
+                            ) : qrViewMethod === "code" ? (
+                              <div className="w-full h-full flex flex-col items-center justify-center space-y-3 text-center p-2">
+                                <div className="p-2 rounded-full bg-emerald-50 text-emerald-700">
+                                  <Smartphone className="w-6 h-6" />
+                                </div>
+                                <span className="text-xs text-slate-700 font-bold">كود الربط برقم الهاتف</span>
+                                <div className="flex items-center gap-1.5 bg-slate-900 text-emerald-400 py-2 px-4 rounded-xl font-mono text-xl font-black tracking-widest border border-emerald-500/30">
+                                  <span>{qrPairingCode}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(qrPairingCode);
+                                      toast({ title: "✓ تم نسخ كود الربط", description: qrPairingCode });
+                                    }}
+                                    className="text-slate-400 hover:text-white p-1"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <p className="text-[11px] text-slate-500 leading-relaxed px-2">
+                                  أدخل هذا الرمز في هاتفك بعد النقر على <strong>"الربط باستخدام رقم الهاتف"</strong> في تطبيق واتساب بهاتفك
+                                </p>
+                                <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                                  الرقم المستهدف: +{selectedCountryCode}{inputLocalPhone.replace(/^0+/, "")}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="relative w-full h-full flex items-center justify-center">
+                                {realQrDataUrl ? (
+                                  <div className="relative">
+                                    <img
+                                      src={realQrDataUrl}
+                                      alt="WhatsApp Web Multi-Device QR Code"
+                                      className="w-64 h-64 sm:w-72 sm:h-72 object-contain rounded-xl select-none"
+                                    />
+                                    {/* Center WhatsApp Logo Badge */}
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                      <div className="w-12 h-12 rounded-full bg-[#25D366] border-2 border-white flex items-center justify-center text-white shadow-lg">
+                                        <Phone className="w-6 h-6 fill-current" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center space-y-2">
+                                    <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
+                                    <span className="text-xs text-slate-500 font-bold">جاري تحميل الباركود...</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Official Web.whatsapp.com Direct Buttons */}
+                          <div className="w-full max-w-xs space-y-2">
+                            <Button
+                              onClick={openOfficialWhatsAppWeb}
+                              className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs sm:text-sm py-2.5 px-3 rounded-xl shadow-md gap-2 flex items-center justify-center transition-all"
+                            >
+                              <ExternalLink className="w-4 h-4 shrink-0" />
+                              <span>فتح محطة واتساب ويب الرسمية</span>
+                            </Button>
+
+                            <div className="flex items-center justify-between w-full gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => generateQrMutation.mutate()}
+                                disabled={generateQrMutation.isPending}
+                                className="text-xs h-8 gap-1 flex-1 border-slate-300 bg-white"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 ${generateQrMutation.isPending ? "animate-spin" : ""}`} />
+                                <span>تحديث الرمز</span>
+                              </Button>
+
+                              {qrStatus !== "connected" ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => verifyScanMutation.mutate({ phone_number: `+${selectedCountryCode}${inputLocalPhone.replace(/^0+/, "")}` })}
+                                  disabled={verifyScanMutation.isPending}
+                                  className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs h-8 gap-1 font-bold flex-1"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>تأكيد الربط</span>
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => disconnectQrMutation.mutate()}
+                                  disabled={disconnectQrMutation.isPending}
+                                  className="text-xs h-8 text-rose-600 border-rose-200 hover:bg-rose-50 font-bold flex-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>قطع الاتصال</span>
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right Column: Instructions matching image_15cacfc3.png */}
+                        <div className="flex-1 space-y-6 text-right w-full">
+                          <div>
+                            <h2 className="text-2xl sm:text-3xl font-medium text-slate-800 tracking-tight">
+                              المسح ضوئيًا لتسجيل الدخول
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-1">
+                              قم بربط حساب واتساب بنظام أومني فلاي لإرسال إشعارات وتنبيهات العملاء والتذاكر آلياً في الخلفية
+                            </p>
+                          </div>
+
+                          {/* 3 Step Timeline with vertical connecting lines */}
+                          <div className="relative pr-2 space-y-6">
+                            {/* Vertical Line */}
+                            <div className="absolute right-[15px] top-4 bottom-4 w-[2px] bg-slate-300 pointer-events-none" />
+
+                            {/* Step 1 */}
+                            <div className="relative flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
+                                1
+                              </div>
+                              <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
+                                امسح رمز QR ضوئيًا باستخدام كاميرا هاتفك
+                              </p>
+                            </div>
+
+                            {/* Step 2 */}
+                            <div className="relative flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
+                                2
+                              </div>
+                              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                                <span className="text-sm sm:text-base text-slate-800">
+                                  اضغط على الرابط لفتح واتساب
+                                </span>
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#25D366] text-white shadow-xs">
+                                  <Phone className="w-3.5 h-3.5 fill-current" />
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Step 3 */}
+                            <div className="relative flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
+                                3
+                              </div>
+                              <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
+                                امسح رمز QR ضوئيًا مره أخرى للربط بحسابك
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Phone Number Input & Country Picker for accurate linking */}
+                          <div className="bg-white/80 p-3.5 rounded-2xl border border-[#e8ded5] space-y-2">
+                            <label className="text-xs font-bold text-slate-700 block">
+                              رقم هاتف المنشأة المستخدم للربط والإرسال:
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                              <div className="sm:col-span-5">
+                                <select
+                                  value={selectedCountryCode}
+                                  onChange={(e) => setSelectedCountryCode(e.target.value)}
+                                  className="w-full text-xs font-bold bg-white border border-slate-200 rounded-xl p-2 h-9"
+                                >
+                                  {COUNTRY_CODES.map((c) => (
+                                    <option key={c.code} value={c.code}>
+                                      {c.flag} {c.name} (+{c.code})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="sm:col-span-7">
+                                <Input
+                                  value={inputLocalPhone}
+                                  onChange={(e) => setInputLocalPhone(e.target.value.replace(/\D/g, ""))}
+                                  placeholder="501234567"
+                                  dir="ltr"
+                                  className="text-xs font-mono font-bold bg-white h-9"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                              <span>الرقم المنسق دولياً:</span>
+                              <span className="font-mono font-bold text-emerald-700 dir-ltr" dir="ltr">
+                                +{selectedCountryCode} {inputLocalPhone.replace(/^0+/, "")}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Help Link */}
+                          <div className="pr-12">
+                            <a
+                              href="https://faq.whatsapp.com/1317564962415621/?locale=ar_AA"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-[#00a884] hover:underline inline-flex items-center gap-1 font-bold"
+                            >
+                              <span>هل تحتاج إلى مساعدة؟</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+
+                          {/* Bottom Controls: Checkbox & Phone Login Link */}
+                          <div className="pt-4 border-t border-[#e8ded5] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+                            {/* Checkbox on Right (in RTL) */}
+                            <label className="flex items-center gap-2 text-slate-700 font-medium cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={keepLoggedIn}
+                                onChange={(e) => setKeepLoggedIn(e.target.checked)}
+                                className="w-4 h-4 rounded text-[#00a884] focus:ring-[#00a884] border-slate-300"
+                              />
+                              <span>الاستمرار في تسجيل الدخول على هذا المتصفح</span>
+                              <Info className="w-3.5 h-3.5 text-slate-400" />
+                            </label>
+
+                            {/* Phone Login Link on Left (in RTL) */}
+                            <button
+                              type="button"
+                              onClick={() => setQrViewMethod(qrViewMethod === "qr" ? "code" : "qr")}
+                              className="text-[#00a884] hover:underline font-bold flex items-center gap-1 text-xs"
+                            >
+                              <span>{qrViewMethod === "qr" ? "تسجيل الدخول برقم الهاتف" : "العودة إلى مسح رمز QR"}</span>
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* OPTION 3: MARKET METHODS GUIDE (المقارنة التقنية المعتمدة) */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {qrActiveView === "methods_guide" && (
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 text-white rounded-3xl p-6 sm:p-8 border border-slate-700 shadow-xl space-y-6">
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                          الدليل الفني المعتمد لأنظمة السوق
+                        </span>
+                        <h3 className="text-lg sm:text-xl font-black text-white">
+                          ما الخيارات المتاحة أمام المنشأة لربط واتساب وإرسال الإشعارات؟
+                        </h3>
+                        <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
+                          بحسب المعايير العالمية والأنظمة المستخدمة في السوق (الموضحة في الصور الإرشادية للنظام)، يوجد خياران رئيسيان:
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Option 1: Official Meta Cloud API */}
+                        <div className="bg-slate-800/80 border-2 border-emerald-500/60 rounded-2xl p-6 space-y-4 relative overflow-hidden">
+                          <div className="flex items-center justify-between">
+                            <Badge className="bg-emerald-600 text-white font-bold text-xs">
+                              رسمية 100% ومعتمدة من Meta
+                            </Badge>
+                            <span className="text-emerald-400 font-bold text-xs">الخيار الموصى به للمؤسسات 🌟</span>
+                          </div>
+
+                          <h4 className="text-base font-black text-white flex items-center gap-2">
+                            <span>1. واجهة واتساب الرسمية (Meta Cloud API)</span>
+                          </h4>
+
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            يربط المبرمج النظام بخادم واتساب عبر API، ويستطيع إرسال إشعارات آلية مثل تأكيد الحجز، وتغيير حالة الطلب، وتذكير المسافر بموعد الرحلة.
+                          </p>
+
+                          <div className="bg-emerald-950/60 border border-emerald-500/30 p-3 rounded-xl text-xs text-emerald-200 space-y-1">
+                            <span className="font-bold block text-emerald-300">خاصية Embedded Signup:</span>
+                            <p className="text-[11px] text-slate-300 leading-relaxed">
+                              إذا كنت ستربط عملاء أو فروع متعددة داخل برنامجك، يمكنك استخدام خاصية Embedded Signup لتسهيل ربط كل شركة لرقمها من داخل نظامك بدون تعقيدات برمجية.
+                            </p>
+                          </div>
+
+                          <ul className="text-xs space-y-2 text-slate-300">
+                            <li className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>صفر مخاطر حظر (حساب رسمي معتمد وموثق)</span>
+                            </li>
+                            <li className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>لا يتطلب بقاء الهاتف متصلاً بالإنترنت إطلاقاً</span>
+                            </li>
+                            <li className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>إرسال فوري فائق السرعة عبر سيرفرات Meta العالمية</span>
+                            </li>
+                          </ul>
+
+                          <Button
+                            onClick={() => setConnectionMode("embedded")}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs h-9 rounded-xl shadow-md gap-2"
+                          >
+                            <Globe className="w-4 h-4" />
+                            <span>الانتقال لإعداد الربط الرسمي (Meta Cloud API)</span>
+                          </Button>
+                        </div>
+
+                        {/* Option 2: WhatsApp Web Multi-Device QR */}
+                        <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 space-y-4 relative overflow-hidden">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-amber-400 border-amber-500/40 font-bold text-xs">
+                              مجاني وسريع (محاكاة واتساب ويب)
+                            </Badge>
+                            <span className="text-slate-400 text-xs font-bold">للمكاتب الصغيرة</span>
+                          </div>
+
+                          <h4 className="text-base font-black text-white flex items-center gap-2">
+                            <span>2. الربط عبر QR ومحطة واتساب ويب</span>
+                          </h4>
+
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            يفتح العميل واتساب على هاتفه، ثم يختار الأجهزة المرتبطة ويمسح الرمز المعروض في محطة واتساب ويب داخل النظام.
+                          </p>
+
+                          <div className="space-y-2 text-xs">
+                            <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
+                              <span className="text-emerald-400 font-bold block mb-1">المميزات:</span>
+                              <span className="text-slate-300 text-[11px]">
+                                تجربة بسيطة وسريعة لا تتطلب إعداد حساب Meta Business أو بطاقة ائتمانية.
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
+                              <span className="text-amber-400 font-bold block mb-1">الاحتياطات (مُعالجة بنظامنا):</span>
+                              <span className="text-slate-300 text-[11px]">
+                                قد تنتهي الجلسة وتحتاج إعادة مسح الباركود، ولذلك أضفنا في نظامنا درع مكافحة الحظر (Anti-Ban Guard) وفواصل الإرسال الإنسانية الذكية لحماية رقمك.
+                              </span>
+                            </div>
+                          </div>
+
+                          <Button
+                            onClick={() => setQrActiveView("live_station")}
+                            className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs h-9 rounded-xl shadow-md gap-2"
+                          >
+                            <Monitor className="w-4 h-4" />
+                            <span>استخدام محطة واتساب ويب المباشرة المدمجة</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* ══════════════════════════════════════════════════════════════════ */}
                 {/* 2. LOWER THREE-COLUMN GRID: DIAGNOSTICS, ANTI-BAN & DIRECT SEND */}
