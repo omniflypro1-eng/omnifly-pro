@@ -72,7 +72,10 @@ import {
   Lock,
   Timer,
   Gauge,
-  Info
+  Info,
+  ChevronLeft,
+  Laptop,
+  Monitor
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
@@ -148,6 +151,46 @@ export default function TravelNotificationsHubPage() {
   const [antiBanDailyLimit, setAntiBanDailyLimit] = useState(300);
   const [autoReconnectEnabled, setAutoReconnectEnabled] = useState(true);
   const [qrSecondsLeft, setQrSecondsLeft] = useState(60);
+  // Official WhatsApp Web Integration & Station State
+  const [keepLoggedIn, setKeepLoggedIn] = useState(true);
+  const [qrActiveView, setQrActiveView] = useState<"official_card" | "live_station">("official_card");
+  const [webDirectPhone, setWebDirectPhone] = useState("966505544332");
+  const [webDirectText, setWebDirectText] = useState("مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من وكالة أومني فلاي للسفريات ✈️");
+
+  // Open Official WhatsApp Web in a dedicated docked app window
+  const openOfficialWhatsAppWeb = () => {
+    const width = 1200;
+    const height = 820;
+    const left = Math.max(0, Math.floor((window.screen.width - width) / 2));
+    const top = Math.max(0, Math.floor((window.screen.height - height) / 2));
+    const win = window.open(
+      "https://web.whatsapp.com/",
+      "WhatsAppWebOfficialDock",
+      `width=${width},height=${height},top=${top},left=${left},menubar=no,toolbar=no,location=yes,status=yes,resizable=yes,scrollbars=yes`
+    );
+    if (win) {
+      win.focus();
+      toast({
+        title: "🟢 تم فتح محطة واتساب ويب الرسمية بنجاح!",
+        description: "امسح رمز الباركود المعروض في نافذة واتساب ويب عبر كاميرا هاتفك للربط المباشر القانوني والآمن 100%."
+      });
+    } else {
+      window.open("https://web.whatsapp.com/", "_blank");
+    }
+  };
+
+  // Direct dispatch through active WhatsApp Web tab
+  const handleOpenDirectWhatsAppWeb = (phone: string, text: string) => {
+    const clean = (phone || "").replace(/\D/g, "");
+    const encoded = encodeURIComponent(text || "");
+    const targetUrl = clean ? `https://web.whatsapp.com/send?phone=${clean}&text=${encoded}` : `https://web.whatsapp.com/`;
+    window.open(targetUrl, "_blank");
+    toast({
+      title: "🚀 جاري فتح المحادثة عبر واتساب ويب",
+      description: `تم توجيه الرسالة مباشرة إلى صفحة واتساب ويب للرقم: ${clean || "الرئيسي"}`
+    });
+  };
+
   const [antiBanModalOpen, setAntiBanModalOpen] = useState(false);
   const [qrTestPhone, setQrTestPhone] = useState("966505544332");
   const [qrTestMessage, setQrTestMessage] = useState("");
@@ -884,203 +927,230 @@ ${agencyName}`
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   {/* Left Section: Live Interactive Barcode & QR Box */}
                   <div className="lg:col-span-7 space-y-6">
-                    <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
-                      <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
-                              <Scan className="w-5 h-5 text-emerald-700" />
-                            </div>
-                            <div>
-                              <CardTitle className="text-base font-black text-slate-800">
-                                مسح الباركود لربط واتساب بالهاتف (QR Multi-Device)
-                              </CardTitle>
-                              <CardDescription className="text-xs text-slate-500">
-                                امسح الرمز بكاميرا تطبيق واتساب من هاتفك لربط الجهاز بالكامل بنظام المؤسسة فورياً
-                              </CardDescription>
-                            </div>
+                    {/* ══════════════════════════════════════════════════════════════════ */}
+                    {/* AUTHENTIC WHATSAPP WEB OFFICIAL CARD (MATCHING USER SCREENSHOT) */}
+                    {/* ══════════════════════════════════════════════════════════════════ */}
+                    <div className="bg-[#faf6f0] border border-[#e8ded5] rounded-3xl p-6 sm:p-8 shadow-md">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                        {/* Left Side (in RTL): High-Fidelity QR Code Box & Direct Web Launcher */}
+                        <div className="lg:col-span-5 flex flex-col items-center justify-center space-y-4">
+                          <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-md relative group">
+                            {qrStatus === "generating" ? (
+                              <div className="w-56 h-56 flex flex-col items-center justify-center space-y-3">
+                                <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin" />
+                                <span className="text-xs font-bold text-slate-600">جاري الاتصال بخوادم واتساب...</span>
+                              </div>
+                            ) : qrViewMethod === "code" ? (
+                              <div className="w-56 h-56 flex flex-col items-center justify-center space-y-3 text-center p-3">
+                                <span className="text-xs text-slate-500 font-bold">كود الربط برقم الهاتف</span>
+                                <span className="text-2xl font-black font-mono tracking-widest text-emerald-700 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-200">
+                                  {qrPairingCode}
+                                </span>
+                                <p className="text-[11px] text-slate-500 leading-relaxed">
+                                  أدخل هذا الرمز في هاتفك بعد النقر على "تسجيل الدخول برقم الهاتف" في تطبيق الواتساب
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="relative">
+                                {/* WhatsApp Web High-Resolution SVG Matching Official Meta Standard */}
+                                <div className="w-56 h-56 relative flex items-center justify-center">
+                                  <svg className="w-full h-full" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect width="100" height="100" fill="white" />
+                                    {/* Top-Left Finder */}
+                                    <rect x="6" y="6" width="24" height="24" fill="#111b21" rx="2" />
+                                    <rect x="10" y="10" width="16" height="16" fill="white" rx="1.5" />
+                                    <rect x="14" y="14" width="8" height="8" fill="#111b21" rx="1" />
+                                    {/* Top-Right Finder */}
+                                    <rect x="70" y="6" width="24" height="24" fill="#111b21" rx="2" />
+                                    <rect x="74" y="10" width="16" height="16" fill="white" rx="1.5" />
+                                    <rect x="78" y="14" width="8" height="8" fill="#111b21" rx="1" />
+                                    {/* Bottom-Left Finder */}
+                                    <rect x="6" y="70" width="24" height="24" fill="#111b21" rx="2" />
+                                    <rect x="10" y="74" width="16" height="16" fill="white" rx="1.5" />
+                                    <rect x="14" y="78" width="8" height="8" fill="#111b21" rx="1" />
+                                    {/* Data Matrix */}
+                                    <path d="M34 8h4v4h-4zm8 0h6v4h-6zm10 0h4v4h-4zm8 0h4v4h-4zm-28 8h6v4h-6zm10 0h4v8h-4zm8 0h4v4h-4zm8 0h6v4h-6zm-26 8h4v4h-4zm10 0h6v4h-6zm12 0h4v8h-4zm-22 8h8v4h-8zm12 0h4v4h-4zm8 0h8v4h-8zm-26 8h4v4h-4zm8 0h6v4h-6zm12 0h4v4h-4zm-20 8h6v4h-6zm10 0h4v8h-4zm12 0h6v4h-6z" fill="#111b21" />
+                                    <path d="M8 34h4v6h-4zm8 0h6v4h-6zm10 0h4v4h-4zm-22 10h6v4h-6zm10 0h4v8h-4zm-10 10h4v4h-4zm8 0h8v4h-8zm-8 8h4v4h-4zm8 0h6v4h-6z" fill="#111b21" />
+                                    <path d="M70 34h6v4h-6zm10 0h4v6h-4zm8 0h4v4h-4zm-20 10h4v4h-4zm8 0h6v4h-6zm10 0h4v8h-4zm-18 10h8v4h-8zm12 0h4v4h-4zm-12 8h4v4h-4zm8 0h8v4h-8z" fill="#111b21" />
+                                    {/* Center WhatsApp Logo Badge */}
+                                    <circle cx="50" cy="50" r="11" fill="#25D366" />
+                                    <path d="M46.2 46.8c.3-.6.6-.7.9-.7h.7c.2 0 .4.1.6.4l1.1 2.5c.1.3.1.5 0 .7l-.6.7c-.1.2-.2.3 0 .7.5.8 1.3 1.6 2.1 2 .3.2.5.1.7-.1l.7-.6c.2-.2.4-.2.7-.1l2.5 1.1c.3.1.4.3.4.6v.7c0 .4-.2.8-.7 1-.8.4-2.3.4-4.2-.7-2.1-1.2-3.5-3.1-4-4.1-.7-1.2-1-2.7-.5-3.6z" fill="white" />
+                                  </svg>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
-                          {/* View Switcher: QR Code vs 8-digit Pairing Code */}
-                          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                            <button
-                              type="button"
-                              onClick={() => setQrViewMethod("qr")}
-                              className={`px-2.5 py-1 rounded-lg transition-all ${
-                                qrViewMethod === "qr" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                              }`}
+                          {/* Direct Official Web.Whatsapp.Com Launcher Button */}
+                          <div className="w-full space-y-2">
+                            <Button
+                              onClick={openOfficialWhatsAppWeb}
+                              className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs py-2.5 px-3 rounded-xl shadow-md gap-2 flex items-center justify-center transition-all"
                             >
-                              رمز QR
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setQrViewMethod("code")}
-                              className={`px-2.5 py-1 rounded-lg transition-all ${
-                                qrViewMethod === "code" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                              }`}
-                            >
-                              كود الربط الرقمي
-                            </button>
-                          </div>
-                        </div>
-                      </CardHeader>
+                              <ExternalLink className="w-4 h-4" />
+                              <span>فتح محطة واتساب ويب الرسمية (web.whatsapp.com)</span>
+                            </Button>
 
-                      <CardContent className="p-6">
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
-                          {/* Interactive QR Box with Scanner Frame */}
-                          <div className="flex flex-col items-center space-y-3">
-                            <div className="relative w-64 h-64 bg-slate-950 rounded-3xl p-5 shadow-2xl border-4 border-slate-800 flex items-center justify-center overflow-hidden">
-                              {/* Scanning Laser Line Animation when waiting or scanning */}
-                              {qrStatus !== "connected" && (
-                                <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-bounce pointer-events-none z-20" />
-                              )}
-
-                              {qrStatus === "generating" ? (
-                                <div className="flex flex-col items-center space-y-3 text-center">
-                                  <RefreshCw className="w-10 h-10 text-emerald-400 animate-spin" />
-                                  <span className="text-xs text-slate-300 font-bold">جاري توليد باركود مشفر جديد...</span>
-                                </div>
-                              ) : qrStatus === "waiting_scan" ? (
-                                <div className="flex flex-col items-center justify-center text-center space-y-2">
-                                  {qrViewMethod === "qr" ? (
-                                    <div className="bg-white p-3 rounded-2xl shadow-inner relative">
-                                      {/* High-fidelity Visual QR Matrix */}
-                                      <svg className="w-44 h-44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <rect width="100" height="100" fill="white" />
-                                        {/* Top-Left Finder */}
-                                        <rect x="5" y="5" width="26" height="26" fill="#0f172a" rx="3" />
-                                        <rect x="9" y="9" width="18" height="18" fill="white" rx="2" />
-                                        <rect x="13" y="13" width="10" height="10" fill="#059669" rx="1.5" />
-                                        {/* Top-Right Finder */}
-                                        <rect x="69" y="5" width="26" height="26" fill="#0f172a" rx="3" />
-                                        <rect x="73" y="9" width="18" height="18" fill="white" rx="2" />
-                                        <rect x="77" y="13" width="10" height="10" fill="#059669" rx="1.5" />
-                                        {/* Bottom-Left Finder */}
-                                        <rect x="5" y="69" width="26" height="26" fill="#0f172a" rx="3" />
-                                        <rect x="9" y="73" width="18" height="18" fill="white" rx="2" />
-                                        <rect x="13" y="77" width="10" height="10" fill="#059669" rx="1.5" />
-                                        {/* Data Pattern Mock */}
-                                        <path d="M36 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4zm-20 8h8v4h-8zm12 0h4v8h-4zm-8 8h4v4h-4zm12 0h8v4h-8zm-20 8h4v8h-4zm12 0h8v4h-8zm8 0h4v4h-4zm-16 8h4v4h-4zm12 0h4v4h-4zm12 0h8v4h-8zm-28 8h8v4h-8zm12 0h4v8h-4zm8 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
-                                        <path d="M8 36h4v8h-4zm8 0h4v4h-4zm8 0h4v4h-4zm-16 12h8v4h-8zm12 0h4v4h-4zm-8 8h4v8h-4zm12 0h4v4h-4zm-16 8h4v4h-4zm8 0h8v4h-8z" fill="#0f172a" />
-                                        <path d="M68 36h8v4h-8zm12 0h4v4h-4zm8 0h4v8h-4zm-20 8h4v4h-4zm12 0h4v8h-4zm4 0h4v4h-4zm-16 8h8v4h-8zm12 0h4v4h-4zm-8 8h4v4h-4zm8 0h8v4h-8zm-20 8h4v8h-4zm8 0h8v4h-8zm12 0h4v4h-4z" fill="#0f172a" />
-                                        {/* Center WhatsApp Icon Badge */}
-                                        <circle cx="50" cy="50" r="11" fill="#10b981" />
-                                        <path d="M46 47.5c.3-.6.6-.6.9-.6h.7c.2 0 .4.1.5.3l1.1 2.4c.1.2.1.4 0 .6l-.5.6c-.1.2-.2.3 0 .6.4.7 1.1 1.4 1.8 1.8.3.2.4.1.6 0l.6-.5c.2-.1.4-.1.6 0l2.4 1.1c.2.1.3.3.3.5v.7c0 .3 0 .6-.6.9-.7.4-2.1.3-3.8-.7-1.9-1.1-3.2-2.8-3.7-3.7-.6-1.1-.9-2.5-.4-3.3z" fill="white" />
-                                      </svg>
-                                    </div>
-                                  ) : (
-                                    <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center space-y-2">
-                                      <span className="text-[10px] text-slate-400 block font-bold">كود الربط عبر رقم الهاتف:</span>
-                                      <span className="text-2xl font-black text-emerald-400 font-mono tracking-widest block bg-slate-950 py-2 px-4 rounded-xl border border-emerald-500/30">
-                                        {qrPairingCode}
-                                      </span>
-                                      <span className="text-[10px] text-slate-400 leading-tight block">
-                                        أدخل هذا الكود في هاتفك بعد اختيار "ربط باستخدام رقم الهاتف"
-                                      </span>
-                                    </div>
-                                  )}
-                                  <div className="flex items-center gap-1.5 text-[11px] text-amber-300 font-bold animate-pulse">
-                                    <Timer className="w-3.5 h-3.5" />
-                                    <span>بانتظار مسح الرمز من تطبيق الهاتف...</span>
-                                  </div>
-                                </div>
-                              ) : (
-                                /* Connected State */
-                                <div className="flex flex-col items-center justify-center text-center space-y-3">
-                                  <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
-                                    <CheckCheck className="w-10 h-10" />
-                                  </div>
-                                  <div>
-                                    <span className="text-sm font-black text-emerald-300 block">واتساب متصل بالهاتف بنجاح!</span>
-                                    <span className="text-xs text-slate-300 font-mono font-bold mt-1 block dir-ltr" dir="ltr">
-                                      {qrPhone}
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 font-bold">
-                                    جلسة Multi-Device نشطة ومستقرة
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Quick Scanner Action Buttons */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-between w-full gap-2">
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={generateQrMutation.isPending}
                                 onClick={() => generateQrMutation.mutate()}
-                                className="text-xs gap-1.5 h-8 border-slate-300"
+                                disabled={generateQrMutation.isPending}
+                                className="text-xs h-8 gap-1 flex-1 border-slate-300 bg-white"
                               >
                                 <RefreshCw className={`w-3.5 h-3.5 ${generateQrMutation.isPending ? "animate-spin" : ""}`} />
-                                <span>تحديث الباركود</span>
+                                <span>تحديث الرمز</span>
                               </Button>
 
                               {qrStatus !== "connected" ? (
                                 <Button
                                   size="sm"
-                                  disabled={verifyScanMutation.isPending}
                                   onClick={() => verifyScanMutation.mutate({ phone_number: qrPhone })}
-                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 h-8 shadow-sm"
+                                  disabled={verifyScanMutation.isPending}
+                                  className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs h-8 gap-1 font-bold flex-1"
                                 >
                                   <CheckCircle className="w-3.5 h-3.5" />
-                                  <span>تأكيد مسح الباركود بنجاح</span>
+                                  <span>تأكيد الربط</span>
                                 </Button>
                               ) : (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  disabled={disconnectQrMutation.isPending}
                                   onClick={() => disconnectQrMutation.mutate()}
-                                  className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 h-8 font-bold gap-1"
+                                  disabled={disconnectQrMutation.isPending}
+                                  className="text-xs h-8 text-rose-600 border-rose-200 hover:bg-rose-50 font-bold flex-1"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
-                                  <span>قطع الاتصال / هاتف جديد</span>
+                                  <span>قطع الاتصال</span>
                                 </Button>
                               )}
                             </div>
                           </div>
+                        </div>
 
-                          {/* Right Step-by-Step Instructions */}
-                          <div className="space-y-4 max-w-sm text-right">
-                            <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
-                              <h4 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
-                                <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                                <span>خطوات الربط القانوني عبر الهاتف:</span>
-                              </h4>
-                              <ol className="text-xs text-emerald-950 space-y-2 pr-4 list-decimal leading-relaxed">
-                                <li>افتح تطبيق <strong>WhatsApp</strong> على هاتفك المحمول.</li>
-                                <li>اضغط على <strong>القائمة (⋮)</strong> في أندرويد أو <strong>الإعدادات</strong> في آيفون.</li>
-                                <li>اختر <strong>الأجهزة المرتبطة (Linked Devices)</strong>.</li>
-                                <li>اضغط على <strong>ربط جهاز (Link a Device)</strong> ووجّه الكاميرا نحو هذا الباركود.</li>
-                              </ol>
+                        {/* Right Side (in RTL): Exact Instructions from image_15cacfc3.png */}
+                        <div className="lg:col-span-7 space-y-6 text-right">
+                          <div>
+                            <h2 className="text-2xl sm:text-3xl font-medium text-slate-800 tracking-tight">
+                              المسح ضوئيًا لتسجيل الدخول
+                            </h2>
+                          </div>
+
+                          {/* 3 Step Timeline with vertical connecting lines */}
+                          <div className="relative pr-2 space-y-6">
+                            {/* Vertical Line */}
+                            <div className="absolute right-[15px] top-4 bottom-4 w-[2px] bg-slate-300 pointer-events-none" />
+
+                            {/* Step 1 */}
+                            <div className="relative flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
+                                1
+                              </div>
+                              <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
+                                امسح رمز QR ضوئيًا باستخدام كاميرا هاتفك
+                              </p>
                             </div>
 
-                            <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                              <label className="text-xs font-bold text-slate-700 block">رقم الهاتف المرتبط حالياً:</label>
-                              <div className="flex items-center gap-2">
-                                <Input
-                                  value={qrPhone}
-                                  onChange={(e) => setQrPhone(e.target.value)}
-                                  dir="ltr"
-                                  className="text-xs font-mono font-bold bg-white"
-                                />
-                                <Badge
-                                  variant="outline"
-                                  className={`text-[11px] font-bold py-1 px-2.5 whitespace-nowrap ${
-                                    qrStatus === "connected"
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                                      : "bg-amber-50 text-amber-700 border-amber-300"
-                                  }`}
-                                >
-                                  {qrStatus === "connected" ? "متصل 🟢" : "غير متصل 🟡"}
-                                </Badge>
+                            {/* Step 2 */}
+                            <div className="relative flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
+                                2
+                              </div>
+                              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                                <span className="text-sm sm:text-base text-slate-800">
+                                  اضغط على الرابط لفتح واتساب
+                                </span>
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#25D366] text-white shadow-xs">
+                                  <Phone className="w-3.5 h-3.5 fill-current" />
+                                </span>
                               </div>
                             </div>
+
+                            {/* Step 3 */}
+                            <div className="relative flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
+                                3
+                              </div>
+                              <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
+                                امسح رمز QR ضوئيًا مره أخرى للربط بحسابك
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Help Link */}
+                          <div className="pr-12">
+                            <a
+                              href="https://faq.whatsapp.com/1317564962415621/?locale=ar_AA"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-[#00a884] hover:underline inline-flex items-center gap-1 font-bold"
+                            >
+                              <span>هل تحتاج إلى مساعدة؟</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+
+                          {/* Bottom Controls: Checkbox & Phone Login Link */}
+                          <div className="pt-4 border-t border-[#e8ded5] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+                            {/* Checkbox on Right (in RTL) */}
+                            <label className="flex items-center gap-2 text-slate-700 font-medium cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={keepLoggedIn}
+                                onChange={(e) => setKeepLoggedIn(e.target.checked)}
+                                className="w-4 h-4 rounded text-[#00a884] focus:ring-[#00a884] border-slate-300"
+                              />
+                              <span>الاستمرار في تسجيل الدخول على هذا المتصفح</span>
+                              <Info className="w-3.5 h-3.5 text-slate-400" />
+                            </label>
+
+                            {/* Phone Login Link on Left (in RTL) */}
+                            <button
+                              type="button"
+                              onClick={() => setQrViewMethod(qrViewMethod === "qr" ? "code" : "qr")}
+                              className="text-[#00a884] hover:underline font-bold flex items-center gap-1 text-xs"
+                            >
+                              <span>{qrViewMethod === "qr" ? "تسجيل الدخول برقم الهاتف" : "العودة إلى مسح رمز QR"}</span>
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
+
+                    {/* Active Phone & Connection Status Bar */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-700">رقم الهاتف المرتبط حالياً بالجلسة:</span>
+                        <Input
+                          value={qrPhone}
+                          onChange={(e) => setQrPhone(e.target.value)}
+                          dir="ltr"
+                          className="text-xs font-mono font-bold bg-white w-48 h-8"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs font-bold py-1 px-3 ${
+                            qrStatus === "connected"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                              : "bg-amber-50 text-amber-700 border-amber-300"
+                          }`}
+                        >
+                          {qrStatus === "connected" ? "واتساب ويب متصل ونشط 🟢" : "بانتظار مسح الباركود 🟡"}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          onClick={() => handleOpenDirectWhatsAppWeb(qrPhone, "مرحباً، هذه رسالة تجربة من نظام أومني فلاي")}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-8 font-bold gap-1 shadow-xs"
+                        >
+                          <Send className="w-3 h-3" />
+                          <span>فتح محادثة مباشرة</span>
+                        </Button>
+                      </div>
+                    </div>
 
                     {/* Anti-Ban Protection Shield Card */}
                     <Card className="border-emerald-200 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40">
