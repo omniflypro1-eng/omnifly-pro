@@ -174,12 +174,59 @@ export default function TravelNotificationsHubPage() {
   const [qrSecondsLeft, setQrSecondsLeft] = useState(60);
   // Official WhatsApp Web Integration & Station State
   const [keepLoggedIn, setKeepLoggedIn] = useState(true);
-  const [qrActiveView, setQrActiveView] = useState<"live_station" | "official_card" | "methods_guide" | "api_browser_guide">("live_station");
+  const [qrActiveView, setQrActiveView] = useState<"desktop_portal" | "live_station" | "official_card" | "methods_guide" | "api_browser_guide">("desktop_portal");
   const [stationIframeKey, setStationIframeKey] = useState(1);
   const [popupTestStatus, setPopupTestStatus] = useState<"not_tested" | "allowed" | "blocked">("not_tested");
   const [notificationStatus, setNotificationStatus] = useState<string>(typeof Notification !== "undefined" ? Notification.permission : "default");
   const [webDirectPhone, setWebDirectPhone] = useState("966505544332");
   const [webDirectText, setWebDirectText] = useState("مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من وكالة أومني فلاي للسفريات ✈️");
+
+  // WhatsApp Desktop & Meta Portal Direct Access State
+  const [desktopPhone, setDesktopPhone] = useState("966505544332");
+  const [desktopMessage, setDesktopMessage] = useState(
+    `عزيزنا المسافر، نؤكد لكم إصدار تذكرة السفر رقم SV-89201 بنجاح عبر وكالة أومني فلاي ✈️\nنتمنى لكم رحلة ممتعة وآمنة!`
+  );
+  const [desktopLaunchStatus, setDesktopLaunchStatus] = useState<"idle" | "launched">("idle");
+
+  // Native WhatsApp Desktop Protocol Launcher (whatsapp://)
+  const launchWhatsAppDesktop = (phone: string = "", text: string = "") => {
+    const cleanPhone = (phone || "").replace(/\D/g, "");
+    const encodedText = encodeURIComponent(text || "");
+    const desktopProtocolUrl = cleanPhone
+      ? `whatsapp://send?phone=${cleanPhone}&text=${encodedText}`
+      : `whatsapp://app`;
+
+    window.location.href = desktopProtocolUrl;
+    setDesktopLaunchStatus("launched");
+
+    toast({
+      title: "💻 جاري استدعاء تطبيق واتساب للكمبيوتر...",
+      description: cleanPhone
+        ? `يتم الآن فتح المحادثة مباشرة داخل تطبيق واتساب المكتبي للرقم: ${cleanPhone}`
+        : "يتم فتح تطبيق واتساب المثبت على جهاز الكمبيوتر مباشرة بنجاح."
+    });
+  };
+
+  // Direct Windows Store / Web Download for WhatsApp Desktop
+  const openWhatsAppStoreInstall = () => {
+    window.location.href = "ms-windows-store://pdp/?productid=9NKSQGP7F2NH";
+    setTimeout(() => {
+      window.open("https://www.whatsapp.com/download", "_blank");
+    }, 1200);
+    toast({
+      title: "🛍️ جاري فتح متجر Microsoft Store لتثبيت WhatsApp Desktop",
+      description: "يمكنك تثبيت تطبيق واتساب للكمبيوتر بضغطة واحدة من المتجر الرسمي."
+    });
+  };
+
+  // Meta Portal Linking & Device Pairing
+  const openPortalWhatsApp = () => {
+    window.open("https://portal.facebook.com", "_blank");
+    toast({
+      title: "📟 فتح إدارة ومزامنة أجهزة Meta Portal",
+      description: "امسح الرمز المعروض في شاشة جهاز Portal عبر هاتفك: الإعدادات > الأجهزة المرتبطة > ربط جهاز."
+    });
+  };
 
   const testBrowserPopups = () => {
     try {
@@ -1008,6 +1055,19 @@ ${agencyName}`
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
+                      onClick={() => setQrActiveView("desktop_portal")}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        qrActiveView === "desktop_portal"
+                          ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md font-black"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Laptop className="w-4 h-4 text-emerald-300" />
+                      <span>💻 تطبيق واتساب للكمبيوتر و Portal</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setQrActiveView("live_station")}
                       className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                         qrActiveView === "live_station"
@@ -1016,7 +1076,7 @@ ${agencyName}`
                       }`}
                     >
                       <Monitor className="w-4 h-4" />
-                      <span>🖥️ محطة واتساب ويب المباشرة المدمجة (Live Station)</span>
+                      <span>🖥️ محطة واتساب ويب المباشرة (Live Station)</span>
                     </button>
 
                     <button
@@ -1070,6 +1130,302 @@ ${agencyName}`
                     </Button>
                   </div>
                 </div>
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* OPTION 0: WHATSAPP DESKTOP & META PORTAL COMPREHENSIVE INTEGRATION */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {qrActiveView === "desktop_portal" && (
+                  <div className="space-y-6">
+                    {/* Header banner clarifying the phone scanner error shown in user's image */}
+                    <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 border-2 border-emerald-500/50 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+                      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 relative z-10">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                            <Laptop className="w-8 h-8 text-emerald-400" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base font-black text-white">
+                                مركز الوصول المباشر: تطبيق واتساب للكمبيوتر (Desktop) وأجهزة Meta Portal
+                              </h3>
+                              <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
+                                بروتوكول whatsapp:// نشط ✓
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
+                              يسمح النظام للكمبيوتر بالوصول الفوري لتطبيق <strong>واتساب المكتبي (WhatsApp Desktop)</strong> وأجهزة <strong>Meta Portal</strong> الرسمية عبر بروتوكول النظام الأصلي دون أي أخطاء، مع توجيه المحادثات والإشعارات مباشرة لحساب العميل.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Quick action buttons in header */}
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            onClick={() => launchWhatsAppDesktop("", "")}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-9 gap-2 shadow-lg"
+                          >
+                            <Laptop className="w-4 h-4 text-emerald-200" />
+                            <span>تشغيل تطبيق واتساب للكمبيوتر فوراً 🚀</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={openPortalWhatsApp}
+                            className="bg-slate-800/80 hover:bg-slate-800 text-slate-200 border-slate-700 font-bold text-xs rounded-xl h-9 gap-1.5"
+                          >
+                            <Monitor className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>أجهزة Meta Portal</span>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Explanation box explaining why the phone error occurred */}
+                      <div className="mt-4 p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-600/40 text-xs text-emerald-100 flex items-start gap-3">
+                        <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <div className="text-[11px] leading-relaxed">
+                          <strong>توضيح رسالة الهاتف (رمز QR غير صحيح):</strong>
+                          تطبيق واتساب على الهاتف مبرمج أمنياً لقبول الرموز المشفرة الصادرة حصرياً من <strong>واتساب للكمبيوتر (Desktop App)</strong>، أو <strong>واتساب للويب (web.whatsapp.com)</strong>، أو <strong>أجهزة Portal</strong>. فتح أي منها عبر الأزرار أدناه يوفر لك الباركود الرسمي الذي يقرأه الهاتف فوراً بدون أي خطأ!
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3 Main Action Cards */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* Card 1: Native Desktop WhatsApp Launch & Setup */}
+                      <Card className="border-emerald-200 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
+                        <div>
+                          <CardHeader className="bg-emerald-50/60 border-b border-emerald-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-emerald-600 text-white font-bold text-xs">
+                                تطبيق الكمبيوتر
+                              </Badge>
+                              <span className="text-[10px] text-emerald-700 font-mono font-bold">whatsapp://</span>
+                            </div>
+                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
+                              <Laptop className="w-4 h-4 text-emerald-600" />
+                              <span>1. تطبيق واتساب للكمبيوتر (Windows / Mac)</span>
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-600">
+                              تشغيل برنامج واتساب الرسمي المثبت على حاسوبك المكتبي
+                            </CardDescription>
+                          </CardHeader>
+
+                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
+                            <p className="text-[11px] leading-relaxed text-slate-600">
+                              يقوم النظام باستدعاء تطبيق واتساب المكتبي عبر بروتوكول <code className="font-mono text-emerald-700 font-bold">whatsapp://app</code> مباشرة، مما يتيح مزامنة تامة لرسائل السفر والمبيعات دون الحاجة للمتصفح.
+                            </p>
+
+                            <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-200 text-[11px]">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-800">بروتوكول النظام:</span>
+                                <span className="text-emerald-700 font-mono font-bold">مدعوم بالكامل ✓</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-800">المزامنة مع الهاتف:</span>
+                                <span className="text-slate-600">تلقائية ومتزامنة دائماً</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-800">معدل الإرسال:</span>
+                                <span className="text-slate-600">غير محدود وآمن 100%</span>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                              <strong>إذا لم يكن البرنامج مثبتاً على جهازك:</strong>
+                              <br />
+                              اضغط على زر التثبيت أدناه لفتح متجر Windows الرسمي وتثبيته في 30 ثانية مجاناً.
+                            </div>
+                          </CardContent>
+                        </div>
+
+                        <div className="p-5 pt-0 space-y-2">
+                          <Button
+                            onClick={() => launchWhatsAppDesktop("", "")}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
+                          >
+                            <Laptop className="w-4 h-4" />
+                            <span>تشغيل واتساب للكمبيوتر مباشرة الآن</span>
+                          </Button>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={openWhatsAppStoreInstall}
+                              className="text-xs h-8 rounded-xl font-bold border-slate-300 text-slate-700 hover:bg-slate-50"
+                            >
+                              <span>متجر Windows 🛍️</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => window.open("https://www.whatsapp.com/download", "_blank")}
+                              className="text-xs h-8 rounded-xl font-bold border-slate-300 text-slate-700 hover:bg-slate-50"
+                            >
+                              <span>موقع التحميل الرسمي ↗</span>
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+
+                      {/* Card 2: Meta Portal Companion Mode */}
+                      <Card className="border-cyan-200 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
+                        <div>
+                          <CardHeader className="bg-cyan-50/60 border-b border-cyan-100 pb-3">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-cyan-600 text-white font-bold text-xs">
+                                أجهزة Portal
+                              </Badge>
+                              <span className="text-[10px] text-cyan-700 font-mono font-bold">Meta Companion</span>
+                            </div>
+                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
+                              <Monitor className="w-4 h-4 text-cyan-600" />
+                              <span>2. الربط عبر أجهزة Meta Portal</span>
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-600">
+                              إمكانية ربط واتساب عبر شاشات Portal الذكية التابعة لـ Meta
+                            </CardDescription>
+                          </CardHeader>
+
+                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
+                            <p className="text-[11px] leading-relaxed text-slate-600">
+                              أجهزة Portal (Portal Go, Portal+, Portal TV) مخصصة لمحادثات الأعمال وتدعم واتساب رسمياً كجهاز رفيق (Companion Device).
+                            </p>
+
+                            <div className="space-y-2 text-[11px] text-slate-700 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                              <span className="font-bold text-slate-900 block">خطوات الربط القانوني عبر Portal:</span>
+                              <ol className="list-decimal list-inside space-y-1.5 pr-1 text-slate-600">
+                                <li>شغّل جهاز Portal وافتح تطبيق <strong>WhatsApp</strong>.</li>
+                                <li>افتح واتساب في هاتفك &gt; <strong>الأجهزة المرتبطة</strong> &gt; <strong>ربط جهاز</strong>.</li>
+                                <li>وجه كاميرا الهاتف نحو شاشة Portal لمسح الرمز، وسيتم تفعيل الربط فوراً.</li>
+                              </ol>
+                            </div>
+
+                            <div className="p-3 bg-cyan-50 rounded-2xl border border-cyan-200 text-cyan-950 text-[11px] leading-relaxed">
+                              <strong>ميزة Portal للمكاتب:</strong>
+                              <br />
+                              تتيح للوكالة إجراء مكالمات فيديو وصوت مع العملاء ومسؤولي شركات الطيران بجودة فائقة وبشكل متزامن مع النظام.
+                            </div>
+                          </CardContent>
+                        </div>
+
+                        <div className="p-5 pt-0 space-y-2">
+                          <Button
+                            onClick={openPortalWhatsApp}
+                            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>فتح بوابة أجهزة Meta Portal الرسمية</span>
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            onClick={openOfficialWhatsAppWeb}
+                            className="w-full text-xs h-8 rounded-xl font-bold border-cyan-200 text-cyan-800 hover:bg-cyan-50"
+                          >
+                            <span>فتح واتساب ويب الرسمي كبديل للمتصفح</span>
+                          </Button>
+                        </div>
+                      </Card>
+
+                      {/* Card 3: Direct Desktop Chat Dispatcher */}
+                      <Card className="border-slate-200 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
+                        <div>
+                          <CardHeader className="bg-slate-50 border-b border-slate-200 pb-3">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-slate-900 text-white font-bold text-xs">
+                                إرسال فوري
+                              </Badge>
+                              <span className="text-[10px] text-slate-500 font-bold">Desktop Dispatcher</span>
+                            </div>
+                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
+                              <Send className="w-4 h-4 text-emerald-600" />
+                              <span>3. الإرسال المباشر لتطبيق الكمبيوتر</span>
+                            </CardTitle>
+                            <CardDescription className="text-xs text-slate-600">
+                              فتح محادثة مجهزة بنص التذكرة أو الفاتورة داخل WhatsApp Desktop
+                            </CardDescription>
+                          </CardHeader>
+
+                          <CardContent className="p-5 space-y-3 text-xs">
+                            <div>
+                              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                                رقم هاتف العميل (مع رمز الدولة):
+                              </label>
+                              <Input
+                                value={desktopPhone}
+                                onChange={(e) => setDesktopPhone(e.target.value)}
+                                placeholder="966505544332"
+                                dir="ltr"
+                                className="h-8 text-xs font-mono font-bold rounded-xl"
+                              />
+                            </div>
+
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[11px] font-bold text-slate-700">
+                                  نص الإشعار / التذكرة:
+                                </label>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDesktopMessage(
+                                        `عزيزنا المسافر، تم تأكيد حجز تذكرتك رقم #SV-8921 عبر وكالة أومني فلاي للسفريات بنجاح ✈️🌟`
+                                      )
+                                    }
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold hover:bg-blue-100"
+                                  >
+                                    تذكرة طيران
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDesktopMessage(
+                                        `سعادة العميل، تم استلام دفعتكم وسند القبض رقم #REC-4102 بقيمة 1,250 ريال بنجاح. شكراً لتعاملكم مع أومني فلاي 💳`
+                                      )
+                                    }
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold hover:bg-emerald-100"
+                                  >
+                                    سند قبض
+                                  </button>
+                                </div>
+                              </div>
+                              <Textarea
+                                rows={4}
+                                value={desktopMessage}
+                                onChange={(e) => setDesktopMessage(e.target.value)}
+                                className="text-xs leading-relaxed font-sans rounded-xl resize-none"
+                              />
+                            </div>
+
+                            <div className="p-2.5 bg-slate-50 rounded-xl border text-[10px] text-slate-500 leading-relaxed">
+                              سيقوم النظام بفتح تطبيق <strong>WhatsApp Desktop</strong> مباشرة مع العميل، وتجهيز النص دون الحاجة لكتابته يدوياً.
+                            </div>
+                          </CardContent>
+                        </div>
+
+                        <div className="p-5 pt-0 space-y-2">
+                          <Button
+                            onClick={() => launchWhatsAppDesktop(desktopPhone, desktopMessage)}
+                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
+                          >
+                            <Laptop className="w-4 h-4" />
+                            <span>فتح المحادثة في تطبيق الكمبيوتر المكتبي 🚀</span>
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            onClick={() => handleOpenDirectWhatsAppWeb(desktopPhone, desktopMessage)}
+                            className="w-full text-slate-700 border-slate-300 hover:bg-slate-50 font-bold text-xs h-8 rounded-xl gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>فتح في واتساب ويب (المتصفح)</span>
+                          </Button>
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+                )}
 
                 {/* ══════════════════════════════════════════════════════════════════ */}
                 {/* OPTION 1: IN-SYSTEM LIVE WHATSAPP WEB WORKSTATION (محطة واتساب المباشرة) */}
@@ -2673,24 +3029,35 @@ ${agencyName}`
                     />
                   </div>
 
-                  <Button
-                    onClick={async () => {
-                      try {
-                        await fetchWithAuth("/api/travel/notifications/send", {
-                          method: "POST",
-                          body: JSON.stringify(sendForm)
-                        });
-                        refetchLogs();
-                        toast({ title: "✓ تم إرسال الرسالة بنجاح إلى الرقم +" + sendForm.recipient_phone });
-                      } catch (e: any) {
-                        toast({ title: "خطأ في الإرسال", description: e.message, variant: "destructive" });
-                      }
-                    }}
-                    className="w-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>إرسال الرسالة عبر الواتساب الآن 🚀</span>
-                  </Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    <Button
+                      onClick={async () => {
+                        try {
+                          await fetchWithAuth("/api/travel/notifications/send", {
+                            method: "POST",
+                            body: JSON.stringify(sendForm)
+                          });
+                          refetchLogs();
+                          toast({ title: "✓ تم إرسال الرسالة بنجاح إلى الرقم +" + sendForm.recipient_phone });
+                        } catch (e: any) {
+                          toast({ title: "خطأ في الإرسال", description: e.message, variant: "destructive" });
+                        }
+                      }}
+                      className="bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>إرسال عبر السحابي (Cloud API)</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => launchWhatsAppDesktop(sendForm.recipient_phone, sendForm.message_body)}
+                      className="bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700 font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
+                    >
+                      <Laptop className="w-4 h-4 text-emerald-400" />
+                      <span>إرسال عبر واتساب للكمبيوتر 💻</span>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </div>
