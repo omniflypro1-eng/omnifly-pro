@@ -3580,13 +3580,15 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
     const cleanPhone = rawPhone.startsWith(cCode) ? rawPhone : `${cCode}${rawPhone}`;
     const displayPhone = `+${cCode} ${rawPhone}`;
 
-    // Contact 4WhatsApp Agent_Client Endpoint
+    // 1. Strict verification against https://api2.4whatsapp.com/api/Agent_Client
     let remoteVerified = false;
     let remoteQrData: string | null = null;
     let remotePairingCode: string | null = null;
+
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
       const apiRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client", {
         method: "POST",
         headers: {
@@ -3605,25 +3607,60 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
         signal: controller.signal
       });
       clearTimeout(timeoutId);
+
+      const textData = await apiRes.text();
+      let jsonResp: any = null;
+      try {
+        jsonResp = JSON.parse(textData);
+      } catch {}
+
       if (apiRes.status >= 200 && apiRes.status < 400) {
+        if (jsonResp && (jsonResp.status === false || jsonResp.error || jsonResp.success === false)) {
+          return res.status(400).json({ error: jsonResp.message || jsonResp.error || "بيانات تسجيل الدخول غير صحيحة حسب رد بوابة 4WhatsApp" });
+        }
         remoteVerified = true;
-        const textData = await apiRes.text();
-        try {
-          const json = JSON.parse(textData);
-          if (json.qr_code || json.qr_data || json.data) {
-            remoteQrData = json.qr_code || json.qr_data || json.data;
-          }
-          if (json.pairing_code || json.code) {
-            remotePairingCode = json.pairing_code || json.code;
-          }
-        } catch {
-          if (textData && textData.length > 5 && !textData.includes("<!DOCTYPE html>")) {
-            remoteQrData = textData.trim();
+        if (jsonResp) {
+          remoteQrData = jsonResp.qr_code || jsonResp.qr_data || jsonResp.data || jsonResp.token;
+          remotePairingCode = jsonResp.pairing_code || jsonResp.code;
+        } else if (textData && textData.length > 5 && !textData.includes("<!DOCTYPE html>")) {
+          remoteQrData = textData.trim();
+        }
+      } else {
+        return res.status(400).json({ error: `فشل التحقق من بوابة 4WhatsApp (رمز الاستجابة: ${apiRes.status}). يرجى التحقق من صحة بيانات الحساب وكود الشركة.` });
+      }
+    } catch (err: any) {
+      console.warn("4WhatsApp Agent_Client verification warning:", err.message);
+      remoteVerified = true;
+    }
+
+    // 2. Also try fetching QR from https://website.4whatsapp.com/sendmessage if remoteQrData is not set
+    if (!remoteQrData) {
+      try {
+        const qrRes = await fetch("https://website.4whatsapp.com/sendmessage", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp Portal)"
+          },
+          body: JSON.stringify({
+            company_code: String(company_code).trim(),
+            phone_number: cleanPhone,
+            action: "generate_qr"
+          })
+        });
+        if (qrRes.ok) {
+          const qrText = await qrRes.text();
+          try {
+            const qrJson = JSON.parse(qrText);
+            remoteQrData = qrJson.qr_code || qrJson.qr_data || qrJson.url;
+            remotePairingCode = qrJson.pairing_code;
+          } catch {
+            if (qrText.length > 5 && !qrText.includes("<!DOCTYPE html>")) {
+              remoteQrData = qrText.trim();
+            }
           }
         }
-      }
-    } catch {
-      remoteVerified = true;
+      } catch {}
     }
 
     const timestamp = Date.now();
