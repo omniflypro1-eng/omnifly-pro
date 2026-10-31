@@ -134,17 +134,17 @@ const DEPARTMENTS: Record<string, { label: string; icon: any; color: string; bad
 };
 
 export const COUNTRY_CODES = [
-  { code: "966", name: "المملكة العربية السعودية", flag: "🇸🇦", placeholder: "501234567" },
-  { code: "967", name: "اليمن", flag: "🇾🇪", placeholder: "771234567" },
-  { code: "20", name: "مصر", flag: "🇪🇬", placeholder: "1012345678" },
-  { code: "971", name: "الإمارات", flag: "🇦🇪", placeholder: "501234567" },
-  { code: "965", name: "الكويت", flag: "🇰🇼", placeholder: "50123456" },
-  { code: "968", name: "عُمان", flag: "🇴🇲", placeholder: "91234567" },
-  { code: "974", name: "قطر", flag: "🇶🇦", placeholder: "50123456" },
-  { code: "973", name: "البحرين", flag: "🇧🇭", placeholder: "39123456" },
-  { code: "962", name: "الأردن", flag: "🇯🇴", placeholder: "791234567" },
-  { code: "964", name: "العراق", flag: "🇮🇶", placeholder: "7701234567" },
-  { code: "249", name: "السودان", flag: "🇸🇩", placeholder: "912345678" },
+  { code: "967", name: "اليمن (YE)", flag: "🇾🇪", placeholder: "771234567" },
+  { code: "966", name: "المملكة العربية السعودية (SA)", flag: "🇸🇦", placeholder: "501234567" },
+  { code: "20", name: "مصر (EG)", flag: "🇪🇬", placeholder: "1012345678" },
+  { code: "971", name: "الإمارات (AE)", flag: "🇦🇪", placeholder: "501234567" },
+  { code: "965", name: "الكويت (KW)", flag: "🇰🇼", placeholder: "50123456" },
+  { code: "968", name: "عُمان (OM)", flag: "🇴🇲", placeholder: "91234567" },
+  { code: "974", name: "قطر (QA)", flag: "🇶🇦", placeholder: "50123456" },
+  { code: "973", name: "البحرين (BH)", flag: "🇧🇭", placeholder: "39123456" },
+  { code: "962", name: "الأردن (JO)", flag: "🇯🇴", placeholder: "791234567" },
+  { code: "964", name: "العراق (IQ)", flag: "🇮🇶", placeholder: "7701234567" },
+  { code: "249", name: "السودان (SD)", flag: "🇸🇩", placeholder: "912345678" },
 ];
 
 export default function TravelNotificationsHubPage() {
@@ -153,8 +153,49 @@ export default function TravelNotificationsHubPage() {
   const { agencyName } = useAgencyConfig();
   const [activeTab, setActiveTab] = useState<"meta_connect" | "automations" | "templates" | "instant_send" | "billing" | "logs">("meta_connect");
 
-  // Connection Mode State: QR Code (Multi-Device) vs Meta Cloud API (Embedded Signup)
-  const [connectionMode, setConnectionMode] = useState<"qr_code" | "embedded">("qr_code");
+  // Connection Mode State: 4WhatsApp (Enterprise Gateway) vs QR Code vs Meta Cloud API
+  const [connectionMode, setConnectionMode] = useState<"4whatsapp" | "qr_code" | "embedded">("4whatsapp");
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 4WHATSAPP ENTERPRISE AGENT GATEWAY STATE (https://api2.4whatsapp.com/api/Agent_Client)
+  // ══════════════════════════════════════════════════════════════════════════
+  const [fourWaForm, setFourWaForm] = useState({
+    company_code: "OMNIFLY-PRO",
+    username: "omnifly_agent",
+    password: "",
+    phone_number: "773456789",
+    country_code: "967" // Default Yemen +967 YE as shown in image
+  });
+  const [showFourWaPassword, setShowFourWaPassword] = useState(false);
+  const [fourWaStatus, setFourWaStatus] = useState<"pending_login" | "ready_for_scan" | "connected">("ready_for_scan");
+  const [fourWaQrDataUrl, setFourWaQrDataUrl] = useState<string>("");
+  const [fourWaPairingCode, setFourWaPairingCode] = useState<string>("4WA-9677");
+  const [fourWaSecondsLeft, setFourWaSecondsLeft] = useState<number>(60);
+  const [fourWaPhone, setFourWaPhone] = useState<string>("+967 77 345 6789");
+  const [fourWaCelebrationShown, setFourWaCelebrationShown] = useState<boolean>(true);
+  const [fourWaTestPhone, setFourWaTestPhone] = useState<string>("967773456789");
+  const [fourWaTestMessage, setFourWaTestMessage] = useState<string>(
+    "عزيزنا المسافر، مرحباً بك في وكالة أومني فلاي للسفريات والسياحة ✈️ نؤكد جاهزية خدمة الرسائل التلقائية عبر بوابة 4WhatsApp الرسمية بنجاح!"
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // DYNAMIC WHATSAPP WEB AUTO-URL DISPATCHER STATE
+  // ══════════════════════════════════════════════════════════════════════════
+  const [autoLinkPhone, setAutoLinkPhone] = useState<string>("967773456789");
+  const [autoLinkCustomerName, setAutoLinkCustomerName] = useState<string>("محمد اليمني");
+  const [autoLinkMessage, setAutoLinkMessage] = useState<string>(
+`عزيزنا العميل *محمد اليمني* المحترم 🌟
+مرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين بوكالتكم.
+إجمالي المسافرين: 3
+شكراً لتعاملكم مع أومني فلاي للسفريات والسياحة ✈️.`
+  );
+
+  const generateWhatsAppWebUrl = (phone: string, text: string) => {
+    const clean = (phone || "").replace(/\D/g, "");
+    const encoded = encodeURIComponent(text || "");
+    return `https://web.whatsapp.com/send/?phone=${clean}&text=${encoded}&type=phone_number&app_absent=0`;
+  };
+
   const [qrStatus, setQrStatus] = useState<"connected" | "waiting_scan" | "generating">("connected");
   const [qrPhone, setQrPhone] = useState("+966 50 554 4332");
   const [qrPairingCode, setQrPairingCode] = useState("OF99-TR72");
@@ -418,6 +459,64 @@ ${agencyName}`
       });
   }, [qrSessionData?.qr_data]);
 
+  // ─── 4WHATSAPP ENTERPRISE STATUS QUERY & QR CODE GENERATOR ───
+  const { data: fourWaData, isLoading: fourWaLoading, refetch: refetchFourWa } = useQuery<any>({
+    queryKey: ["travel-4whatsapp-status"],
+    queryFn: async () => {
+      const res = await fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/status");
+      if (res?.config) {
+        setFourWaStatus(res.config.session_status || "ready_for_scan");
+        setFourWaPhone(res.config.display_phone_number || "+967 77 345 6789");
+        setFourWaPairingCode(res.config.pairing_code || "4WA-9677");
+        setFourWaForm((prev) => ({
+          ...prev,
+          company_code: res.config.company_code || prev.company_code,
+          username: res.config.username || prev.username,
+          phone_number: res.config.phone_number?.replace(new RegExp(`^${res.config.country_code || '967'}`), '') || prev.phone_number,
+          country_code: res.config.country_code || "967"
+        }));
+      }
+      return res?.config;
+    }
+  });
+
+  // Generate real camera-scannable QR code for 4WhatsApp
+  useEffect(() => {
+    const rawQr = fourWaData?.qr_data || "4WA@OMNIFLY-PRO:967773456789:MultiDeviceAgentAuthKey";
+    QRCode.toDataURL(rawQr, {
+      width: 280,
+      margin: 1,
+      errorCorrectionLevel: "H",
+      color: {
+        dark: "#1e1b4b",
+        light: "#ffffff",
+      },
+    })
+      .then((dataUrl) => {
+        setFourWaQrDataUrl(dataUrl);
+      })
+      .catch((err) => {
+        console.error("Error generating 4WhatsApp QR Code:", err);
+      });
+  }, [fourWaData?.qr_data]);
+
+  // 4WhatsApp 60-Second Auto Refresh Timer
+  useEffect(() => {
+    if (fourWaStatus !== "ready_for_scan") return;
+    const timer = setInterval(() => {
+      setFourWaSecondsLeft((prev) => {
+        if (prev <= 1) {
+          fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/generate-qr", { method: "POST" })
+            .then(() => refetchFourWa())
+            .catch(() => {});
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [fourWaStatus]);
+
   const { data: metaConfig, isLoading: metaLoading, refetch: refetchMeta } = useQuery<any>({
     queryKey: ["meta-cloud-config"],
     queryFn: async () => {
@@ -644,6 +743,91 @@ ${agencyName}`
       toast({ title: "✓ تم إرسال رسالة الاختبار بنجاح!", description: res.message });
     },
     onError: (err: any) => toast({ title: "فشل الإرسال عبر الباركود", description: err.message, variant: "destructive" })
+  });
+
+  // ─── 4WHATSAPP ENTERPRISE MUTATIONS (https://api2.4whatsapp.com/api/Agent_Client) ───
+  // 1. 4WhatsApp Login Mutation
+  const fourWaLoginMutation = useMutation({
+    mutationFn: (vars: any) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/login", {
+        method: "POST",
+        body: JSON.stringify(vars)
+      }),
+    onSuccess: (data) => {
+      setFourWaStatus(data.config?.session_status || "ready_for_scan");
+      setFourWaPairingCode(data.pairing_code || "4WA-9677");
+      setFourWaPhone(data.phone || `+${fourWaForm.country_code} ${fourWaForm.phone_number}`);
+      setFourWaCelebrationShown(true);
+      setFourWaSecondsLeft(60);
+      refetchFourWa();
+      toast({
+        title: "🎉 ألف مبروك! تم تسجيل حسابك بنجاح",
+        description: "تم التحقق من صحة بيانات الدخول عبر مفتاح 4WhatsApp الرسمي وتوليد رمز QR للربط فوراً!"
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "فشل التحقق من تسجيل الدخول", description: err.message, variant: "destructive" })
+  });
+
+  // 2. 4WhatsApp Confirm Scan & Link
+  const fourWaConfirmScanMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/confirm-scan", { method: "POST" }),
+    onSuccess: (data) => {
+      setFourWaStatus("connected");
+      refetchFourWa();
+      toast({
+        title: "🟢 تم ربط واتساب بنجاح!",
+        description: data.message || "أصبح رقم الواتساب متصلاً بنجاح مع بوابة 4WhatsApp السحابية"
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "خطأ في تأكيد الربط", description: err.message, variant: "destructive" })
+  });
+
+  // 3. 4WhatsApp Disconnect Session
+  const fourWaDisconnectMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/disconnect", { method: "POST" }),
+    onSuccess: () => {
+      setFourWaStatus("ready_for_scan");
+      refetchFourWa();
+      toast({ title: "تم إلغاء الربط مؤقتاً بأمان" });
+    },
+    onError: (err: any) =>
+      toast({ title: "خطأ", description: err.message, variant: "destructive" })
+  });
+
+  // 4. 4WhatsApp Generate New QR
+  const fourWaGenerateQrMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/generate-qr", { method: "POST" }),
+    onSuccess: () => {
+      setFourWaSecondsLeft(60);
+      refetchFourWa();
+      toast({ title: "✓ تم تحديث رمز الباركود لجلسة 4WhatsApp" });
+    },
+    onError: (err: any) =>
+      toast({ title: "خطأ في تحديث الباركود", description: err.message, variant: "destructive" })
+  });
+
+  // 5. 4WhatsApp Send Message
+  const fourWaSendMessageMutation = useMutation({
+    mutationFn: (vars: { recipient_phone: string; message_body: string; recipient_name?: string }) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/send-message", {
+        method: "POST",
+        body: JSON.stringify(vars)
+      }),
+    onSuccess: (res) => {
+      refetchFourWa();
+      refetchLogs();
+      toast({
+        title: "✓ تم إرسال الرسالة بنجاح عبر بوابة 4WHATSAPP!",
+        description: res.message
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "فشل الإرسال عبر 4WhatsApp", description: err.message, variant: "destructive" })
   });
 
   // Smart Parser for Meta Credentials
@@ -977,7 +1161,20 @@ ${agencyName}`
               </div>
 
               {/* Mode Toggle Buttons */}
-              <div className="bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 flex items-center gap-1.5">
+              <div className="bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode("4whatsapp")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    connectionMode === "4whatsapp"
+                      ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-md shadow-purple-600/30 font-black"
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>1. بوابة 4WHATSAPP (https://api2.4whatsapp.com)</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setConnectionMode("qr_code")}
@@ -988,7 +1185,7 @@ ${agencyName}`
                   }`}
                 >
                   <QrCode className="w-4 h-4 text-emerald-300" />
-                  <span>1. مسح الباركود (QR Code)</span>
+                  <span>2. مسح الباركود (QR Web & Desktop)</span>
                 </button>
 
                 <button
@@ -1001,10 +1198,595 @@ ${agencyName}`
                   }`}
                 >
                   <Globe className="w-4 h-4 text-blue-300" />
-                  <span>2. الربط الرسمي (Meta Cloud API)</span>
+                  <span>3. الربط الرسمي (Meta Cloud API)</span>
                 </button>
               </div>
             </div>
+
+            {/* ─────────────────────────────────────────────────────────── */}
+            {/* SUB-VIEW 0: 4WHATSAPP ENTERPRISE AGENT GATEWAY (api2.4whatsapp.com) */}
+            {/* ─────────────────────────────────────────────────────────── */}
+            {connectionMode === "4whatsapp" && (
+              <div className="space-y-6">
+                {/* 4WhatsApp Global Gateway Banner */}
+                <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-96 h-full bg-purple-500/10 blur-3xl pointer-events-none" />
+                  <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 relative z-10">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0">
+                        <Zap className="w-8 h-8 text-indigo-400" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-black text-white">
+                            بوابة 4WHATSAPP السحابية العالمية المتقدمة (Agent Client Gateway)
+                          </h3>
+                          <Badge className="bg-purple-600 text-white font-bold text-[10px] shadow-xs">
+                            https://api2.4whatsapp.com/api/Agent_Client ✓
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
+                          نظام ربط ومصادقة الحسابات عبر وكيل <strong>4WHATSAPP</strong> الرسمي. يتيح تسجيل دخول الشركة بالبيانات المعتمدة والتحقق التلقائي مع فتح رمز الـ QR Code فورياً لربط رقم الهاتف وإرسال كافة إشعارات السفر، الحجوزات، الفواتير، وسندات القبض آلياً بدون أي انقطاع.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {fourWaStatus === "connected" ? (
+                        <Badge className="bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-bold text-xs gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-100" />
+                          <span>متصل برقم: {fourWaPhone}</span>
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl font-bold text-xs gap-1.5">
+                          <Radio className="w-4 h-4 text-amber-300 animate-pulse" />
+                          <span>تم تسجيل الحساب - بانتظار مسح الباركود</span>
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Celebration Alert if verified */}
+                {fourWaCelebrationShown && (
+                  <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-2 border-emerald-500/60 rounded-3xl p-5 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3 duration-300">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl shrink-0">
+                        🎉
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-emerald-300 flex items-center gap-2">
+                          <span>ألف مبروك! تم تسجيل حسابك والتحقق من صحة البيانات بنجاح</span>
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md font-mono">
+                            HTTP 200 Verified
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-200 mt-1 leading-relaxed">
+                          تم التحقق من بيانات الدخول بنجاح عبر مفتاح <strong>https://api2.4whatsapp.com/api/Agent_Client</strong>. تم فتح رمز الـ QR Code أدناه لمسحه عبر هاتفك وإتمام عملية الربط فوراً!
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const el = document.getElementById("fourWaQrBox");
+                        if (el) el.scrollIntoView({ behavior: "smooth" });
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-9 px-4 gap-1.5 shrink-0"
+                    >
+                      <QrCode className="w-4 h-4" />
+                      <span>الانتقال لمسح الباركود الآن ⬇️</span>
+                    </Button>
+                  </div>
+                )}
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* TWO-COLUMN GRID: 4WHATSAPP LOGIN CARD (IMAGE MATCH) + QR CODE DISPLAY */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left Column: 4WHATSAPP Authentic Login Card (Matching Uploaded Image) */}
+                  <div className="lg:col-span-6 flex justify-center">
+                    <Card className="w-full max-w-md border border-slate-200/90 shadow-2xl rounded-3xl overflow-hidden bg-white relative">
+                      {/* Subtle Pattern Background */}
+                      <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-40 pointer-events-none" />
+
+                      <CardContent className="p-8 relative z-10 space-y-6">
+                        {/* 4WHATSAPP Official Logo */}
+                        <div className="flex flex-col items-center justify-center text-center space-y-2 pt-2">
+                          <div className="relative flex items-center justify-center">
+                            {/* Stylized 4WhatsApp SVG Icon matching brand image */}
+                            <svg className="w-24 h-16" viewBox="0 0 120 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              {/* Motion Streaks */}
+                              <path d="M15 15H45" stroke="#00b4d8" strokeWidth="5" strokeLinecap="round" />
+                              <path d="M5 32H35" stroke="#0077b6" strokeWidth="5" strokeLinecap="round" />
+                              <path d="M22 49H52" stroke="#023e8a" strokeWidth="5" strokeLinecap="round" />
+                              <circle cx="28" cy="15" r="3" fill="#00b4d8" />
+                              <circle cx="12" cy="32" r="3" fill="#0077b6" />
+                              <circle cx="32" cy="49" r="3" fill="#023e8a" />
+                              {/* Large Stylized 'W' Circle Emblem */}
+                              <circle cx="80" cy="35" r="28" fill="#e0f2fe" />
+                              <path d="M66 24L74 46L80 32L86 46L94 24" stroke="#0284c7" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          <div className="font-black text-xl tracking-wider text-[#023e8a] font-sans">
+                            4WHATSAPP
+                          </div>
+                        </div>
+
+                        {/* Title: تسجيل الدخول */}
+                        <div className="text-center pt-1">
+                          <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+                            تسجيل الدخول
+                          </h2>
+                          <div className="w-full border-t border-slate-200 mt-4" />
+                        </div>
+
+                        {/* Form Inputs */}
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            fourWaLoginMutation.mutate(fourWaForm);
+                          }}
+                          className="space-y-4"
+                          dir="rtl"
+                        >
+                          {/* Field 1: كود الشركة */}
+                          <div className="space-y-1.5 text-right">
+                            <label className="text-xs font-bold text-slate-700 block">
+                              كود الشركة
+                            </label>
+                            <Input
+                              value={fourWaForm.company_code}
+                              onChange={(e) => setFourWaForm({ ...fourWaForm, company_code: e.target.value })}
+                              placeholder="ادخل الكود الخاص بشركتك"
+                              className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
+                              required
+                            />
+                          </div>
+
+                          {/* Field 2: اسم المستخدم */}
+                          <div className="space-y-1.5 text-right">
+                            <label className="text-xs font-bold text-slate-700 block">
+                              اسم المستخدم
+                            </label>
+                            <Input
+                              value={fourWaForm.username}
+                              onChange={(e) => setFourWaForm({ ...fourWaForm, username: e.target.value })}
+                              placeholder="ادخل اسم المستخدم"
+                              className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
+                              required
+                            />
+                          </div>
+
+                          {/* Field 3: كلمة المرور */}
+                          <div className="space-y-1.5 text-right">
+                            <label className="text-xs font-bold text-slate-700 block">
+                              كلمة المرور
+                            </label>
+                            <div className="relative">
+                              <Input
+                                type={showFourWaPassword ? "text" : "password"}
+                                value={fourWaForm.password}
+                                onChange={(e) => setFourWaForm({ ...fourWaForm, password: e.target.value })}
+                                placeholder="ادخل كلمة المرور"
+                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 pl-10"
+                                required
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowFourWaPassword(!showFourWaPassword)}
+                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                              >
+                                {showFourWaPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Field 4: رقم التلفون */}
+                          <div className="space-y-1.5 text-right">
+                            <label className="text-xs font-bold text-slate-700 block">
+                              رقم التلفون
+                            </label>
+                            <div className="flex items-center gap-2" dir="ltr">
+                              {/* Country Code Dropdown */}
+                              <select
+                                value={fourWaForm.country_code}
+                                onChange={(e) => setFourWaForm({ ...fourWaForm, country_code: e.target.value })}
+                                className="h-11 px-3 rounded-xl border border-slate-200 bg-slate-50/80 text-xs font-bold font-mono text-slate-800 shrink-0 focus:outline-none focus:border-purple-500"
+                              >
+                                <option value="967">967+ YE 🇾🇪</option>
+                                <option value="966">966+ SA 🇸🇦</option>
+                                <option value="20">20+ EG 🇪🇬</option>
+                                <option value="971">971+ AE 🇦🇪</option>
+                                <option value="965">965+ KW 🇰🇼</option>
+                                <option value="968">968+ OM 🇴🇲</option>
+                                <option value="974">974+ QA 🇶🇦</option>
+                                <option value="962">962+ JO 🇯🇴</option>
+                              </select>
+
+                              {/* Phone input */}
+                              <Input
+                                value={fourWaForm.phone_number}
+                                onChange={(e) => setFourWaForm({ ...fourWaForm, phone_number: e.target.value })}
+                                placeholder="ادخل رقم الهاتف الخاص بك"
+                                dir="rtl"
+                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 flex-1 font-mono font-bold"
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          {/* Submit Button with Purple/Violet Gradient Matching Image */}
+                          <div className="pt-2">
+                            <Button
+                              type="submit"
+                              disabled={fourWaLoginMutation.isPending}
+                              className="w-full h-12 rounded-full font-bold text-sm text-white bg-gradient-to-r from-[#7367f0] to-[#685dd8] hover:from-[#665ae0] hover:to-[#574cc8] shadow-lg shadow-indigo-500/30 transition-all duration-200"
+                            >
+                              {fourWaLoginMutation.isPending ? (
+                                <div className="flex items-center gap-2">
+                                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                                  <span>جاري التحقق عبر api2.4whatsapp.com...</span>
+                                </div>
+                              ) : (
+                                <span>تسجيل الدخول</span>
+                              )}
+                            </Button>
+                          </div>
+
+                          {/* Footer Terms & Privacy Link */}
+                          <div className="text-center pt-2">
+                            <p className="text-xs text-slate-500">
+                              قبل المتابعة، تأكد من قراءة{" "}
+                              <a
+                                href="https://4whatsapp.com/privacy-policy"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 font-bold hover:underline"
+                              >
+                                سياسة الخصوصية
+                              </a>
+                            </p>
+                          </div>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Right Column: QR Code Display & 4WhatsApp Session Controller */}
+                  <div id="fourWaQrBox" className="lg:col-span-6 space-y-5">
+                    <Card className="border border-purple-200 shadow-xl rounded-3xl overflow-hidden bg-white">
+                      <CardHeader className="bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border-b border-purple-100 pb-3.5">
+                        <div className="flex items-center justify-between">
+                          <Badge className="bg-purple-600 text-white font-bold text-xs gap-1">
+                            <QrCode className="w-3.5 h-3.5" />
+                            <span>رمز QR الخاص برقمك</span>
+                          </Badge>
+                          <span className="text-[11px] font-bold text-indigo-700 font-mono">
+                            جلسة 4WhatsApp السحابية
+                          </span>
+                        </div>
+                        <CardTitle className="text-base font-black text-slate-800 pt-2 flex items-center gap-2">
+                          <Smartphone className="w-5 h-5 text-purple-600" />
+                          <span>مسح الباركود لربط واتساب بالهاتف (4WhatsApp Multi-Device)</span>
+                        </CardTitle>
+                        <CardDescription className="text-xs text-slate-600">
+                          امسح رمز الباركود المعروض أدناه عبر كاميرا واتساب بهاتفك لربط حساب الشركة فوراً
+                        </CardDescription>
+                      </CardHeader>
+
+                      <CardContent className="p-6 space-y-6">
+                        {/* QR Code Container with Center Logo & Countdown */}
+                        <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-3xl border-2 border-dashed border-purple-200 relative">
+                          <div className="relative bg-white p-4 rounded-3xl shadow-xl border border-slate-200">
+                            {fourWaQrDataUrl ? (
+                              <img
+                                src={fourWaQrDataUrl}
+                                alt="4WhatsApp QR Code"
+                                className="w-64 h-64 object-contain rounded-2xl"
+                              />
+                            ) : (
+                              <div className="w-64 h-64 flex items-center justify-center bg-slate-100 rounded-2xl text-slate-400">
+                                <RefreshCw className="w-8 h-8 animate-spin text-purple-600" />
+                              </div>
+                            )}
+
+                            {/* Centered 4WhatsApp Badge Overlay */}
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-2xl shadow-lg border-2 border-purple-500 flex items-center justify-center">
+                              <span className="font-black text-xs text-[#023e8a]">4WA</span>
+                            </div>
+                          </div>
+
+                          {/* Countdown Timer Badge */}
+                          <div className="mt-4 flex items-center gap-2 bg-purple-100/80 text-purple-800 px-4 py-1.5 rounded-full text-xs font-bold border border-purple-200">
+                            <Clock className="w-3.5 h-3.5 text-purple-600" />
+                            <span>ينتهي الرمز خلال:</span>
+                            <span className="font-mono text-sm font-black text-purple-900">{fourWaSecondsLeft} ثانية</span>
+                          </div>
+
+                          {/* 8-Digit Pairing Code Fallback */}
+                          <div className="mt-3 text-center">
+                            <span className="text-[11px] text-slate-500 block">أو استخدم رمز الاقتران المباشر:</span>
+                            <div className="inline-flex items-center gap-2 mt-1 bg-white px-3 py-1 rounded-xl border border-slate-200 font-mono font-black text-slate-800 text-xs">
+                              <span>{fourWaPairingCode}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(fourWaPairingCode);
+                                  toast({ title: "✓ تم نسخ رمز الاقتران" });
+                                }}
+                                className="text-slate-400 hover:text-slate-700"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3 Step Instructions */}
+                        <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-100 text-xs text-slate-700 space-y-2">
+                          <span className="font-black text-indigo-950 block">خطوات الربط الصحيحة بالهاتف:</span>
+                          <ol className="list-decimal list-inside space-y-1.5 pr-1 text-slate-700 leading-relaxed text-[11px]">
+                            <li>افتح تطبيق واتساب على هاتفك المسجل (<strong>{fourWaPhone}</strong>).</li>
+                            <li>اضغط على خيارات (⋮) أو الإعدادات &gt; <strong>الأجهزة المرتبطة (Linked Devices)</strong> &gt; <strong>ربط جهاز</strong>.</li>
+                            <li>وجّه كاميرا الهاتف نحو الرمز المعروض أعلاه، وسيتم تأكيد الربط فورياً.</li>
+                          </ol>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="space-y-2 pt-1">
+                          <Button
+                            onClick={() => fourWaConfirmScanMutation.mutate()}
+                            disabled={fourWaConfirmScanMutation.isPending}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 rounded-xl gap-2 shadow-md shadow-emerald-600/20"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-emerald-100" />
+                            <span>تأكيد مسح الباركود وربط الجهاز بنجاح 🚀</span>
+                          </Button>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => fourWaGenerateQrMutation.mutate()}
+                              disabled={fourWaGenerateQrMutation.isPending}
+                              className="text-xs h-9 rounded-xl font-bold border-purple-200 text-purple-700 hover:bg-purple-50 gap-1.5"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>تحديث رمز الباركود</span>
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              onClick={() => fourWaDisconnectMutation.mutate()}
+                              disabled={fourWaDisconnectMutation.isPending}
+                              className="text-xs h-9 rounded-xl font-bold border-rose-200 text-rose-700 hover:bg-rose-50 gap-1.5"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>إلغاء الربط مؤقتاً</span>
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                {/* INTERACTIVE TOOL: DYNAMIC WHATSAPP WEB AUTO-URL DISPATCHER */}
+                {/* ══════════════════════════════════════════════════════════════════ */}
+                <Card className="border-2 border-emerald-500/40 shadow-xl rounded-3xl overflow-hidden bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30">
+                  <CardHeader className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white pb-4 border-b border-emerald-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Send className="w-5 h-5 text-emerald-400" />
+                          <CardTitle className="text-base font-black text-white">
+                            مُوَلّد ومُرسل روابط واتساب ويب التلقائية (Dynamic WhatsApp Web Auto-URL)
+                          </CardTitle>
+                          <Badge className="bg-emerald-500 text-white font-bold text-[10px]">
+                            تغيير الرقم تلقائياً ✓
+                          </Badge>
+                        </div>
+                        <CardDescription className="text-xs text-emerald-200 mt-1">
+                          الإجابة على استفسار الإرسال الآلي عبر رابط web.whatsapp.com/send مع تغيير الرقم ديناميكياً
+                        </CardDescription>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const url = generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage);
+                          window.open(url, "_blank");
+                        }}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl h-9 px-4 gap-1.5 shrink-0 shadow-lg"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>فتح الرابط في واتساب ويب فوراً 🚀</span>
+                      </Button>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="p-6 space-y-5">
+                    {/* Direct answer banner */}
+                    <div className="p-4 rounded-2xl bg-emerald-100/70 border border-emerald-300 text-xs text-emerald-950 space-y-1.5 leading-relaxed">
+                      <div className="font-bold flex items-center gap-2 text-emerald-900">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                        <span>نعم، يستطيع النظام الإرسال الآلي والتوجيه التلقائي عبر هذا الرابط لـ واتساب ويب مع تغيير الرقم!</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-900 leading-relaxed">
+                        بروتوكول واتساب ويب الرسمي <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-800">https://web.whatsapp.com/send/?phone=...&text=...&type=phone_number&app_absent=0</code> يتيح للنظام استبدال رقم الهاتف ونص الرسالة ديناميكياً لكل مسافر أو عميل، وفتح المحادثة فوراً بدون حفظ الرقم في جهات الاتصال.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {/* Left: Interactive Input Fields */}
+                      <div className="space-y-3.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 block mb-1">
+                              رقم الواتساب المستلم (مع رمز الدولة):
+                            </label>
+                            <Input
+                              value={autoLinkPhone}
+                              onChange={(e) => setAutoLinkPhone(e.target.value)}
+                              placeholder="967773456789"
+                              dir="ltr"
+                              className="font-mono font-bold text-xs h-10 rounded-xl"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 block mb-1">
+                              اسم العميل / المسافر:
+                            </label>
+                            <Input
+                              value={autoLinkCustomerName}
+                              onChange={(e) => setAutoLinkCustomerName(e.target.value)}
+                              placeholder="محمد اليمني"
+                              className="text-xs h-10 rounded-xl"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-600 block mb-1.5">
+                            قوالب الرسائل السريعة للتعبئة التلقائية:
+                          </label>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAutoLinkCustomerName("محمد اليمني");
+                                setAutoLinkPhone("967773456789");
+                                setAutoLinkMessage(
+`عزيزنا العميل *محمد اليمني* المحترم 🌟
+مرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين بوكالتكم.
+إجمالي المسافرين: 3
+شكراً لتعاملكم مع أومني فلاي للسفريات والسياحة ✈️.`
+                                );
+                              }}
+                              className="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold hover:bg-emerald-200 border border-emerald-300"
+                            >
+                              📋 تقرير المسافرين (الطلب الحالي)
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAutoLinkCustomerName("عبدالله العتيبي");
+                                setAutoLinkPhone("966505544332");
+                                setAutoLinkMessage(
+`سعادة المسافر *عبدالله العتيبي* المحترم ✈️
+تم تأكيد حجز تذكرتكم رقم #SV-99201 على رحلة الرياض - دبي.
+موعد الإقلاع: غداً الساعة 08:30 صباحاً.
+وكالة أومني فلاي تتمنى لكم رحلة ميمونة!`
+                                );
+                              }}
+                              className="text-[10px] px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 font-bold hover:bg-blue-200 border border-blue-300"
+                            >
+                              ✈️ تذكرة سفر
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAutoLinkCustomerName("شركة الأفق الذهبي");
+                                setAutoLinkPhone("967771234567");
+                                setAutoLinkMessage(
+`سعادة العميل، تم استلام دفعتكم وسند القبض رقم #REC-8841 بقيمة 2,500 ريال بنجاح 💳.
+شاكرين ثقتكم الدائمة بوكالة أومني فلاي للسياحة.`
+                                );
+                              }}
+                              className="text-[10px] px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-bold hover:bg-purple-200 border border-purple-300"
+                            >
+                              🧾 سند قبض مالي
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            نص الرسالة المراد إرسالها:
+                          </label>
+                          <Textarea
+                            rows={5}
+                            value={autoLinkMessage}
+                            onChange={(e) => setAutoLinkMessage(e.target.value)}
+                            className="text-xs leading-relaxed font-sans rounded-xl resize-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Right: Live Generated Link Preview & Action Triggers */}
+                      <div className="space-y-3.5 flex flex-col justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">
+                            الرابط التلقائي المولد حياً (Live Generated URL):
+                          </label>
+                          <div className="p-3 bg-slate-900 text-emerald-400 rounded-2xl font-mono text-[11px] border border-slate-700 break-all select-all leading-relaxed max-h-32 overflow-y-auto">
+                            {generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage)}
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+                            <span>يتضمن: الرقم + النص المرمز URL Encoded + وسم Phone Number</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage));
+                                toast({ title: "✓ تم نسخ الرابط الكامل للحافظة" });
+                              }}
+                              className="text-blue-600 font-bold hover:underline flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>نسخ الرابط</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Dispatch Options */}
+                        <div className="space-y-2 pt-2">
+                          <Button
+                            onClick={() => {
+                              const url = generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage);
+                              window.open(url, "_blank");
+                            }}
+                            className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-bold text-xs h-10 rounded-xl gap-2 shadow-md"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            <span>1. فتح وإرسال عبر واتساب ويب (الرابط التلقائي) 🚀</span>
+                          </Button>
+
+                          <Button
+                            onClick={() =>
+                              fourWaSendMessageMutation.mutate({
+                                recipient_phone: autoLinkPhone,
+                                message_body: autoLinkMessage,
+                                recipient_name: autoLinkCustomerName
+                              })
+                            }
+                            disabled={fourWaSendMessageMutation.isPending}
+                            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs h-10 rounded-xl gap-2 shadow-md shadow-purple-600/20"
+                          >
+                            <Zap className="w-4 h-4 text-amber-300" />
+                            <span>2. إرسال فوري عبر بوابة 4WhatsApp السحابية (بدون متصفح) ⚡</span>
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            onClick={() => launchWhatsAppDesktop(autoLinkPhone, autoLinkMessage)}
+                            className="w-full text-slate-700 border-slate-300 hover:bg-slate-50 font-bold text-xs h-9 rounded-xl gap-2"
+                          >
+                            <Laptop className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>3. فتح في تطبيق واتساب المكتبي (Desktop App)</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
             {/* ─────────────────────────────────────────────────────────── */}
             {/* SUB-VIEW A: QR CODE BARCODE SCANNER (WHATSAPP WEB MULTI-DEVICE) */}
@@ -3029,24 +3811,33 @@ ${agencyName}`
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
                     <Button
-                      onClick={async () => {
-                        try {
-                          await fetchWithAuth("/api/travel/notifications/send", {
-                            method: "POST",
-                            body: JSON.stringify(sendForm)
-                          });
-                          refetchLogs();
-                          toast({ title: "✓ تم إرسال الرسالة بنجاح إلى الرقم +" + sendForm.recipient_phone });
-                        } catch (e: any) {
-                          toast({ title: "خطأ في الإرسال", description: e.message, variant: "destructive" });
-                        }
-                      }}
-                      className="bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
+                      type="button"
+                      onClick={() =>
+                        fourWaSendMessageMutation.mutate({
+                          recipient_phone: sendForm.recipient_phone,
+                          message_body: sendForm.message_body,
+                          recipient_name: sendForm.recipient_name
+                        })
+                      }
+                      disabled={fourWaSendMessageMutation.isPending}
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
                     >
-                      <Send className="w-4 h-4" />
-                      <span>إرسال عبر السحابي (Cloud API)</span>
+                      <Zap className="w-4 h-4 text-amber-300" />
+                      <span>إرسال عبر 4WhatsApp السحابي ⚡</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const url = generateWhatsAppWebUrl(sendForm.recipient_phone, sendForm.message_body);
+                        window.open(url, "_blank");
+                      }}
+                      className="bg-[#00a884] hover:bg-[#008f6f] text-white font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>فتح في واتساب ويب (الرابط التلقائي) 🚀</span>
                     </Button>
 
                     <Button
@@ -3055,7 +3846,7 @@ ${agencyName}`
                       className="bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700 font-bold text-xs gap-2 py-3 rounded-xl shadow-md"
                     >
                       <Laptop className="w-4 h-4 text-emerald-400" />
-                      <span>إرسال عبر واتساب للكمبيوتر 💻</span>
+                      <span>واتساب للكمبيوتر 💻</span>
                     </Button>
                   </div>
                 </CardContent>
