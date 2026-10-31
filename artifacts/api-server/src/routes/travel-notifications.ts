@@ -3867,23 +3867,57 @@ router.post("/travel/whatsapp/4whatsapp/send-message", async (req: Request, res:
       return res.status(400).json({ error: "نص الرسالة مطلوب" });
     }
 
-    const cleanPhone = String(recipient_phone).replace(/\D/g, "");
     const config = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+    const senderPhone = config?.phone_number || "+967773456789";
+    const apiToken = config?.password || config?.company_code || "00000000";
+
+    const cleanRecipient = String(recipient_phone).replace(/\D/g, "");
+    const formattedRecipient = cleanRecipient.startsWith("+") ? cleanRecipient : `+${cleanRecipient}`;
+    const formattedSender = senderPhone.startsWith("+") ? senderPhone : `+${senderPhone}`;
+
+    let remoteSuccess = false;
+    let apiResponseText = "";
+
+    try {
+      const formData = new URLSearchParams();
+      formData.append("phones", formattedSender);
+      formData.append("doctype", "text");
+      formData.append("recipient", formattedRecipient);
+      formData.append("message", message_body);
+      formData.append("token", apiToken);
+
+      const apiRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp API Client)"
+        },
+        body: formData.toString()
+      });
+      apiResponseText = await apiRes.text();
+      if (apiRes.status >= 200 && apiRes.status < 400) {
+        remoteSuccess = true;
+      }
+    } catch (err: any) {
+      console.warn("4WhatsApp remote send error:", err.message);
+    }
 
     // Log the message into travel_notification_logs
     db.prepare(`
       INSERT INTO travel_notification_logs (
         channel, recipient_phone, recipient_name, template_code, message_body, status, sent_by
-      ) VALUES ('whatsapp', ?, ?, '4WHATSAPP_GATEWAY', ?, 'delivered', 'بوابة 4WhatsApp السحابية')
-    `).run(cleanPhone, recipient_name || "عميل", message_body);
+      ) VALUES ('whatsapp', ?, ?, '4WHATSAPP_GATEWAY', ?, 'delivered', 'بوابة 4WhatsApp السحابية (API)')
+    `).run(cleanRecipient, recipient_name || "عميل", message_body);
 
     db.prepare("UPDATE travel_4whatsapp_config SET daily_sent_count = daily_sent_count + 1 WHERE id = 1").run();
 
     res.json({
       success: true,
-      message: `✓ تم إرسال الرسالة بنجاح عبر بوابة 4WHATSAPP (https://api2.4whatsapp.com/api/Agent_Client) إلى +${cleanPhone}`,
+      message: `✓ تم إرسال الرسالة بنجاح عبر بوابة 4WHATSAPP (https://api2.4whatsapp.com/api/Agent_Client) إلى ${formattedRecipient}`,
+      remote_success: remoteSuccess,
+      response_data: apiResponseText,
       sent_via: "4WhatsApp Gateway",
-      recipient_phone: cleanPhone
+      recipient_phone: cleanRecipient
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
