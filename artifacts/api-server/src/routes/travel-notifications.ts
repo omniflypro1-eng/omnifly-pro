@@ -3526,6 +3526,19 @@ router.post("/travel/notifications/toggle-auto-scheduler", (_req: Request, res: 
 
 // ─── 4WHATSAPP ENTERPRISE AGENT GATEWAY (https://api2.4whatsapp.com/api/Agent_Client) ───
 
+function generateAuthenticWhatsAppWebQrData(phone: string, companyCode: string): string {
+  const cleanPhone = (phone || "967773456789").replace(/\D/g, "");
+  const code = companyCode || "4WA";
+  const timestamp = Math.floor(Date.now() / 1000);
+  
+  // Format matching WhatsApp Web Multi-Device Noise Handshake Protocol: 2@ref,public_key,client_id
+  const refString = Buffer.from(`4WA:${code}:${cleanPhone}:${timestamp}:${Math.random().toString(36).substring(2)}`).toString("base64").substring(0, 32);
+  const pubKeyString = Buffer.from(`PUBKEY_4WA_ENTERPRISE_KEY_${timestamp}_${Math.random()}`).toString("base64").substring(0, 44);
+  const clientIdString = Buffer.from(`CLIENT_ID_OMNIFLY_${cleanPhone}_${timestamp}`).toString("base64").substring(0, 44);
+
+  return `2@${refString},${pubKeyString},${clientIdString}`;
+}
+
 // 1. Get 4WhatsApp Configuration & Connection Status
 router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Response) => {
   try {
@@ -3719,19 +3732,6 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
         error: `❌ فشل التحقق مع بوابة 4WhatsApp: ${apiErrorMessage}. يرجى مراجعة كود الشركة والرمز السري ورقم الهاتف.`
       });
     }
-
-function generateAuthenticWhatsAppWebQrData(phone: string, companyCode: string): string {
-  const cleanPhone = (phone || "967773456789").replace(/\D/g, "");
-  const code = companyCode || "4WA";
-  const timestamp = Math.floor(Date.now() / 1000);
-  
-  // Format matching WhatsApp Web Multi-Device Noise Handshake Protocol: 2@ref,public_key,client_id
-  const refString = Buffer.from(`4WA:${code}:${cleanPhone}:${timestamp}:${Math.random().toString(36).substring(2)}`).toString("base64").substring(0, 32);
-  const pubKeyString = Buffer.from(`PUBKEY_4WA_ENTERPRISE_KEY_${timestamp}_${Math.random()}`).toString("base64").substring(0, 44);
-  const clientIdString = Buffer.from(`CLIENT_ID_OMNIFLY_${cleanPhone}_${timestamp}`).toString("base64").substring(0, 44);
-
-  return `2@${refString},${pubKeyString},${clientIdString}`;
-}
 
     // Determine status based on actual account state
     const targetStatus = accountLinked ? "connected" : "ready_for_scan";
