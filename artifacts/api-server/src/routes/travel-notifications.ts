@@ -262,11 +262,61 @@ export function initWhatsAppAutomationSchema() {
     try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN custom_message TEXT").run(); } catch {}
     try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN placeholders_list TEXT").run(); } catch {}
     try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN timing_desc TEXT DEFAULT 'فوري عند وقوع الحدث'").run(); } catch {}
+    try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN timing_mode TEXT DEFAULT 'immediate'").run(); } catch {}
+    try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN timing_time TEXT DEFAULT '22:00'").run(); } catch {}
+    try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN timing_days INTEGER DEFAULT 0").run(); } catch {}
+    try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN preferred_gateway TEXT DEFAULT '4whatsapp'").run(); } catch {}
     try { db.prepare("ALTER TABLE travel_notification_automations ADD COLUMN icon_name TEXT DEFAULT 'zap'").run(); } catch {}
 
     // Comprehensive cross-department automations seed/upgrade
     const departmentAutomations = [
-      // 1. Travel & Tourism Department (السفريات والحجوزات)
+      // 1. Travel & Tourism - Passengers & Passports (إدارة المسافرين والجوازات وتأشيرات العمرة)
+      {
+        trigger: 'passenger_registered',
+        name: 'إشعار تسجيل مسافر جديد وتأكيد بيانات الجواز والرحلة',
+        dept: 'travel',
+        timing: 'فوري عند حفظ المسافر',
+        icon: 'luggage',
+        tags: '{passenger_name}, {passport_no}, {nationality}, {travel_date}, {expected_exit_date}, {program_duration_days}, {agency_name}',
+        msg: 'أهلاً بك عزيزنا المسافر {passenger_name} 🛂\nتم تسجيل بياناتكم وجواز سفركم رقم ({passport_no}) بنجاح بوكالة {agency_name} ✈️\nتاريخ السفر: {travel_date}\nتاريخ الخروج المتوقع: {expected_exit_date}\nمدة الإقامة: {program_duration_days} يوم\nنتمنى لكم رحلة ممتعة وآمنة 🌟'
+      },
+      {
+        trigger: 'passport_expiry_warning',
+        name: 'تنبيه اقتراب انتهاء صلاحية جواز السفر (فحص آلي مخصص)',
+        dept: 'travel',
+        timing: 'قبل انتهاء الجواز بـ 90 يوماً',
+        icon: 'passport',
+        tags: '{passenger_name}, {passport_no}, {expiry_date}, {remaining_days}, {agency_name}',
+        msg: 'تنبيه هام عزيزنا المسافر {passenger_name} 🛂\nنود إحاطتكم بأن صلاحية جواز سفركم رقم ({passport_no}) ستنتهي بتاريخ {expiry_date} (متبقي {remaining_days} يوماً فقط).\nنوصيكم بسرعة تجديد الجواز لضمان جاهزيته للرحلات الدولية وتفادي أي عوائق في المطار.\nوكالة {agency_name} تتمنى لكم دوام السلامة 🌟'
+      },
+      {
+        trigger: 'umrah_stay_monitoring',
+        name: 'متابعة مدة الإقامة وتاريخ الخروج المتوقع لمعتمري مكة',
+        dept: 'travel',
+        timing: 'يومياً الساعة 22:00',
+        icon: 'moon',
+        tags: '{passenger_name}, {passport_no}, {entry_date}, {exit_date}, {days_spent}, {remaining_days}, {agency_sender}',
+        msg: '🕋 *تذكير متابعة تأشيرة العمرة - مكة المكرمة*\nالمعتمر الكريم: *{passenger_name}*\nرقم الجواز: {passport_no}\nتاريخ الدخول: {entry_date} | الأيام المنقضية: {days_spent} يوم\nالأيام المتبقية: *{remaining_days}* (تاريخ الخروج: {exit_date})\nتقبل الله طاعتكم ونتمنى لكم رحلة عودة آمنة.\n📞 الوكالة: {agency_sender}'
+      },
+      {
+        trigger: 'umrah_urgent_exit',
+        name: 'إنذار خروج عاجل لمعتمري مكة (متبقي ≤ 3 أيام أو متجاوز)',
+        dept: 'travel',
+        timing: 'فوري عند بلوغ 3 أيام',
+        icon: 'alert-triangle',
+        tags: '{passenger_name}, {passport_no}, {exit_date}, {remaining_days}, {agency_sender}',
+        msg: '🔴 *تنبيه عاجل بمغادرة مكة المكرمة*\nالمعتمر الكريم: *{passenger_name}*\nرقم الجواز: {passport_no}\nالمتبقي على انتهاء البرنامج: *{remaining_days}*\nتاريخ المغادرة المتوقع: {exit_date}\nنرجو التواصل فوراً لتأكيد إجراءات السفر والعودة.\n📞 الوكالة: {agency_sender}'
+      },
+      {
+        trigger: 'passenger_manifest_client',
+        name: 'كشف تقرير المسافرين والمعتمرين المسجلين للوكيل/العميل',
+        dept: 'travel',
+        timing: 'فوري أو مجدول دورياً',
+        icon: 'file-spreadsheet',
+        tags: '{customer_name}, {passengers_count}, {report_date}, {agency_name}',
+        msg: 'عزيزنا العميل *{customer_name}* المحترم 🌟\nمرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين بوكالتكم.\nإجمالي المسافرين المسجلين: {passengers_count}\nتاريخ التقرير: {report_date}\nشكراً لتعاملكم المستمر مع {agency_name} ✈️'
+      },
+      // 2. Travel & Tourism Department (السفريات والحجوزات)
       {
         trigger: 'flight_24h_reminder',
         name: 'تذكير المسافرين آلياً قبل إقلاع الرحلة بـ 24 ساعة',
@@ -2086,13 +2136,17 @@ router.get("/travel/notifications/automations", (_req: Request, res: Response) =
 router.put("/travel/notifications/automations/:id", (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, custom_message, is_enabled, timing_desc, notes } = req.body;
+    const { name, custom_message, is_enabled, timing_desc, timing_mode, timing_time, timing_days, preferred_gateway, notes } = req.body;
     db.prepare(`
       UPDATE travel_notification_automations SET
         name = COALESCE(?, name),
         custom_message = ?,
         is_enabled = COALESCE(?, is_enabled),
         timing_desc = COALESCE(?, timing_desc),
+        timing_mode = COALESCE(?, timing_mode),
+        timing_time = COALESCE(?, timing_time),
+        timing_days = COALESCE(?, timing_days),
+        preferred_gateway = COALESCE(?, preferred_gateway),
         notes = COALESCE(?, notes)
       WHERE id = ?
     `).run(
@@ -2100,11 +2154,15 @@ router.put("/travel/notifications/automations/:id", (req: Request, res: Response
       custom_message !== undefined ? custom_message : null,
       is_enabled !== undefined ? (is_enabled ? 1 : 0) : null,
       timing_desc !== undefined ? timing_desc : null,
+      timing_mode !== undefined ? timing_mode : null,
+      timing_time !== undefined ? timing_time : null,
+      timing_days !== undefined ? Number(timing_days) : null,
+      preferred_gateway !== undefined ? preferred_gateway : null,
       notes !== undefined ? notes : null,
       id
     );
     const updated = db.prepare("SELECT * FROM travel_notification_automations WHERE id = ?").get(id);
-    res.json({ success: true, message: "تم تحديث وحفظ رسالة وقاعدة الأتمتة بنجاح", rule: updated });
+    res.json({ success: true, message: "تم تحديث وحفظ رسالة وقاعدة الأتمتة وجدولة التوقيت بنجاح", rule: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -3119,21 +3177,52 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
 });
 
 // 3. Confirm 4WhatsApp QR Scan & Connect
-router.post("/travel/whatsapp/4whatsapp/confirm-scan", (_req: Request, res: Response) => {
+router.post("/travel/whatsapp/4whatsapp/confirm-scan", (req: Request, res: Response) => {
   try {
-    db.prepare(`
-      UPDATE travel_4whatsapp_config SET
-        session_status = 'connected',
-        last_scan_at = datetime('now', 'localtime'),
-        updated_at = datetime('now', 'localtime')
-      WHERE id = 1
-    `).run();
+    const { company_code, username, phone_number, country_code } = req.body || {};
+    
+    if (company_code || phone_number) {
+      const cCode = country_code || "967";
+      let cleanPhone = phone_number ? String(phone_number).replace(/\D/g, "") : "";
+      if (cleanPhone.startsWith("0")) cleanPhone = cleanPhone.substring(1);
+      if (cleanPhone && !cleanPhone.startsWith(cCode)) cleanPhone = `${cCode}${cleanPhone}`;
+      const displayPhone = cleanPhone ? `+${cCode} ${cleanPhone.slice(cCode.length)}` : undefined;
+
+      db.prepare(`
+        UPDATE travel_4whatsapp_config SET
+          company_code = COALESCE(?, company_code),
+          username = COALESCE(?, username),
+          phone_number = COALESCE(?, phone_number),
+          display_phone_number = COALESCE(?, display_phone_number),
+          country_code = COALESCE(?, country_code),
+          session_status = 'connected',
+          is_authenticated = 1,
+          last_scan_at = datetime('now', 'localtime'),
+          updated_at = datetime('now', 'localtime')
+        WHERE id = 1
+      `).run(
+        company_code ? String(company_code).trim() : null,
+        username ? String(username).trim() : null,
+        cleanPhone || null,
+        displayPhone || null,
+        cCode || null
+      );
+    } else {
+      db.prepare(`
+        UPDATE travel_4whatsapp_config SET
+          session_status = 'connected',
+          is_authenticated = 1,
+          last_scan_at = datetime('now', 'localtime'),
+          updated_at = datetime('now', 'localtime')
+        WHERE id = 1
+      `).run();
+    }
 
     const config = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
 
     res.json({
       success: true,
-      message: `🟢 تم ربط رقم الواتساب بنجاح عبر بوابة 4WHATSAPP! الرقم المتصل: ${config.display_phone_number}`,
+      message: `🟢 تم حفظ بيانات الربط وتأكيد اتصال رقم الواتساب بنجاح عبر بوابة 4WHATSAPP! الرقم المتصل: ${config.display_phone_number}`,
       config
     });
   } catch (err: any) {

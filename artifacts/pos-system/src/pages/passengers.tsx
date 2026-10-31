@@ -1590,12 +1590,21 @@ export default function PassengersPage() {
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
                   onClick={() => handleOpenWhatsAppDialog()}
-                  className="gap-1.5 text-xs font-bold border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  className="gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  واتساب
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  إرسال واتساب للعملاء
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => window.location.href = "/travel/notifications"}
+                  className="gap-1.5 text-xs font-bold border-purple-300 text-purple-700 hover:bg-purple-50"
+                  title="التحكم في إعدادات وقوالب وجدولة رسائل واتساب وربط 4WhatsApp"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  مركز أتمتة وربط واتساب
                 </Button>
               </div>
             </CardHeader>
@@ -1925,6 +1934,14 @@ export default function PassengersPage() {
                 >
                   <FileDown className="w-3.5 h-3.5 text-red-600" />
                   تصدير سجل الجوازات PDF
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handleOpenWhatsAppDialog()}
+                  className="gap-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  إرسال واتساب للعملاء
                 </Button>
               </div>
             </CardHeader>

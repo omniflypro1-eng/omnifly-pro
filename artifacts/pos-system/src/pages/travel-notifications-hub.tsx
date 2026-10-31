@@ -168,6 +168,7 @@ export default function TravelNotificationsHubPage() {
   });
   const [showFourWaPassword, setShowFourWaPassword] = useState(false);
   const [fourWaStatus, setFourWaStatus] = useState<"pending_login" | "ready_for_scan" | "connected">("ready_for_scan");
+  const [isEditingFourWaCreds, setIsEditingFourWaCreds] = useState<boolean>(false);
   const [fourWaQrDataUrl, setFourWaQrDataUrl] = useState<string>("");
   const [fourWaPairingCode, setFourWaPairingCode] = useState<string>("4WA-9677");
   const [fourWaSecondsLeft, setFourWaSecondsLeft] = useState<number>(60);
@@ -384,6 +385,10 @@ export default function TravelNotificationsHubPage() {
   const [customMessageDraft, setCustomMessageDraft] = useState("");
   const [ruleNameDraft, setRuleNameDraft] = useState("");
   const [ruleTimingDraft, setRuleTimingDraft] = useState("");
+  const [ruleTimingModeDraft, setRuleTimingModeDraft] = useState<string>("immediate");
+  const [ruleTimingTimeDraft, setRuleTimingTimeDraft] = useState<string>("22:00");
+  const [ruleTimingDaysDraft, setRuleTimingDaysDraft] = useState<number>(0);
+  const [ruleGatewayDraft, setRuleGatewayDraft] = useState<string>("4whatsapp");
 
   // Test Send Modal State
   const [testSendModalOpen, setTestSendModalOpen] = useState(false);
@@ -642,7 +647,16 @@ ${agencyName}`
 
   // Update Automation Rule Mutation
   const updateRuleMutation = useMutation({
-    mutationFn: (vars: { id: number; name?: string; custom_message?: string; timing_desc?: string }) =>
+    mutationFn: (vars: { 
+      id: number; 
+      name?: string; 
+      custom_message?: string; 
+      timing_desc?: string;
+      timing_mode?: string;
+      timing_time?: string;
+      timing_days?: number;
+      preferred_gateway?: string;
+    }) =>
       fetchWithAuth<any>(`/api/travel/notifications/automations/${vars.id}`, {
         method: "PUT",
         body: JSON.stringify(vars)
@@ -651,8 +665,8 @@ ${agencyName}`
       refetchAutomations();
       setEditRuleModalOpen(false);
       toast({
-        title: "✓ تم حفظ تعديل نص الرسالة بنجاح",
-        description: "سيتم تطبيق التعديل فورياً في محرك الأتمتة لكافة الإشعارات القادمة"
+        title: "✓ تم حفظ تعديل نص الرسالة والجدولة بنجاح",
+        description: "سيتم تطبيق التعديل فورياً في محرك الأتمتة وإرسال التنبيهات في الموعد المحدد"
       });
     },
     onError: (err: any) => toast({ title: "خطأ في حفظ التعديل", description: err.message, variant: "destructive" })
@@ -904,6 +918,10 @@ ${agencyName}`
     setRuleNameDraft(rule.name || "");
     setCustomMessageDraft(rule.custom_message || rule.effective_message || "");
     setRuleTimingDraft(rule.timing_desc || "فوري عند وقوع الحدث");
+    setRuleTimingModeDraft(rule.timing_mode || (rule.timing_desc?.includes("يومياً") || rule.timing_desc?.includes("22:00") ? "daily_time" : rule.timing_desc?.includes("قبل") ? "before_event" : "immediate"));
+    setRuleTimingTimeDraft(rule.timing_time || "22:00");
+    setRuleTimingDaysDraft(rule.timing_days || (rule.timing_desc?.includes("24") ? 1 : rule.timing_desc?.includes("3") ? 3 : rule.timing_desc?.includes("15") ? 15 : rule.timing_desc?.includes("90") ? 90 : 0));
+    setRuleGatewayDraft(rule.preferred_gateway || "4whatsapp");
     setEditRuleModalOpen(true);
   };
 
@@ -1285,173 +1303,279 @@ ${agencyName}`
                 {/* TWO-COLUMN GRID: 4WHATSAPP LOGIN CARD (IMAGE MATCH) + QR CODE DISPLAY */}
                 {/* ══════════════════════════════════════════════════════════════════ */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                  {/* Left Column: 4WHATSAPP Authentic Login Card (Matching Uploaded Image) */}
+                  {/* Left Column: 4WHATSAPP Login Card OR Connected Account State */}
                   <div className="lg:col-span-6 flex justify-center">
-                    <Card className="w-full max-w-md border border-slate-200/90 shadow-2xl rounded-3xl overflow-hidden bg-white relative">
-                      {/* Subtle Pattern Background */}
-                      <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-40 pointer-events-none" />
-
-                      <CardContent className="p-8 relative z-10 space-y-6">
-                        {/* 4WHATSAPP Official Logo */}
-                        <div className="flex flex-col items-center justify-center text-center space-y-2 pt-2">
-                          <div className="relative flex items-center justify-center">
-                            {/* Stylized 4WhatsApp SVG Icon matching brand image */}
-                            <svg className="w-24 h-16" viewBox="0 0 120 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              {/* Motion Streaks */}
-                              <path d="M15 15H45" stroke="#00b4d8" strokeWidth="5" strokeLinecap="round" />
-                              <path d="M5 32H35" stroke="#0077b6" strokeWidth="5" strokeLinecap="round" />
-                              <path d="M22 49H52" stroke="#023e8a" strokeWidth="5" strokeLinecap="round" />
-                              <circle cx="28" cy="15" r="3" fill="#00b4d8" />
-                              <circle cx="12" cy="32" r="3" fill="#0077b6" />
-                              <circle cx="32" cy="49" r="3" fill="#023e8a" />
-                              {/* Large Stylized 'W' Circle Emblem */}
-                              <circle cx="80" cy="35" r="28" fill="#e0f2fe" />
-                              <path d="M66 24L74 46L80 32L86 46L94 24" stroke="#0284c7" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
+                    {fourWaStatus === "connected" && !isEditingFourWaCreds ? (
+                      <Card className="w-full max-w-md border-2 border-emerald-500/60 shadow-2xl rounded-3xl overflow-hidden bg-white relative">
+                        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 p-6 text-white text-right">
+                          <div className="flex items-center justify-between mb-3">
+                            <Badge className="bg-white/20 hover:bg-white/30 text-white font-bold text-xs gap-1 backdrop-blur-sm">
+                              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse inline-block" />
+                              <span>متصل ومرتبط سحابياً</span>
+                            </Badge>
+                            <span className="text-xs font-black tracking-wider text-emerald-100 font-sans">
+                              4WHATSAPP CLOUD
+                            </span>
                           </div>
-                          <div className="font-black text-xl tracking-wider text-[#023e8a] font-sans">
-                            4WHATSAPP
-                          </div>
+                          <h3 className="text-xl font-black">حساب الواتساب المرتبط بالنظام</h3>
+                          <p className="text-xs text-emerald-100 mt-1">
+                            بيانات تسجيل الدخول وجلسة الربط محفوظة بشكل دائم في قاعدة البيانات
+                          </p>
                         </div>
 
-                        {/* Title: تسجيل الدخول */}
-                        <div className="text-center pt-1">
-                          <h2 className="text-2xl font-black text-slate-800 tracking-tight">
-                            تسجيل الدخول
-                          </h2>
-                          <div className="w-full border-t border-slate-200 mt-4" />
-                        </div>
-
-                        {/* Form Inputs */}
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            fourWaLoginMutation.mutate(fourWaForm);
-                          }}
-                          className="space-y-4"
-                          dir="rtl"
-                        >
-                          {/* Field 1: كود الشركة */}
-                          <div className="space-y-1.5 text-right">
-                            <label className="text-xs font-bold text-slate-700 block">
-                              كود الشركة
-                            </label>
-                            <Input
-                              value={fourWaForm.company_code}
-                              onChange={(e) => setFourWaForm({ ...fourWaForm, company_code: e.target.value })}
-                              placeholder="ادخل الكود الخاص بشركتك"
-                              className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
-                              required
-                            />
-                          </div>
-
-                          {/* Field 2: اسم المستخدم */}
-                          <div className="space-y-1.5 text-right">
-                            <label className="text-xs font-bold text-slate-700 block">
-                              اسم المستخدم
-                            </label>
-                            <Input
-                              value={fourWaForm.username}
-                              onChange={(e) => setFourWaForm({ ...fourWaForm, username: e.target.value })}
-                              placeholder="ادخل اسم المستخدم"
-                              className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
-                              required
-                            />
-                          </div>
-
-                          {/* Field 3: كلمة المرور */}
-                          <div className="space-y-1.5 text-right">
-                            <label className="text-xs font-bold text-slate-700 block">
-                              كلمة المرور
-                            </label>
-                            <div className="relative">
-                              <Input
-                                type={showFourWaPassword ? "text" : "password"}
-                                value={fourWaForm.password}
-                                onChange={(e) => setFourWaForm({ ...fourWaForm, password: e.target.value })}
-                                placeholder="ادخل كلمة المرور"
-                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 pl-10"
-                                required
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowFourWaPassword(!showFourWaPassword)}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                              >
-                                {showFourWaPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                              </button>
+                        <CardContent className="p-6 space-y-4" dir="rtl">
+                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2.5 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 font-medium">كود الشركة:</span>
+                              <span className="font-mono font-bold text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                                {fourWaForm.company_code || "OMNI-FLY"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 font-medium">اسم المستخدم:</span>
+                              <span className="font-bold text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                                {fourWaForm.username || "omnifly_admin"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 font-medium">رقم الهاتف المقترن:</span>
+                              <span className="font-mono font-black text-emerald-700 text-sm bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200" dir="ltr">
+                                {fourWaPhone}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 font-medium">حالة الحفظ الدائم:</span>
+                              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>دائم (لا يفصل عند التحديث)</span>
+                              </span>
                             </div>
                           </div>
 
-                          {/* Field 4: رقم التلفون */}
-                          <div className="space-y-1.5 text-right">
-                            <label className="text-xs font-bold text-slate-700 block">
-                              رقم التلفون
+                          {/* Quick Message Test Send */}
+                          <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100 space-y-2">
+                            <label className="text-xs font-bold text-indigo-950 block">
+                              تجربة إرسال رسالة واتساب فورية عبر رقمك المقترن:
                             </label>
-                            <div className="flex items-center gap-2" dir="ltr">
-                              {/* Country Code Dropdown */}
-                              <select
-                                value={fourWaForm.country_code}
-                                onChange={(e) => setFourWaForm({ ...fourWaForm, country_code: e.target.value })}
-                                className="h-11 px-3 rounded-xl border border-slate-200 bg-slate-50/80 text-xs font-bold font-mono text-slate-800 shrink-0 focus:outline-none focus:border-purple-500"
-                              >
-                                <option value="967">967+ YE 🇾🇪</option>
-                                <option value="966">966+ SA 🇸🇦</option>
-                                <option value="20">20+ EG 🇪🇬</option>
-                                <option value="971">971+ AE 🇦🇪</option>
-                                <option value="965">965+ KW 🇰🇼</option>
-                                <option value="968">968+ OM 🇴🇲</option>
-                                <option value="974">974+ QA 🇶🇦</option>
-                                <option value="962">962+ JO 🇯🇴</option>
-                              </select>
-
-                              {/* Phone input */}
+                            <div className="flex gap-2">
                               <Input
-                                value={fourWaForm.phone_number}
-                                onChange={(e) => setFourWaForm({ ...fourWaForm, phone_number: e.target.value })}
-                                placeholder="ادخل رقم الهاتف الخاص بك"
-                                dir="rtl"
-                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 flex-1 font-mono font-bold"
-                                required
+                                value={fourWaQuickTestPhone}
+                                onChange={(e) => setFourWaQuickTestPhone(e.target.value)}
+                                placeholder="967773456789"
+                                dir="ltr"
+                                className="h-9 text-xs font-mono font-bold bg-white rounded-xl"
                               />
+                              <Button
+                                size="sm"
+                                disabled={fourWaSendMsgMutation.isPending}
+                                onClick={() => {
+                                  fourWaSendMsgMutation.mutate({
+                                    recipient: fourWaQuickTestPhone,
+                                    message: `السلام عليكم، هذه رسالة تأكيد ربط واتساب بالنظام بنجاح من وكالة ${agencyName} عبر بوابة 4WhatsApp السحابية. كود الشركة: ${fourWaForm.company_code}`
+                                  });
+                                }}
+                                className="h-9 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shrink-0 gap-1.5"
+                              >
+                                {fourWaSendMsgMutation.isPending ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Send className="w-3.5 h-3.5" />
+                                )}
+                                <span>إرسال تجريبي</span>
+                              </Button>
                             </div>
                           </div>
 
-                          {/* Submit Button with Purple/Violet Gradient Matching Image */}
-                          <div className="pt-2">
+                          <div className="grid grid-cols-2 gap-2 pt-1">
                             <Button
-                              type="submit"
-                              disabled={fourWaLoginMutation.isPending}
-                              className="w-full h-12 rounded-full font-bold text-sm text-white bg-gradient-to-r from-[#7367f0] to-[#685dd8] hover:from-[#665ae0] hover:to-[#574cc8] shadow-lg shadow-indigo-500/30 transition-all duration-200"
+                              variant="outline"
+                              onClick={() => setIsEditingFourWaCreds(true)}
+                              className="text-xs h-9 rounded-xl font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1.5"
                             >
-                              {fourWaLoginMutation.isPending ? (
-                                <div className="flex items-center gap-2">
-                                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                                  <span>جاري التحقق عبر api2.4whatsapp.com...</span>
-                                </div>
-                              ) : (
-                                <span>تسجيل الدخول</span>
-                              )}
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>تعديل بيانات الدخول</span>
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              onClick={() => fourWaDisconnectMutation.mutate()}
+                              disabled={fourWaDisconnectMutation.isPending}
+                              className="text-xs h-9 rounded-xl font-bold border-rose-200 text-rose-700 hover:bg-rose-50 gap-1.5"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>فصل وإعادة الربط</span>
                             </Button>
                           </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card className="w-full max-w-md border border-slate-200/90 shadow-2xl rounded-3xl overflow-hidden bg-white relative">
+                        {/* Subtle Pattern Background */}
+                        <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-40 pointer-events-none" />
 
-                          {/* Footer Terms & Privacy Link */}
-                          <div className="text-center pt-2">
-                            <p className="text-xs text-slate-500">
-                              قبل المتابعة، تأكد من قراءة{" "}
-                              <a
-                                href="https://4whatsapp.com/privacy-policy"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 font-bold hover:underline"
-                              >
-                                سياسة الخصوصية
-                              </a>
-                            </p>
+                        <CardContent className="p-8 relative z-10 space-y-6">
+                          {/* 4WHATSAPP Official Logo */}
+                          <div className="flex flex-col items-center justify-center text-center space-y-2 pt-2">
+                            <div className="relative flex items-center justify-center">
+                              {/* Stylized 4WhatsApp SVG Icon matching brand image */}
+                              <svg className="w-24 h-16" viewBox="0 0 120 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                {/* Motion Streaks */}
+                                <path d="M15 15H45" stroke="#00b4d8" strokeWidth="5" strokeLinecap="round" />
+                                <path d="M5 32H35" stroke="#0077b6" strokeWidth="5" strokeLinecap="round" />
+                                <path d="M22 49H52" stroke="#023e8a" strokeWidth="5" strokeLinecap="round" />
+                                <circle cx="28" cy="15" r="3" fill="#00b4d8" />
+                                <circle cx="12" cy="32" r="3" fill="#0077b6" />
+                                <circle cx="32" cy="49" r="3" fill="#023e8a" />
+                                {/* Large Stylized 'W' Circle Emblem */}
+                                <circle cx="80" cy="35" r="28" fill="#e0f2fe" />
+                                <path d="M66 24L74 46L80 32L86 46L94 24" stroke="#0284c7" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </div>
+                            <div className="font-black text-xl tracking-wider text-[#023e8a] font-sans">
+                              4WHATSAPP
+                            </div>
                           </div>
-                        </form>
-                      </CardContent>
-                    </Card>
+
+                          {/* Title: تسجيل الدخول */}
+                          <div className="text-center pt-1">
+                            <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+                              تسجيل الدخول
+                            </h2>
+                            <div className="w-full border-t border-slate-200 mt-4" />
+                          </div>
+
+                          {/* Form Inputs */}
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              setIsEditingFourWaCreds(false);
+                              fourWaLoginMutation.mutate(fourWaForm);
+                            }}
+                            className="space-y-4"
+                            dir="rtl"
+                          >
+                            {/* Field 1: كود الشركة */}
+                            <div className="space-y-1.5 text-right">
+                              <label className="text-xs font-bold text-slate-700 block">
+                                كود الشركة
+                              </label>
+                              <Input
+                                value={fourWaForm.company_code}
+                                onChange={(e) => setFourWaForm({ ...fourWaForm, company_code: e.target.value })}
+                                placeholder="ادخل الكود الخاص بشركتك"
+                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
+                                required
+                              />
+                            </div>
+
+                            {/* Field 2: اسم المستخدم */}
+                            <div className="space-y-1.5 text-right">
+                              <label className="text-xs font-bold text-slate-700 block">
+                                اسم المستخدم
+                              </label>
+                              <Input
+                                value={fourWaForm.username}
+                                onChange={(e) => setFourWaForm({ ...fourWaForm, username: e.target.value })}
+                                placeholder="ادخل اسم المستخدم"
+                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
+                                required
+                              />
+                            </div>
+
+                            {/* Field 3: كلمة المرور */}
+                            <div className="space-y-1.5 text-right">
+                              <label className="text-xs font-bold text-slate-700 block">
+                                كلمة المرور
+                              </label>
+                              <div className="relative">
+                                <Input
+                                  type={showFourWaPassword ? "text" : "password"}
+                                  value={fourWaForm.password}
+                                  onChange={(e) => setFourWaForm({ ...fourWaForm, password: e.target.value })}
+                                  placeholder="ادخل كلمة المرور"
+                                  className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 pl-10"
+                                  required
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFourWaPassword(!showFourWaPassword)}
+                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                  {showFourWaPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Field 4: رقم التلفون */}
+                            <div className="space-y-1.5 text-right">
+                              <label className="text-xs font-bold text-slate-700 block">
+                                رقم التلفون
+                              </label>
+                              <div className="flex items-center gap-2" dir="ltr">
+                                {/* Country Code Dropdown */}
+                                <select
+                                  value={fourWaForm.country_code}
+                                  onChange={(e) => setFourWaForm({ ...fourWaForm, country_code: e.target.value })}
+                                  className="h-11 px-3 rounded-xl border border-slate-200 bg-slate-50/80 text-xs font-bold font-mono text-slate-800 shrink-0 focus:outline-none focus:border-purple-500"
+                                >
+                                  <option value="967">967+ YE 🇾🇪</option>
+                                  <option value="966">966+ SA 🇸🇦</option>
+                                  <option value="20">20+ EG 🇪🇬</option>
+                                  <option value="971">971+ AE 🇦🇪</option>
+                                  <option value="965">965+ KW 🇰🇼</option>
+                                  <option value="968">968+ OM 🇴🇲</option>
+                                  <option value="974">974+ QA 🇶🇦</option>
+                                  <option value="962">962+ JO 🇯🇴</option>
+                                </select>
+
+                                {/* Phone input */}
+                                <Input
+                                  value={fourWaForm.phone_number}
+                                  onChange={(e) => setFourWaForm({ ...fourWaForm, phone_number: e.target.value })}
+                                  placeholder="ادخل رقم الهاتف الخاص بك"
+                                  dir="rtl"
+                                  className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 flex-1 font-mono font-bold"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            {/* Submit Button with Purple/Violet Gradient Matching Image */}
+                            <div className="pt-2">
+                              <Button
+                                type="submit"
+                                disabled={fourWaLoginMutation.isPending}
+                                className="w-full h-12 rounded-full font-bold text-sm text-white bg-gradient-to-r from-[#7367f0] to-[#685dd8] hover:from-[#665ae0] hover:to-[#574cc8] shadow-lg shadow-indigo-500/30 transition-all duration-200"
+                              >
+                                {fourWaLoginMutation.isPending ? (
+                                  <div className="flex items-center gap-2">
+                                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                                    <span>جاري التحقق عبر api2.4whatsapp.com...</span>
+                                  </div>
+                                ) : (
+                                  <span>تسجيل الدخول</span>
+                                )}
+                              </Button>
+                            </div>
+
+                            {/* Footer Terms & Privacy Link */}
+                            <div className="text-center pt-2">
+                              <p className="text-xs text-slate-500">
+                                قبل المتابعة، تأكد من قراءة{" "}
+                                <a
+                                  href="https://4whatsapp.com/privacy-policy"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 font-bold hover:underline"
+                                >
+                                  سياسة الخصوصية
+                                </a>
+                              </p>
+                            </div>
+                          </form>
+                        </CardContent>
+                      </Card>
+                    )}
                   </div>
 
                   {/* Right Column: QR Code Display & 4WhatsApp Session Controller */}
@@ -4321,20 +4445,94 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">توقيت إطلاق الإشعار</label>
-                  <Input
-                    value={ruleTimingDraft}
-                    onChange={(e) => setRuleTimingDraft(e.target.value)}
-                    placeholder="فوري عند وقوع الحدث"
-                    className="text-xs rounded-xl"
-                  />
+                {/* Comprehensive Custom Timing Controls */}
+                <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>التحكم في وقت الإرسال والجدولة المخصصة:</span>
+                    </span>
+                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[10px]">
+                      جدولة ذكية
+                    </Badge>
+                  </div>
+
+                  {/* Timing Mode Selector */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-600">نمط توقيت الإرسال:</label>
+                    <select
+                      value={ruleTimingModeDraft}
+                      onChange={(e) => setRuleTimingModeDraft(e.target.value)}
+                      className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="immediate">⚡ فوري لحظي (عند تسجيل العملية أو وقوع الحدث مباشرة)</option>
+                      <option value="daily_time">⏰ يومياً في توقيت محدد (صباحاً أو مساءً)</option>
+                      <option value="before_travel_exit">✈️ قبل موعد السفر أو المغادرة بعدد أيام محدد</option>
+                      <option value="before_passport_expiry">🛂 قبل تاريخ انتهاء صلاحية الجواز بعدد أيام محدد</option>
+                    </select>
+                  </div>
+
+                  {/* Conditional Timing Inputs based on Mode */}
+                  {ruleTimingModeDraft === "daily_time" && (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">الوقت المحدد للإرسال يومياً:</label>
+                      <Input
+                        type="time"
+                        value={ruleTimingTimeDraft}
+                        onChange={(e) => setRuleTimingTimeDraft(e.target.value)}
+                        className="h-9 text-xs font-mono font-bold bg-white rounded-xl"
+                      />
+                      <span className="text-[10px] text-slate-500 block">
+                        يتم تشغيل محرك الفحص في الخلفية وإرسال كافة الرسائل المستحقة في هذا التوقيت
+                      </span>
+                    </div>
+                  )}
+
+                  {(ruleTimingModeDraft === "before_travel_exit" || ruleTimingModeDraft === "before_passport_expiry") && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600">عدد الأيام المسبقة:</label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="365"
+                          value={ruleTimingDaysDraft}
+                          onChange={(e) => setRuleTimingDaysDraft(parseInt(e.target.value) || 1)}
+                          className="h-9 text-xs font-mono font-bold bg-white rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600">ساعة الإرسال باليوم المستهدف:</label>
+                        <Input
+                          type="time"
+                          value={ruleTimingTimeDraft}
+                          onChange={(e) => setRuleTimingTimeDraft(e.target.value)}
+                          className="h-9 text-xs font-mono font-bold bg-white rounded-xl"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Preferred Gateway Selector */}
+                  <div className="space-y-1 pt-1 border-t border-amber-200/50">
+                    <label className="text-[11px] font-bold text-slate-600">بوابة الإرسال المعتمدة لهذه القاعدة:</label>
+                    <select
+                      value={ruleGatewayDraft}
+                      onChange={(e) => setRuleGatewayDraft(e.target.value)}
+                      className="w-full h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="4whatsapp">🌐 بوابة 4WhatsApp السحابية (إرسال آلي صامت بالخلفية عبر رقمك)</option>
+                      <option value="whatsapp_web">🔗 واتساب ويب الرسمي (رابط مباشر ديناميكي web.whatsapp.com)</option>
+                      <option value="desktop_app">💻 تطبيق واتساب للكمبيوتر (بروتوكول رسمي whatsapp://)</option>
+                      <option value="meta_cloud">☁️ Meta WhatsApp Cloud API (قوالب تجارية موثقة)</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-700">نص الرسالة المرسلة للعميل</label>
-                    <span className="text-[10px] text-slate-400">يدعم الرموز التعبيرية</span>
+                    <span className="text-[10px] text-slate-400">يدعم تنسيقات واتساب (*عريض*، _مائل_) والرموز التعبيرية</span>
                   </div>
                   <Textarea
                     rows={8}
@@ -4348,12 +4546,22 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                 {/* Placeholders quick insertion chips */}
                 <div>
                   <span className="text-[11px] font-bold text-slate-700 block mb-1.5">
-                    انقر لإدراج متغير ديناميكي في نص الرسالة:
+                    انقر لإدراج متغير ديناميكي في نص الرسالة (المسافرين، الجوازات، والرحلات):
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {[
-                      "{customer_name}",
                       "{passenger_name}",
+                      "{passport_no}",
+                      "{nationality}",
+                      "{expiry_date}",
+                      "{days_left}",
+                      "{makkah_exit_date}",
+                      "{stay_duration}",
+                      "{package_name}",
+                      "{visa_no}",
+                      "{phone_number}",
+                      "{customer_name}",
+                      "{agency_name}",
                       "{invoice_no}",
                       "{amount}",
                       "{currency}",
@@ -4361,10 +4569,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                       "{flight_no}",
                       "{departure_date}",
                       "{hotel_name}",
-                      "{visa_code}",
                       "{voucher_no}",
-                      "{due_date}",
-                      "{ticket_url}",
                       "{portal_url}"
                     ].map((placeholder, idx) => (
                       <button
@@ -4382,40 +4587,56 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
 
               {/* Smartphone Simulator Preview Side */}
               <div className="flex flex-col items-center">
-                <span className="text-xs font-bold text-slate-500 mb-2">معاينة الرسالة على تطبيق WhatsApp</span>
-                <div className="w-full max-w-[280px] bg-slate-900 rounded-[32px] p-3.5 shadow-xl border-4 border-slate-800">
-                  <div className="bg-emerald-800 text-white p-2 rounded-t-xl flex items-center gap-2 text-[11px]">
-                    <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-[10px]">
-                      OP
+                <span className="text-xs font-bold text-slate-500 mb-2">معاينة الرسالة الحية على شاشة WhatsApp</span>
+                <div className="w-full max-w-[290px] bg-slate-900 rounded-[32px] p-3.5 shadow-xl border-4 border-slate-800">
+                  <div className="bg-emerald-800 text-white p-2.5 rounded-t-xl flex items-center gap-2 text-[11px]">
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                      WA
                     </div>
-                    <div>
-                      <div className="font-bold leading-none">{agencyName}</div>
-                      <div className="text-[9px] text-emerald-200">حساب تجاري رسمي ✓</div>
+                    <div className="truncate">
+                      <div className="font-bold leading-none truncate">{agencyName}</div>
+                      <div className="text-[9px] text-emerald-200">
+                        {ruleGatewayDraft === "4whatsapp" ? "4WhatsApp Cloud Connected ✓" : "واتساب الرسمي ✓"}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="bg-[#efeae2] p-3 rounded-b-xl min-h-[260px] flex flex-col justify-end">
-                    <div className="bg-white rounded-xl p-2.5 shadow-sm text-slate-800 text-[11px] leading-relaxed whitespace-pre-line border border-slate-200 relative">
+                  <div className="bg-[#efeae2] p-3 rounded-b-xl min-h-[300px] max-h-[380px] overflow-y-auto flex flex-col justify-end">
+                    <div className="bg-white rounded-xl p-3 shadow-sm text-slate-800 text-[11px] leading-relaxed whitespace-pre-line border border-slate-200 relative">
                       {customMessageDraft
                         ? customMessageDraft
-                            .replace(/\{customer_name\}|\{passenger_name\}/g, "أحمد العتيبي")
+                            .replace(/\{passenger_name\}|\{customer_name\}/g, "سالم مسعد اليمني")
+                            .replace(/\{passport_no\}/g, "08945621")
+                            .replace(/\{nationality\}/g, "يمني")
+                            .replace(/\{expiry_date\}/g, "18 ديسمبر 2026")
+                            .replace(/\{days_left\}/g, "42")
+                            .replace(/\{makkah_exit_date\}/g, "20 نوفمبر 2026")
+                            .replace(/\{stay_duration\}/g, "14 يوماً")
+                            .replace(/\{package_name\}/g, "باقة العمرة الذهبية VIP")
+                            .replace(/\{visa_no\}/g, "UMR-88492")
+                            .replace(/\{agency_name\}/g, agencyName)
                             .replace(/\{invoice_no\}/g, "INV-2026-1049")
                             .replace(/\{amount\}/g, "1,850")
                             .replace(/\{currency\}/g, "ريال")
                             .replace(/\{pnr\}/g, "6X9ZKL")
                             .replace(/\{flight_no\}/g, "SV 112")
                             .replace(/\{departure_date\}/g, "15 نوفمبر 2026")
-                            .replace(/\{hotel_name\}/g, "بارك حياة دبي")
-                            .replace(/\{visa_code\}/g, "VISA-9041")
+                            .replace(/\{hotel_name\}/g, "سويس أوتيل المقام مكة")
                             .replace(/\{voucher_no\}/g, "HTL-8842")
                             .replace(/\{ticket_url\}|\{portal_url\}/g, "https://omnifly.app/t/preview")
                         : "معاينة الرسالة ستظهر هنا..."}
-                      <div className="text-[9px] text-slate-400 text-left mt-1 font-mono flex items-center justify-end gap-1">
-                        <span>10:45 م</span>
+                      <div className="text-[9px] text-slate-400 text-left mt-1.5 font-mono flex items-center justify-end gap-1">
+                        <span>{ruleTimingTimeDraft || "10:45"} م</span>
                         <CheckCheck className="w-3 h-3 text-blue-500 inline" />
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div className="mt-3 text-center">
+                  <Badge variant="outline" className="text-[10px] text-slate-600 bg-slate-50 font-mono">
+                    بوابة الإرسال: {ruleGatewayDraft} | النمط: {ruleTimingModeDraft}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -4432,15 +4653,19 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                       id: editingRule.id,
                       name: ruleNameDraft,
                       custom_message: customMessageDraft,
-                      timing_desc: ruleTimingDraft
+                      timing_desc: ruleTimingDraft,
+                      timing_mode: ruleTimingModeDraft,
+                      timing_time: ruleTimingTimeDraft,
+                      timing_days: ruleTimingDaysDraft,
+                      preferred_gateway: ruleGatewayDraft
                     });
                   }
                 }}
                 disabled={updateRuleMutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl shadow-md shadow-emerald-600/20"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>حفظ واعتماد التعديل 💾</span>
+                <span>حفظ واعتماد التعديل والجدولة 💾</span>
               </Button>
             </DialogFooter>
           </DialogContent>
