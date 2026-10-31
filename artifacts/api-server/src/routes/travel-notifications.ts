@@ -1714,7 +1714,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
           const alreadySentToday = db.prepare(`
             SELECT id FROM travel_notification_logs 
             WHERE entity_type = 'passenger' AND entity_id = ? AND template_code = ? 
-              AND date(created_at) = date('now', 'localtime')
+              AND date(sent_at) = date('now', 'localtime')
             LIMIT 1
           `).get(pax.id, trigger) as any;
 
@@ -1803,7 +1803,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
             const alreadySentToday = db.prepare(`
               SELECT id FROM travel_notification_logs 
               WHERE entity_type = 'passenger' AND entity_id = ? AND template_code = ? 
-                AND date(created_at) = date('now', 'localtime')
+                AND date(sent_at) = date('now', 'localtime')
               LIMIT 1
             `).get(pax.id, trigger) as any;
 
@@ -1890,7 +1890,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
           const alreadySent = db.prepare(`
             SELECT id FROM travel_notification_logs
             WHERE entity_type = 'booking' AND entity_id = ? AND template_code = 'flight_24h_reminder'
-              AND date(created_at) = date('now', 'localtime')
+              AND date(sent_at) = date('now', 'localtime')
           `).get(bk.id) as any;
 
           if (alreadySent && !options.forceAll) {
@@ -1961,7 +1961,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
           const alreadySent = db.prepare(`
             SELECT id FROM travel_notification_logs
             WHERE entity_type = 'invoice' AND entity_id = ? AND template_code = 'accounting_due_reminder'
-              AND date(created_at) = date('now', 'localtime')
+              AND date(sent_at) = date('now', 'localtime')
           `).get(inv.id) as any;
 
           if (alreadySent && !options.forceAll) {
