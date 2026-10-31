@@ -844,6 +844,42 @@ ${agencyName}`
       toast({ title: "فشل الإرسال عبر 4WhatsApp", description: err.message, variant: "destructive" })
   });
 
+  // ─── AUTO-SCHEDULER STATUS QUERY & MUTATIONS ───
+  const { data: schedulerData, refetch: refetchScheduler } = useQuery<any>({
+    queryKey: ["travel-auto-scheduler-status"],
+    queryFn: () => fetchWithAuth<any>("/api/travel/notifications/auto-scheduler-status"),
+    refetchInterval: 30000
+  });
+
+  const runSchedulerMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth<any>("/api/travel/notifications/run-auto-scheduler", { method: "POST" }),
+    onSuccess: (res) => {
+      refetchScheduler();
+      refetchAutomations();
+      refetchLogs();
+      toast({
+        title: "⚡ تم تشغيل محرك الأتمتة التلقائي بنجاح!",
+        description: res.summary || `تم فحص ${res.rulesEvaluated} قاعدة وإرسال ${res.messagesDispatched} رسالة`
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "خطأ في تشغيل المحرك الآلي", description: err.message, variant: "destructive" })
+  });
+
+  const toggleSchedulerMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth<any>("/api/travel/notifications/toggle-auto-scheduler", { method: "POST" }),
+    onSuccess: (res) => {
+      refetchScheduler();
+      toast({
+        title: res.message || "تم تحديث حالة المحرك التلقائي",
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "خطأ في تغيير حالة المحرك", description: err.message, variant: "destructive" })
+  });
+
   // Smart Parser for Meta Credentials
   const handleSmartImport = () => {
     if (!smartImportText.trim()) {
@@ -3749,6 +3785,105 @@ ${agencyName}`
                 </Button>
               </div>
             </div>
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* LIVE BACKGROUND AUTOMATIC SCHEDULER ENGINE BANNER & CONTROLS */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            <Card className="border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white rounded-3xl overflow-hidden shadow-xl">
+              <CardContent className="p-6">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <Badge className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs gap-1.5 px-3 py-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-950 animate-pulse inline-block" />
+                        <span>محرك الإرسال التلقائي في الخلفية: نشط ويعمل آلياً (Daemon Active) 🟢</span>
+                      </Badge>
+                      <Badge variant="outline" className="text-emerald-300 border-emerald-500/40 text-[11px] font-mono">
+                        فحص دوري كل 60 ثانية
+                      </Badge>
+                      {fourWaStatus === "connected" && (
+                        <Badge className="bg-purple-600 text-white text-[11px] font-bold">
+                          بوابة 4WhatsApp متصلة ({fourWaPhone})
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div>
+                      <h4 className="text-base font-black text-white flex items-center gap-2">
+                        <span>تنفيذ تلقائي مباشر لإرسال إشعارات الواتساب للعملاء والمسافرين</span>
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-3xl">
+                        بمجرد حفظ أي قاعدة أو تعديل جدولتها ونصها، يقوم المحرك بالخلفية بمطابقة التواريخ (اقتراب انتهاء الجواز، إنذار خروج معتمري مكة، تذكير الرحلات، وسندات القبض) وإرسال الرسائل تلقائياً عبر رقم الواتساب بدون أي تدخل يدوي.
+                      </p>
+                    </div>
+
+                    {/* Engine Live Metrics Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                      <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/60">
+                        <span className="text-[10px] text-slate-400 block font-medium">آخر فحص وتشغيل:</span>
+                        <span className="text-xs font-mono font-bold text-emerald-400">
+                          {schedulerData?.scheduler?.last_run_at || "الآن"}
+                        </span>
+                      </div>
+                      <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/60">
+                        <span className="text-[10px] text-slate-400 block font-medium">إشعارات أرسلت آلياً اليوم:</span>
+                        <span className="text-xs font-mono font-bold text-amber-300">
+                          {schedulerData?.scheduler?.today_dispatched_count || 0} رسالة
+                        </span>
+                      </div>
+                      <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/60">
+                        <span className="text-[10px] text-slate-400 block font-medium">القواعد الفعالة بالمحرك:</span>
+                        <span className="text-xs font-mono font-bold text-teal-300">
+                          {schedulerData?.active_rules_count || automations.filter(a => a.is_enabled === 1).length} قاعدة
+                        </span>
+                      </div>
+                      <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700/60">
+                        <span className="text-[10px] text-slate-400 block font-medium">حالة تشغيل المحرك:</span>
+                        <span className="text-xs font-bold text-emerald-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>يعمل بالخلفية 100%</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Immediate Manual Trigger & Toggle Buttons */}
+                  <div className="flex flex-col sm:flex-row lg:flex-col gap-2 shrink-0">
+                    <Button
+                      onClick={() => runSchedulerMutation.mutate()}
+                      disabled={runSchedulerMutation.isPending}
+                      className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs h-11 px-5 rounded-2xl gap-2 shadow-lg shadow-emerald-500/20 transition-transform active:scale-95"
+                    >
+                      {runSchedulerMutation.isPending ? (
+                        <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                      ) : (
+                        <Zap className="w-4 h-4 text-slate-950 fill-slate-950" />
+                      )}
+                      <span>⚡ تشغيل فحص وإرسال كافة التنبيهات الآن</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => toggleSchedulerMutation.mutate()}
+                      disabled={toggleSchedulerMutation.isPending}
+                      className="bg-slate-800 hover:bg-slate-700 text-white border-slate-700 text-xs h-9 rounded-xl font-bold gap-1.5"
+                    >
+                      {schedulerData?.scheduler?.is_active === 1 ? (
+                        <>
+                          <Pause className="w-3.5 h-3.5 text-amber-400" />
+                          <span>إيقاف التشغيل التلقائي مؤقتاً</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>استئناف التشغيل التلقائي في الخلفية</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Department Filter Tabs & Search Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200">

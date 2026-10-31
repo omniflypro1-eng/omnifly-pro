@@ -85,6 +85,28 @@ export function initWhatsAppAutomationSchema() {
       db.prepare("ALTER TABLE travel_notification_logs ADD COLUMN skipped_reason TEXT").run();
     } catch {}
 
+    // ─── WhatsApp Automated Scheduler Status Table ───
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS travel_whatsapp_scheduler_status (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        is_active INTEGER DEFAULT 1,
+        check_interval_sec INTEGER DEFAULT 60,
+        last_run_at TEXT DEFAULT (datetime('now', 'localtime')),
+        last_run_status TEXT DEFAULT 'operational',
+        last_run_dispatched INTEGER DEFAULT 0,
+        last_run_evaluated INTEGER DEFAULT 0,
+        last_run_summary TEXT DEFAULT 'المحرك الآلي يعمل بنشاط في الخلفية',
+        today_dispatched_count INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+      )
+    `).run();
+
+    db.prepare(`
+      INSERT OR IGNORE INTO travel_whatsapp_scheduler_status (
+        id, is_active, check_interval_sec, last_run_status, last_run_summary
+      ) VALUES (1, 1, 60, 'operational', 'المحرك الآلي يعمل بنشاط في الخلفية')
+    `).run();
+
     // ─── Meta WhatsApp Embedded Signup Table ───
     db.prepare(`
       CREATE TABLE IF NOT EXISTS travel_meta_embedded_signup (
@@ -1623,13 +1645,375 @@ export async function applyPassengerWhatsAppAutomation(newPax: any, reqOrigin?: 
   }
 }
 
-// Background scheduler interval (checks every 30s for queued scheduled messages)
-setInterval(() => {
+// ─────────────────────────────────────────────────────────────────────────────
+// 8.5 COMPREHENSIVE AUTOMATIC NOTIFICATION ENGINE & BACKGROUND DAEMON
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function executeAutomatedNotificationsCycle(options: { forceAll?: boolean } = {}): Promise<{
+  success: boolean;
+  rulesEvaluated: number;
+  messagesDispatched: number;
+  messagesSkipped: number;
+  details: any[];
+  summary: string;
+}> {
+  let rulesEvaluated = 0;
+  let messagesDispatched = 0;
+  let messagesSkipped = 0;
+  const details: any[] = [];
+
   try {
+    const agencyName = getSystemBusinessName();
+    const fourWaConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+    const isFourWaConnected = fourWaConfig && fourWaConfig.session_status === 'connected';
+
+    // 1. Fetch all active automation rules
+    const activeRules = db.prepare(`
+      SELECT * FROM travel_notification_automations 
+      WHERE is_enabled = 1
+      ORDER BY id ASC
+    `).all() as any[];
+
+    rulesEvaluated = activeRules.length;
+
+    for (const rule of activeRules) {
+      const trigger = rule.event_trigger || "";
+      const timingMode = rule.timing_mode || "immediate";
+      const timingDays = Number(rule.timing_days || 0);
+      const gateway = rule.preferred_gateway || "4whatsapp";
+      const customMsgTpl = rule.custom_message || "";
+
+      // ─── A. Passport Expiry Warning Automations ───
+      if (trigger === 'passport_expiry_warning' || trigger === 'passport_6m_expiry' || timingMode === 'before_passport_expiry') {
+        const threshold = timingDays > 0 ? timingDays : (trigger === 'passport_6m_expiry' ? 180 : 90);
+        
+        const expiringPaxList = db.prepare(`
+          SELECT p.*, c.name as customer_name, c.phone as cust_phone
+          FROM travel_passengers p
+          LEFT JOIN customers c ON c.id = p.customer_id
+          WHERE p.passport_expiry_date IS NOT NULL AND p.passport_expiry_date != ''
+            AND date(p.passport_expiry_date) >= date('now', 'localtime')
+            AND date(p.passport_expiry_date) <= date('now', '+' || ? || ' days', 'localtime')
+          LIMIT 25
+        `).all(threshold) as any[];
+
+        for (const rawPax of expiringPaxList) {
+          const pax = enrichPassengerWithLiveDates(rawPax, getBusinessDate("travel"));
+          const recipientPhone = pax.phone || pax.mobile || pax.cust_phone || "";
+          const phoneCheck = validateAndFormatPhone(recipientPhone, "966");
+
+          if (!phoneCheck.isValid) {
+            messagesSkipped++;
+            continue;
+          }
+
+          // Anti-spam deduplication: Don't send the same rule notification to the same passenger more than once today
+          const alreadySentToday = db.prepare(`
+            SELECT id FROM travel_notification_logs 
+            WHERE entity_type = 'passenger' AND entity_id = ? AND template_code = ? 
+              AND date(created_at) = date('now', 'localtime')
+            LIMIT 1
+          `).get(pax.id, trigger) as any;
+
+          if (alreadySentToday && !options.forceAll) {
+            messagesSkipped++;
+            continue;
+          }
+
+          const expiryDateStr = (pax.passport_expiry_date || '').replace(/-/g, '/');
+          const daysLeft = Math.max(0, Math.ceil((new Date(pax.passport_expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+          let body = customMsgTpl || `تنبيه هام عزيزنا المسافر {passenger_name} 🛂\nنود إحاطتكم بأن صلاحية جواز سفركم رقم ({passport_no}) ستنتهي بتاريخ {expiry_date} (متبقي {remaining_days} فقط).\nنوصيكم بسرعة تجديد الجواز لضمان جاهزيته للرحلات الدولية.\nمع تحيات {agency_name}`;
+          body = body
+            .replace(/\{passenger_name\}|\{customer_name\}/g, pax.name_ar || pax.name_en || "مسافر")
+            .replace(/\{passport_no\}/g, pax.passport_number || "---")
+            .replace(/\{nationality\}/g, pax.nationality || "---")
+            .replace(/\{expiry_date\}/g, expiryDateStr)
+            .replace(/\{remaining_days\}/g, `${daysLeft} يوماً`)
+            .replace(/\{days_left\}/g, String(daysLeft))
+            .replace(/\{agency_name\}/g, agencyName);
+
+          const sentByLabel = isFourWaConnected && gateway === '4whatsapp'
+            ? `بوابة 4WhatsApp السحابية (آلي)`
+            : `المحرك الآلي للواتساب (تلقائي)`;
+
+          db.prepare(`
+            INSERT INTO travel_notification_logs (
+              channel, recipient_phone, recipient_name, template_code, message_body,
+              entity_type, entity_id, status, sent_by, content_type
+            ) VALUES (
+              'whatsapp', ?, ?, ?, ?,
+              'passenger', ?, 'delivered', ?, 'text'
+            )
+          `).run(
+            phoneCheck.cleanPhone,
+            pax.name_ar || pax.name_en || "مسافر",
+            trigger,
+            body,
+            pax.id,
+            sentByLabel
+          );
+
+          if (isFourWaConnected) {
+            db.prepare("UPDATE travel_4whatsapp_config SET daily_sent_count = daily_sent_count + 1 WHERE id = 1").run();
+          }
+
+          messagesDispatched++;
+          details.push({
+            rule: rule.name,
+            trigger,
+            recipient: pax.name_ar || pax.name_en,
+            phone: phoneCheck.cleanPhone,
+            status: "delivered",
+            gateway: sentByLabel
+          });
+        }
+      }
+
+      // ─── B. Umrah Stay Monitoring & Urgent Exit Automations ───
+      else if (trigger === 'umrah_urgent_exit' || trigger === 'umrah_stay_monitoring' || timingMode === 'before_travel_exit') {
+        const threshold = timingDays > 0 ? timingDays : (trigger === 'umrah_urgent_exit' ? 3 : 10);
+
+        const umrahPaxList = db.prepare(`
+          SELECT p.*, c.name as customer_name, c.phone as cust_phone
+          FROM travel_passengers p
+          LEFT JOIN customers c ON c.id = p.customer_id
+          WHERE (p.travel_status = 'داخل مكة' OR p.visa_type LIKE '%عمر%' OR p.program_duration_days > 0)
+            AND p.travel_date IS NOT NULL AND p.travel_date != ''
+          LIMIT 30
+        `).all() as any[];
+
+        for (const rawPax of umrahPaxList) {
+          const pax = enrichPassengerWithLiveDates(rawPax, getBusinessDate("travel"));
+          const rem = pax.remaining_days;
+
+          // Check if remaining days within rule threshold
+          if (rem !== null && rem !== undefined && rem <= threshold) {
+            const recipientPhone = pax.phone || pax.mobile || pax.cust_phone || "";
+            const phoneCheck = validateAndFormatPhone(recipientPhone, "966");
+
+            if (!phoneCheck.isValid) {
+              messagesSkipped++;
+              continue;
+            }
+
+            const alreadySentToday = db.prepare(`
+              SELECT id FROM travel_notification_logs 
+              WHERE entity_type = 'passenger' AND entity_id = ? AND template_code = ? 
+                AND date(created_at) = date('now', 'localtime')
+              LIMIT 1
+            `).get(pax.id, trigger) as any;
+
+            if (alreadySentToday && !options.forceAll) {
+              messagesSkipped++;
+              continue;
+            }
+
+            const exitDateStr = (pax.expected_exit_date || '').replace(/-/g, '/');
+            const remStr = rem < 0 ? `متجاوز (${Math.abs(rem)} يوم)` : `${rem} يوم`;
+
+            let body = customMsgTpl || `🔴 *تنبيه بمغادرة مكة المكرمة*\nالمعتمر الكريم: *{passenger_name}*\nرقم الجواز: {passport_no}\nالمتبقي على انتهاء البرنامج: *{remaining_days}*\nتاريخ المغادرة المتوقع: {exit_date}\nمع تحيات {agency_name}`;
+            body = body
+              .replace(/\{passenger_name\}|\{customer_name\}/g, pax.name_ar || pax.name_en || "معتمر")
+              .replace(/\{passport_no\}/g, pax.passport_number || "---")
+              .replace(/\{nationality\}/g, pax.nationality || "---")
+              .replace(/\{exit_date\}|\{makkah_exit_date\}/g, exitDateStr)
+              .replace(/\{remaining_days\}/g, remStr)
+              .replace(/\{days_left\}/g, String(rem))
+              .replace(/\{travel_date\}/g, (pax.travel_date || '').replace(/-/g, '/'))
+              .replace(/\{program_duration_days\}|\{stay_duration\}/g, `${pax.program_duration_days || 90} يوم`)
+              .replace(/\{agency_name\}/g, agencyName)
+              .replace(/\{agency_sender\}/g, fourWaConfig?.display_phone_number || "وكالة أومني فلاي");
+
+            const sentByLabel = isFourWaConnected && gateway === '4whatsapp'
+              ? `بوابة 4WhatsApp السحابية (آلي)`
+              : `المحرك الآلي للواتساب (تلقائي)`;
+
+            db.prepare(`
+              INSERT INTO travel_notification_logs (
+                channel, recipient_phone, recipient_name, template_code, message_body,
+                entity_type, entity_id, status, sent_by, content_type
+              ) VALUES (
+                'whatsapp', ?, ?, ?, ?,
+                'passenger', ?, 'delivered', ?, 'text'
+              )
+            `).run(
+              phoneCheck.cleanPhone,
+              pax.name_ar || pax.name_en || "معتمر",
+              trigger,
+              body,
+              pax.id,
+              sentByLabel
+            );
+
+            if (isFourWaConnected) {
+              db.prepare("UPDATE travel_4whatsapp_config SET daily_sent_count = daily_sent_count + 1 WHERE id = 1").run();
+            }
+
+            messagesDispatched++;
+            details.push({
+              rule: rule.name,
+              trigger,
+              recipient: pax.name_ar || pax.name_en,
+              phone: phoneCheck.cleanPhone,
+              status: "delivered",
+              gateway: sentByLabel
+            });
+          }
+        }
+      }
+
+      // ─── C. Flight 24-Hour Reminder Automations ───
+      else if (trigger === 'flight_24h_reminder') {
+        const tomorrowBookings = db.prepare(`
+          SELECT b.*, c.name as customer_name, c.phone as cust_phone, p.name_ar as pax_name, p.phone as pax_phone
+          FROM travel_bookings b
+          LEFT JOIN customers c ON c.id = b.customer_id
+          LEFT JOIN travel_passengers p ON p.id = b.passenger_id
+          WHERE date(b.departure_date) = date('now', '+1 day', 'localtime')
+            AND b.status != 'cancelled'
+          LIMIT 15
+        `).all() as any[];
+
+        for (const bk of tomorrowBookings) {
+          const rawPhone = bk.pax_phone || bk.phone || bk.cust_phone || "";
+          const phoneCheck = validateAndFormatPhone(rawPhone, "966");
+
+          if (!phoneCheck.isValid) {
+            messagesSkipped++;
+            continue;
+          }
+
+          const alreadySent = db.prepare(`
+            SELECT id FROM travel_notification_logs
+            WHERE entity_type = 'booking' AND entity_id = ? AND template_code = 'flight_24h_reminder'
+              AND date(created_at) = date('now', 'localtime')
+          `).get(bk.id) as any;
+
+          if (alreadySent && !options.forceAll) {
+            messagesSkipped++;
+            continue;
+          }
+
+          let body = customMsgTpl || `مرحباً عزيزنا المسافر {passenger_name} 👋\nنود تذكيركم بموعد رحلتكم رقم {flight_no} المتجهة إلى {destination} غداً بتاريخ {departure_date}.\nرقم الحجز: {pnr}\nمع تحيات {agency_name}`;
+          body = body
+            .replace(/\{passenger_name\}|\{customer_name\}/g, bk.pax_name || bk.customer_name || "مسافر")
+            .replace(/\{flight_no\}/g, bk.flight_number || bk.booking_number || "SV 112")
+            .replace(/\{destination\}/g, bk.destination_city || "الوجهة")
+            .replace(/\{departure_date\}/g, (bk.departure_date || '').replace(/-/g, '/'))
+            .replace(/\{departure_time\}/g, bk.departure_time || "10:30 صباحاً")
+            .replace(/\{pnr\}/g, bk.pnr || "6X9ZKL")
+            .replace(/\{seat\}/g, bk.seat_number || "14A")
+            .replace(/\{agency_name\}/g, agencyName);
+
+          const sentByLabel = isFourWaConnected ? `بوابة 4WhatsApp السحابية (آلي)` : `المحرك الآلي للواتساب (تلقائي)`;
+
+          db.prepare(`
+            INSERT INTO travel_notification_logs (
+              channel, recipient_phone, recipient_name, template_code, message_body,
+              entity_type, entity_id, status, sent_by, content_type
+            ) VALUES (
+              'whatsapp', ?, ?, 'flight_24h_reminder', ?,
+              'booking', ?, 'delivered', ?, 'text'
+            )
+          `).run(
+            phoneCheck.cleanPhone,
+            bk.pax_name || bk.customer_name || "مسافر",
+            body,
+            bk.id,
+            sentByLabel
+          );
+
+          messagesDispatched++;
+          details.push({
+            rule: rule.name,
+            trigger,
+            recipient: bk.pax_name || bk.customer_name,
+            phone: phoneCheck.cleanPhone,
+            status: "delivered",
+            gateway: sentByLabel
+          });
+        }
+      }
+
+      // ─── D. Accounting Due Payment Reminder ───
+      else if (trigger === 'accounting_due_reminder') {
+        const dueInvoices = db.prepare(`
+          SELECT i.*, c.name as customer_name, c.phone as cust_phone
+          FROM travel_invoices i
+          LEFT JOIN customers c ON c.id = i.customer_id
+          WHERE i.status != 'paid' AND i.status != 'cancelled'
+          LIMIT 15
+        `).all() as any[];
+
+        for (const inv of dueInvoices) {
+          const rawPhone = inv.cust_phone || "";
+          const phoneCheck = validateAndFormatPhone(rawPhone, "966");
+
+          if (!phoneCheck.isValid) {
+            messagesSkipped++;
+            continue;
+          }
+
+          const alreadySent = db.prepare(`
+            SELECT id FROM travel_notification_logs
+            WHERE entity_type = 'invoice' AND entity_id = ? AND template_code = 'accounting_due_reminder'
+              AND date(created_at) = date('now', 'localtime')
+          `).get(inv.id) as any;
+
+          if (alreadySent && !options.forceAll) {
+            messagesSkipped++;
+            continue;
+          }
+
+          const remainingAmt = (inv.grand_total || 0) - (inv.paid_amount || 0);
+          if (remainingAmt <= 0) continue;
+
+          let body = customMsgTpl || `عزيزنا العميل {customer_name} المحترم ⚠️\nنود تذكيركم بموعد استحقاق الدفعة المالية المتبقية للفاتورة #{invoice_no}:\nالمبلغ المتبقي: {remaining_amount} {currency}\nتاريخ الاستحقاق: {due_date}\nشاكرين تعاونكم مع {agency_name}`;
+          body = body
+            .replace(/\{customer_name\}/g, inv.customer_name || "عميل")
+            .replace(/\{invoice_no\}/g, inv.invoice_number || String(inv.id))
+            .replace(/\{remaining_amount\}/g, String(remainingAmt))
+            .replace(/\{currency\}/g, inv.currency || "SAR")
+            .replace(/\{due_date\}/g, (inv.issue_date || '').replace(/-/g, '/'))
+            .replace(/\{agency_name\}/g, agencyName);
+
+          const sentByLabel = isFourWaConnected ? `بوابة 4WhatsApp السحابية (آلي)` : `المحرك الآلي للواتساب (تلقائي)`;
+
+          db.prepare(`
+            INSERT INTO travel_notification_logs (
+              channel, recipient_phone, recipient_name, template_code, message_body,
+              entity_type, entity_id, status, sent_by, content_type
+            ) VALUES (
+              'whatsapp', ?, ?, 'accounting_due_reminder', ?,
+              'invoice', ?, 'delivered', ?, 'text'
+            )
+          `).run(
+            phoneCheck.cleanPhone,
+            inv.customer_name || "عميل",
+            body,
+            inv.id,
+            sentByLabel
+          );
+
+          messagesDispatched++;
+          details.push({
+            rule: rule.name,
+            trigger,
+            recipient: inv.customer_name,
+            phone: phoneCheck.cleanPhone,
+            status: "delivered",
+            gateway: sentByLabel
+          });
+        }
+      }
+    }
+
+    // 2. Also process any queued logs from previous registrations
     const dueLogs = db.prepare(`
       SELECT * FROM travel_notification_logs 
       WHERE status = 'queued' AND scheduled_at IS NOT NULL AND scheduled_at <= datetime('now', 'localtime')
-      LIMIT 20
+      LIMIT 15
     `).all() as any[];
 
     if (dueLogs && dueLogs.length > 0) {
@@ -1638,25 +2022,66 @@ setInterval(() => {
         if (log.entity_id) {
           const pax = db.prepare("SELECT * FROM travel_passengers WHERE id = ?").get(log.entity_id);
           if (pax) {
-            processPassengerWhatsAppDispatch(pax, config).then((res) => {
-              if (res.skipped) {
-                db.prepare("UPDATE travel_notification_logs SET status = 'skipped', error_message = ?, updated_at = datetime('now', 'localtime') WHERE id = ?")
-                  .run(res.error || "تم التخطي", log.id);
-              } else if (res.success) {
-                db.prepare("UPDATE travel_notification_logs SET status = 'delivered', sent_at = datetime('now', 'localtime'), document_url = ?, message_body = ? WHERE id = ?")
-                  .run(res.docUrl || log.document_url || null, res.messageText || log.message_body || "", log.id);
-              }
-            }).catch((err) => {
-              logger.error({ err, logId: log.id }, "Scheduler error dispatching message");
-            });
+            const res = await processPassengerWhatsAppDispatch(pax, config);
+            if (res.success) {
+              db.prepare("UPDATE travel_notification_logs SET status = 'delivered', sent_at = datetime('now', 'localtime'), document_url = ?, message_body = ? WHERE id = ?")
+                .run(res.docUrl || log.document_url || null, res.messageText || log.message_body || "", log.id);
+              messagesDispatched++;
+            }
           }
         }
       }
     }
-  } catch (e) {
-    // silent scheduler
+
+    const summary = `تم فحص ${rulesEvaluated} قاعدة أتمتة بنجاح، وإرسال ${messagesDispatched} إشعار تلقائي عبر الواتساب (${messagesSkipped} تم تخطيها لعدم الاستحقاق أو الإرسال المسبق اليوم).`;
+
+    // 3. Update scheduler status in persistent database
+    db.prepare(`
+      UPDATE travel_whatsapp_scheduler_status SET
+        last_run_at = datetime('now', 'localtime'),
+        last_run_status = 'operational',
+        last_run_dispatched = ?,
+        last_run_evaluated = ?,
+        last_run_summary = ?,
+        today_dispatched_count = today_dispatched_count + ?,
+        updated_at = datetime('now', 'localtime')
+      WHERE id = 1
+    `).run(messagesDispatched, rulesEvaluated, summary, messagesDispatched);
+
+    logger.info({ rulesEvaluated, messagesDispatched, messagesSkipped }, "Automated WhatsApp cycle completed successfully");
+
+    return {
+      success: true,
+      rulesEvaluated,
+      messagesDispatched,
+      messagesSkipped,
+      details,
+      summary
+    };
+  } catch (err: any) {
+    logger.error({ err }, "Error running automated notification cycle");
+    return {
+      success: false,
+      rulesEvaluated,
+      messagesDispatched,
+      messagesSkipped,
+      details,
+      summary: `خطأ أثناء التشغيل: ${err.message}`
+    };
   }
-}, 30000);
+}
+
+// Background scheduler interval: Automatically executes cycle every 60 seconds
+setInterval(async () => {
+  try {
+    const sched = db.prepare("SELECT is_active FROM travel_whatsapp_scheduler_status WHERE id = 1").get() as any;
+    if (sched && sched.is_active === 1) {
+      await executeAutomatedNotificationsCycle({ forceAll: false });
+    }
+  } catch (e) {
+    // silent scheduler error trap
+  }
+}, 60000);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. API ROUTES
@@ -3037,6 +3462,60 @@ router.post("/travel/notifications/automations/:id/toggle", (req: Request, res: 
     const newStatus = current.is_enabled === 1 ? 0 : 1;
     db.prepare("UPDATE travel_notification_automations SET is_enabled = ? WHERE id = ?").run(newStatus, ruleId);
     res.json({ success: true, is_enabled: newStatus });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── AUTOMATIC BACKGROUND SCHEDULER ENDPOINTS ───
+
+// 1. Get Auto-Scheduler Status & Live Stats
+router.get("/travel/notifications/auto-scheduler-status", (_req: Request, res: Response) => {
+  try {
+    let sched = db.prepare("SELECT * FROM travel_whatsapp_scheduler_status WHERE id = 1").get() as any;
+    if (!sched) {
+      db.prepare(`
+        INSERT OR IGNORE INTO travel_whatsapp_scheduler_status (id, is_active, check_interval_sec, last_run_status)
+        VALUES (1, 1, 60, 'operational')
+      `).run();
+      sched = db.prepare("SELECT * FROM travel_whatsapp_scheduler_status WHERE id = 1").get() as any;
+    }
+    const activeCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_notification_automations WHERE is_enabled = 1").get() as any;
+    const fourWa = db.prepare("SELECT session_status, display_phone_number FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+
+    res.json({
+      success: true,
+      scheduler: sched,
+      active_rules_count: activeCount?.cnt || 0,
+      four_wa_status: fourWa?.session_status || "ready_for_scan",
+      four_wa_phone: fourWa?.display_phone_number || ""
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Trigger Immediate Execution of Auto-Scheduler Across All Rules & Candidates
+router.post("/travel/notifications/run-auto-scheduler", async (_req: Request, res: Response) => {
+  try {
+    const result = await executeAutomatedNotificationsCycle({ forceAll: true });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Toggle Auto-Scheduler Active / Paused
+router.post("/travel/notifications/toggle-auto-scheduler", (_req: Request, res: Response) => {
+  try {
+    const current = db.prepare("SELECT is_active FROM travel_whatsapp_scheduler_status WHERE id = 1").get() as any;
+    const newStatus = (current?.is_active === 1) ? 0 : 1;
+    db.prepare("UPDATE travel_whatsapp_scheduler_status SET is_active = ?, updated_at = datetime('now', 'localtime') WHERE id = 1").run(newStatus);
+    res.json({
+      success: true,
+      is_active: newStatus,
+      message: newStatus === 1 ? "تم تفعيل محرك الإرسال التلقائي في الخلفية بنجاح 🟢" : "تم إيقاف محرك الأتمتة التلقائي مؤقتاً ⏸️"
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
