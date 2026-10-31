@@ -175,6 +175,7 @@ export default function TravelNotificationsHubPage() {
   const [fourWaPhone, setFourWaPhone] = useState<string>("+967 77 345 6789");
   const [fourWaCelebrationShown, setFourWaCelebrationShown] = useState<boolean>(true);
   const [fourWaTestPhone, setFourWaTestPhone] = useState<string>("967773456789");
+  const [fourWaQuickTestPhone, setFourWaQuickTestPhone] = useState<string>("967773456789");
   const [fourWaTestMessage, setFourWaTestMessage] = useState<string>(
     "عزيزنا المسافر، مرحباً بك في وكالة أومني فلاي للسفريات والسياحة ✈️ نؤكد جاهزية خدمة الرسائل التلقائية عبر بوابة 4WhatsApp الرسمية بنجاح!"
   );
