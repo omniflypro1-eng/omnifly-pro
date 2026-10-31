@@ -84,6 +84,9 @@ export function initWhatsAppAutomationSchema() {
     try {
       db.prepare("ALTER TABLE travel_notification_logs ADD COLUMN skipped_reason TEXT").run();
     } catch {}
+    try {
+      db.prepare("ALTER TABLE travel_notification_logs ADD COLUMN created_at TEXT DEFAULT (datetime('now', 'localtime'))").run();
+    } catch {}
 
     // ─── WhatsApp Automated Scheduler Status Table ───
     db.prepare(`
