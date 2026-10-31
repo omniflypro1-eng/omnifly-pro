@@ -3133,7 +3133,8 @@ function runMigrations() {
         gateway_message_id TEXT,
         error_message TEXT,
         sent_by TEXT,
-        sent_at TEXT DEFAULT (datetime('now', 'localtime'))
+        sent_at TEXT DEFAULT (datetime('now', 'localtime')),
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
 
       CREATE TABLE IF NOT EXISTS travel_notification_automations (
