@@ -1404,16 +1404,16 @@ ${agencyName}`
                               />
                               <Button
                                 size="sm"
-                                disabled={fourWaSendMsgMutation.isPending}
+                                disabled={fourWaSendMessageMutation.isPending}
                                 onClick={() => {
-                                  fourWaSendMsgMutation.mutate({
-                                    recipient: fourWaQuickTestPhone,
-                                    message: `السلام عليكم، هذه رسالة تأكيد ربط واتساب بالنظام بنجاح من وكالة ${agencyName} عبر بوابة 4WhatsApp السحابية. كود الشركة: ${fourWaForm.company_code}`
+                                  fourWaSendMessageMutation.mutate({
+                                    recipient_phone: fourWaQuickTestPhone,
+                                    message_body: `السلام عليكم، هذه رسالة تأكيد ربط واتساب بالنظام بنجاح من وكالة ${agencyName} عبر بوابة 4WhatsApp السحابية. كود الشركة: ${fourWaForm.company_code}`
                                   });
                                 }}
                                 className="h-9 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shrink-0 gap-1.5"
                               >
-                                {fourWaSendMsgMutation.isPending ? (
+                                {fourWaSendMessageMutation.isPending ? (
                                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                 ) : (
                                   <Send className="w-3.5 h-3.5" />
