@@ -205,6 +205,11 @@ let dbInstance: DatabaseWrapper;
 try {
   dbInstance = new DatabaseWrapper(dbPath);
   dbInstance.pragma("journal_mode = WAL");
+  dbInstance.pragma("synchronous = NORMAL");
+  dbInstance.pragma("cache_size = -64000");
+  dbInstance.pragma("temp_store = MEMORY");
+  dbInstance.pragma("mmap_size = 268435456");
+  dbInstance.pragma("busy_timeout = 5000");
   dbInstance.pragma("foreign_keys = ON");
   const integrity = dbInstance.prepare("PRAGMA integrity_check").get() as any;
   const resVal = integrity ? Object.values(integrity)[0] : "ok";

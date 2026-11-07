@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import QRCode from "qrcode";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -448,21 +447,8 @@ ${agencyName}`
   // Generate real camera-scannable QR code whenever qrSessionData updates
   useEffect(() => {
     const rawQrString = qrSessionData?.qr_data || "2@0gJ3kK9XOmniflyWAAuthToken_MultiDeviceSecureNoiseHandshake";
-    QRCode.toDataURL(rawQrString, {
-      width: 280,
-      margin: 1,
-      errorCorrectionLevel: "H",
-      color: {
-        dark: "#111b21",
-        light: "#ffffff",
-      },
-    })
-      .then((dataUrl) => {
-        setRealQrDataUrl(dataUrl);
-      })
-      .catch((err) => {
-        console.error("Error generating real QR Code:", err);
-      });
+    const dataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(rawQrString)}`;
+    setRealQrDataUrl(dataUrl);
   }, [qrSessionData?.qr_data]);
 
   // ─── 4WHATSAPP ENTERPRISE STATUS QUERY & QR CODE GENERATOR ───
@@ -494,21 +480,8 @@ ${agencyName}`
     const fallbackNoiseQr = `2@${defaultRef},${defaultPubKey},${defaultClientId}`;
 
     const rawQr = fourWaData?.qr_data && fourWaData.qr_data.length > 10 ? fourWaData.qr_data : fallbackNoiseQr;
-    QRCode.toDataURL(rawQr, {
-      width: 320,
-      margin: 1,
-      errorCorrectionLevel: "H",
-      color: {
-        dark: "#111b21",
-        light: "#ffffff",
-      },
-    })
-      .then((dataUrl) => {
-        setFourWaQrDataUrl(dataUrl);
-      })
-      .catch((err) => {
-        console.error("Error generating 4WhatsApp QR Code:", err);
-      });
+    const dataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(rawQr)}`;
+    setFourWaQrDataUrl(dataUrl);
   }, [fourWaData?.qr_data]);
 
   // 4WhatsApp 60-Second Auto Refresh Timer

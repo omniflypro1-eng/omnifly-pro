@@ -1945,7 +1945,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
           SELECT i.*, c.name as customer_name, c.phone as cust_phone
           FROM travel_invoices i
           LEFT JOIN customers c ON c.id = i.customer_id
-          WHERE i.status != 'paid' AND i.status != 'cancelled'
+          WHERE COALESCE(i.payment_status, 'pending') != 'paid'
           LIMIT 15
         `).all() as any[];
 

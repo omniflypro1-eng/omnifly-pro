@@ -300,8 +300,8 @@ export default function CurrenciesPage() {
             {isLoading ? (
               <div className="text-center py-16 text-muted-foreground bg-card rounded-xl border">جاري التحميل...</div>
             ) : (
-              <div className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
-                <table className="w-full text-sm text-right">
+              <div className="bg-card rounded-xl border border-border shadow-xs overflow-x-auto">
+                <table className="w-full min-w-[700px] text-sm text-right">
                   <thead className="bg-muted/50 border-b border-border">
                     <tr>
                       <th className="p-3 font-bold">اسم العملة</th>

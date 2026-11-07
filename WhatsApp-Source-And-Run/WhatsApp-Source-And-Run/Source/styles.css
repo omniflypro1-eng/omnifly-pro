@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  body {
+    @apply m-0 bg-[#f7f9f8] font-sans text-slate-900 antialiased;
+  }
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+  input[dir='ltr'] {
+    text-align: left;
+  }
+  ::selection {
+    @apply bg-emerald-100 text-emerald-950;
+  }
+  :focus-visible {
+    outline-offset: 3px;
+  }
+}
+@layer utilities {
+  .field-label {
+    @apply mb-2.5 block text-[13px] font-semibold text-slate-700;
+  }
+  .muted-copy {
+    @apply text-xs leading-7 text-slate-500;
+  }
+  .section-title {
+    @apply text-lg font-bold tracking-tight;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
