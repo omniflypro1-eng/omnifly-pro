@@ -7,7 +7,7 @@
     "whatsapp": "966501234567",
     "email": "info@akwan-travel.com",
     "address": "المملكة العربية السعودية - خدمات النقل والمطارات",
-    "hero_title": "سافر بكل راحة وأمان..",
+    "hero_title": "سافر بكل راحة وأمان..مع اكوان",
     "hero_subtitle": "حجوزات طيران عالمية ومحلية، مشاوير ونقل مطارات وحرمين، فنادق فاخرة، باقات سياحية وتأشيرات سفر بكل سرعة وسهولة وبأفضل الأسعار.",
     "rides_enabled": 1,
     "flight_enabled": 1,
@@ -30,7 +30,7 @@
     "bank_account_name": "أكوان للسفريات والسياحة",
     "promo_code": "AKWAN2026",
     "promo_discount_percent": 10,
-    "updated_at": "2026-11-07 03:41:16",
+    "updated_at": "2026-11-07 03:43:16",
     "topbar_text": "أكوان للسفريات والسياحة • Akwan Travel & Tourism",
     "social_handle": "@A",
     "facebook_url": "https://facebook.com/Akwan",
@@ -53,7 +53,7 @@
     "footer_guarantee_desc": "جميع حجوزاتنا مؤكدة برقم PNR رسمي معتمد، مع ضمان استرداد فوري ودعم فني على مدار الساعة لكل مشوار ورحلة.",
     "footer_license_badge": "حجوزات آمنة ومرخصة 100%",
     "footer_copyright": "جميع الحقوق محفوظة © 2026 أكوان للسفريات والسياحة — Akwan Travel & Tourism.",
-    "topbar_announcement": "وكالة نجاز للمشاوير والسفريات والسياحة • Njaz Travel & Tourism",
+    "topbar_announcement": "وكالة اكوان للمشاوير والسفريات والسياحة • Njaz Travel & Tourism",
     "customer_service_name": "خدمة العملاء المعتمدة",
     "announcement_badge_1": "حجوزات 24/7",
     "announcement_badge_2": "تأشيرات وطيران",
@@ -64,5 +64,5 @@
     "currency": "SAR"
   },
   "services": [],
-  "last_sync": "2026-11-07T03:41:18.914Z"
+  "last_sync": "2026-11-07T03:43:16.400Z"
 }
