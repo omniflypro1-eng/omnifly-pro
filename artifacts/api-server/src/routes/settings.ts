@@ -181,7 +181,7 @@ router.put("/settings", (req, res) => {
         const strVal = v === null || v === undefined ? "null" : typeof v === "object" ? JSON.stringify(v) : String(v);
         upsert.run(k, strVal);
 
-        // Sync with document_print_settings & website_settings tables
+        // Sync with document_print_settings table
         if (k === "logoUrl" && v) {
           try {
             db.prepare("UPDATE document_print_settings SET logo_url = ? WHERE id = 1").run(String(v));
@@ -195,7 +195,7 @@ router.put("/settings", (req, res) => {
             db.prepare("UPDATE document_print_settings SET company_name = ? WHERE id = 1").run(String(v));
           } catch {}
           try {
-            db.prepare("UPDATE website_settings SET site_name = COALESCE(?, site_name), site_title = COALESCE(?, site_title) WHERE id = 1").run(String(v), String(v));
+            db.prepare("UPDATE website_settings SET site_title = COALESCE(?, site_title) WHERE id = 1").run(String(v));
           } catch {}
         }
         if (k === "phone" && v) {
@@ -206,11 +206,6 @@ router.put("/settings", (req, res) => {
         if (k === "email" && v) {
           try {
             db.prepare("UPDATE website_settings SET email = COALESCE(?, email) WHERE id = 1").run(String(v));
-          } catch {}
-        }
-        if (k === "address" && v) {
-          try {
-            db.prepare("UPDATE website_settings SET address = COALESCE(?, address) WHERE id = 1").run(String(v));
           } catch {}
         }
         if (k === "currency" && v) {
