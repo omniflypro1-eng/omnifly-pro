@@ -354,6 +354,67 @@ export default function TravelDashboardPage() {
           </Card>
         </div>
 
+        {/* Flight Performance Widget */}
+        <Card className="border border-indigo-100 shadow-sm">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2 text-slate-900">
+                <Plane className="w-5 h-5 text-indigo-600" />
+                <span>مؤشر أداء الرحلات الجوية (Flight Performance Widget)</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-500 mt-0.5">
+                تحليل حالة ومعدل الرحلات النشطة، المؤكدة، قيد الانتظار، والملغاة
+              </CardDescription>
+            </div>
+            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-200">
+              محدث لحظياً ⚡
+            </span>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={charts.flightPerformance || []}
+                      dataKey="count"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={85}
+                      paddingAngle={5}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      {(charts.flightPerformance || []).map((entry: any, index: number) => (
+                        <Cell key={`flight-perf-cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => [value, "عدد الرحلات"]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-slate-700">توزيع حالات الطيران والرحلات:</p>
+                <div className="space-y-2">
+                  {(charts.flightPerformance || []).map((item: any, idx: number) => (
+                    <div key={`flight-perf-item-${idx}`} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-3.5 h-3.5 rounded-full shadow-xs" style={{ backgroundColor: item.color || COLORS[idx % COLORS.length] }} />
+                        <span className="font-bold text-slate-800">{item.name}</span>
+                      </div>
+                      <span className="font-mono font-black text-slate-900 bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
+                        {item.count} رحلة
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Smart Alerts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Alert 1: Expiring Passports */}

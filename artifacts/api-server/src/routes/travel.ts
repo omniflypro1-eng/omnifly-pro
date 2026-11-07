@@ -3623,6 +3623,19 @@ router.get("/travel/dashboard-stats", (_req, res) => {
     value: Math.round(d.value * 100) / 100
   }));
 
+  // 10. Recharts: Flight Performance Stats (Active, Confirmed, Cancelled, Pending)
+  const activeFlightsCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_bookings WHERE service_type='flight' AND (status='issued' OR status='confirmed' OR status='active')").get() as any;
+  const cancelledFlightsCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_bookings WHERE service_type='flight' AND status='cancelled'").get() as any;
+  const confirmedFlightsCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_bookings WHERE service_type='flight' AND (status='confirmed' OR status='issued')").get() as any;
+  const pendingFlightsCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_bookings WHERE service_type='flight' AND (status='pending' OR status='under_process')").get() as any;
+
+  const flightPerformance = [
+    { name: "مؤكدة / مصدرة", count: confirmedFlightsCount?.cnt || 0, color: "#10b981" },
+    { name: "نشطة", count: activeFlightsCount?.cnt || 0, color: "#3b82f6" },
+    { name: "قيد الانتظار", count: pendingFlightsCount?.cnt || 0, color: "#f59e0b" },
+    { name: "ملغاة", count: cancelledFlightsCount?.cnt || 0, color: "#ef4444" },
+  ];
+
   // Smart Alerts
   const expiringPassports = db.prepare(`
     SELECT id, name_ar, passport_number, passport_expiry_date
@@ -3670,7 +3683,8 @@ router.get("/travel/dashboard-stats", (_req, res) => {
     charts: {
       airlineStats,
       destStats,
-      serviceTypeStats
+      serviceTypeStats,
+      flightPerformance
     },
     alerts: {
       expiringPassports,
