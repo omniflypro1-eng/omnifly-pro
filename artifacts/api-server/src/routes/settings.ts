@@ -185,10 +185,31 @@ router.put("/settings", (req, res) => {
           try {
             db.prepare("UPDATE document_print_settings SET logo_url = ? WHERE id = 1").run(String(v));
           } catch {}
+          try {
+            db.prepare("UPDATE website_settings SET logo_url = COALESCE(?, logo_url) WHERE id = 1").run(String(v));
+          } catch {}
         }
         if (k === "businessName" && v) {
           try {
             db.prepare("UPDATE document_print_settings SET company_name = ? WHERE id = 1").run(String(v));
+          } catch {}
+          try {
+            db.prepare("UPDATE website_settings SET site_title = COALESCE(?, site_title) WHERE id = 1").run(String(v));
+          } catch {}
+        }
+        if (k === "phone" && v) {
+          try {
+            db.prepare("UPDATE website_settings SET phone = COALESCE(?, phone) WHERE id = 1").run(String(v));
+          } catch {}
+        }
+        if (k === "email" && v) {
+          try {
+            db.prepare("UPDATE website_settings SET email = COALESCE(?, email) WHERE id = 1").run(String(v));
+          } catch {}
+        }
+        if (k === "currency" && v) {
+          try {
+            db.prepare("UPDATE website_settings SET currency = COALESCE(?, currency) WHERE id = 1").run(String(v));
           } catch {}
         }
       }

@@ -370,6 +370,17 @@ export default function CustomerPortalPage() {
                 <span className="hidden xs:inline">تتبع حجزك</span>
                 <span className="xs:hidden">تتبع</span>
               </Button>
+
+              <a href="/website-management">
+                <Button
+                  size="sm"
+                  className="gap-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl px-2.5 sm:px-3.5 h-9 shadow-xs cursor-pointer"
+                  title="الرجوع للوحة التحكم وإدارة النظام"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span>الرجوع للنظام</span>
+                </Button>
+              </a>
             </div>
           </div>
         </div>

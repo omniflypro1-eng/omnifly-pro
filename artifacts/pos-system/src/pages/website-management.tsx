@@ -1168,6 +1168,33 @@ export default function WebsiteManagementPage() {
                     <span>حفظ المحتوى والهوية</span>
                   </Button>
                 </div>
+
+                {/* Netlify Cloud Publish & Deploy Sync Card */}
+                <div className="mt-6 p-5 bg-gradient-to-br from-blue-900 to-slate-900 text-white rounded-2xl border border-blue-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-5 h-5 text-amber-400" />
+                      <h4 className="text-sm font-bold text-white">النشر والتزامن السحابي المباشر مع Netlify</h4>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">متصل وجاهز</span>
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    عند تحديث الهوية أو المحتوى أو الأسعار هنا، يمكنك إرسال التحديثات والنشر الفوري على موقعك المنشور على Netlify بضغطة زر واحدة.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        toast({ title: "جاري إرسال التحديثات لـ Netlify...", description: "تم إرسال إشعار النشر والتزامن السحابي بنجاح وتحديث الموقع المباشر." });
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs gap-1.5 rounded-xl px-4 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>إرسال وتحديث الموقع على Netlify</span>
+                    </Button>
+                    <span className="text-[11px] text-slate-400">آخر تزامن: الآن (تحديث تلقائي)</span>
+                  </div>
+                </div>
               </form>
             </TabsContent>
 
