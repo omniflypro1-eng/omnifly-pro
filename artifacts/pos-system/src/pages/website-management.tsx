@@ -39,7 +39,9 @@ import {
   Eye,
   EyeOff,
   X,
-  Smartphone
+  Smartphone,
+  Upload,
+  ImageIcon
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1174,14 +1176,56 @@ export default function WebsiteManagementPage() {
                       />
                     </div>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">رابط صورة الشعار (Logo URL)</label>
-                      <Input
-                        value={formState.logo_url || ""}
-                        onChange={(e) => setFormState({ ...formState, logo_url: e.target.value })}
-                        placeholder="رابط مباشر للصورة"
-                        className="rounded-xl h-10 text-xs font-mono"
-                      />
+                    <div className="sm:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                      <div className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-300 bg-white flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
+                        {formState.logo_url ? (
+                          <img src={formState.logo_url} alt="Logo Preview" className="max-w-full max-h-full object-contain" />
+                        ) : (
+                          <ImageIcon className="w-8 h-8 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="space-y-2 flex-1">
+                        <label className="text-xs font-bold text-slate-800 block">شعار الموقع (Logo Image)</label>
+                        <p className="text-[10px] text-slate-500 leading-relaxed">
+                          ارفع صورة الشعار الرسمية للموقع. يفضل أن تكون بخلفية شفافة وبصيغة PNG أو SVG للحصول على أفضل جودة.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <label className="cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setFormState({ ...formState, logo_url: reader.result as string });
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            <Button type="button" variant="outline" size="sm" asChild className="gap-1.5 text-[11px] font-bold bg-white cursor-pointer h-8">
+                              <span>
+                                <Upload className="w-3 h-3" />
+                                رفع الشعار من الملفات
+                              </span>
+                            </Button>
+                          </label>
+                          {formState.logo_url && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-[11px] text-red-600 hover:bg-red-50 h-8 px-2"
+                              onClick={() => setFormState({ ...formState, logo_url: "" })}
+                            >
+                              حذف الشعار
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <div>
