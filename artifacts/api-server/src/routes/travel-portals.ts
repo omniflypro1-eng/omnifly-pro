@@ -720,7 +720,10 @@ router.put("/admin/website/config", (req, res) => {
     flight_markup_val, flight_markup_type, hotel_markup_val, hotel_markup_type,
     package_markup_val, package_markup_type, payment_card_enabled, payment_bank_enabled,
     payment_cash_enabled, bank_name, bank_iban, bank_account_name,
-    promo_code, promo_discount_percent
+    promo_code, promo_discount_percent,
+    topbar_announcement, customer_service_name, announcement_badge_1, announcement_badge_2,
+    nav_subtitle, hero_title_2, hero_title_3, secondary_phone, currency,
+    logo_url, facebook_url, x_url, instagram_url, social_handle, topbar_text
   } = req.body;
 
   db.prepare(`
@@ -731,7 +734,11 @@ router.put("/admin/website/config", (req, res) => {
         flight_markup_val = ?, flight_markup_type = ?, hotel_markup_val = ?, hotel_markup_type = ?,
         package_markup_val = ?, package_markup_type = ?, payment_card_enabled = ?, payment_bank_enabled = ?,
         payment_cash_enabled = ?, bank_name = ?, bank_iban = ?, bank_account_name = ?,
-        promo_code = ?, promo_discount_percent = ?, updated_at = (datetime('now', 'localtime'))
+        promo_code = ?, promo_discount_percent = ?,
+        topbar_announcement = ?, customer_service_name = ?, announcement_badge_1 = ?, announcement_badge_2 = ?,
+        nav_subtitle = ?, hero_title_2 = ?, hero_title_3 = ?, secondary_phone = ?, currency = ?,
+        logo_url = ?, facebook_url = ?, x_url = ?, instagram_url = ?, social_handle = ?, topbar_text = ?,
+        updated_at = (datetime('now', 'localtime'))
     WHERE id = 1
   `).run(
     site_name, site_slogan, phone, whatsapp, email, address,
@@ -743,13 +750,50 @@ router.put("/admin/website/config", (req, res) => {
     Number(package_markup_val ?? 5), package_markup_type || "percent",
     Number(payment_card_enabled ?? 1), Number(payment_bank_enabled ?? 1),
     Number(payment_cash_enabled ?? 1), bank_name, bank_iban, bank_account_name,
-    promo_code, Number(promo_discount_percent ?? 10)
+    promo_code, Number(promo_discount_percent ?? 10),
+    topbar_announcement, customer_service_name, announcement_badge_1, announcement_badge_2,
+    nav_subtitle, hero_title_2, hero_title_3, secondary_phone, currency,
+    logo_url, facebook_url, x_url, instagram_url, social_handle, topbar_text
   );
 
   logAudit(user.id, user.name, "WEBSITE_CMS_UPDATED", "تحديث إعدادات ومحتوى الموقع الإلكتروني للعملاء");
 
   const updated = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
   res.json({ success: true, settings: updated });
+});
+
+// 19.0 Admin Trigger Cloud Sync to Netlify via Git Push
+router.post("/admin/website/sync-netlify", async (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+
+  try {
+    const fs = require('fs');
+    const { execSync } = require('child_process');
+
+    // 1. Export current settings to public/website-data.json for static fallback on Netlify
+    const settings = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
+    const services = db.prepare("SELECT * FROM website_custom_services WHERE is_active = 1").all();
+    
+    const data = {
+      settings,
+      services,
+      last_sync: new Date().toISOString()
+    };
+
+    fs.writeFileSync(path.resolve(process.cwd(), 'public/website-data.json'), JSON.stringify(data, null, 2));
+
+    // 2. Perform Git Push to trigger Netlify Build
+    // Using --force to ensure sync if remote diverged
+    execSync('git add public/website-data.json && git commit -m "Auto-Sync: Website content update for Netlify deploy" && git push origin master --force && git push origin master:main --force', { stdio: 'inherit' });
+
+    logAudit(user.id, user.name, "WEBSITE_CLOUD_SYNC", "إرسال التحديثات والتزامن السحابي المباشر مع Netlify");
+
+    res.json({ success: true, message: "تمت عملية التزامن السحابي المباشر وتحديث الموقع على Netlify بنجاح." });
+  } catch (err: any) {
+    console.error("Netlify Sync Error:", err);
+    res.status(500).json({ error: "فشل التزامن مع Netlify", message: err.message });
+  }
 });
 
 // 19.1 Admin Get All Custom Services

@@ -44,6 +44,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -158,10 +159,25 @@ export default function WebsiteManagementPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-website-config"] });
       queryClient.invalidateQueries({ queryKey: ["public-website-config"] });
-      toast({ title: "تم الحفظ بنجاح ✅", description: "تم تحديث إعدادات ومحتوى الموقع الإلكتروني للعملاء" });
+      toast({ title: "تم الحفظ بنجاح ✅", description: "جاري التزامن التلقائي مع Netlify..." });
+      syncNetlifyMutation.mutate();
     },
     onError: (err: any) => {
       toast({ title: "فشل الحفظ", description: err.message, variant: "destructive" });
+    }
+  });
+
+  // Netlify Cloud Sync Mutation
+  const syncNetlifyMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth("/api/admin/website/sync-netlify", {
+        method: "POST"
+      }),
+    onSuccess: (data: any) => {
+      toast({ title: "تم التزامن بنجاح 🚀", description: data.message });
+    },
+    onError: (err: any) => {
+      toast({ title: "فشل التزامن السحابي", description: err.message, variant: "destructive" });
     }
   });
 
@@ -1096,6 +1112,24 @@ export default function WebsiteManagementPage() {
                     </div>
 
                     <div>
+                      <label className="font-bold text-slate-700 block mb-1">إعلان الشريط العلوي (Topbar Announcement)</label>
+                      <Input
+                        value={formState.topbar_announcement || ""}
+                        onChange={(e) => setFormState({ ...formState, topbar_announcement: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">اسم مستشار / خدمة العملاء</label>
+                      <Input
+                        value={formState.customer_service_name || ""}
+                        onChange={(e) => setFormState({ ...formState, customer_service_name: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div>
                       <label className="font-bold text-slate-700 block mb-1">الشعار اللفظي (Slogan)</label>
                       <Input
                         value={formState.site_slogan || ""}
@@ -1114,17 +1148,25 @@ export default function WebsiteManagementPage() {
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">رقم الواتساب لاستقبال الحجوزات</label>
+                      <label className="font-bold text-slate-700 block mb-1">رقم الهاتف الثانوي</label>
+                      <Input
+                        value={formState.secondary_phone || ""}
+                        onChange={(e) => setFormState({ ...formState, secondary_phone: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">رقم الواتساب</label>
                       <Input
                         value={formState.whatsapp || ""}
                         onChange={(e) => setFormState({ ...formState, whatsapp: e.target.value })}
-                        placeholder="مثال: 966501234567"
                         className="rounded-xl h-10 text-xs font-mono"
                       />
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">البريد الإلكتروني الرسمي</label>
+                      <label className="font-bold text-slate-700 block mb-1">البريد الإلكتروني</label>
                       <Input
                         value={formState.email || ""}
                         onChange={(e) => setFormState({ ...formState, email: e.target.value })}
@@ -1133,16 +1175,54 @@ export default function WebsiteManagementPage() {
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">العنوان والمقر الرئيسي</label>
+                      <label className="font-bold text-slate-700 block mb-1">رابط صورة الشعار (Logo URL)</label>
                       <Input
-                        value={formState.address || ""}
-                        onChange={(e) => setFormState({ ...formState, address: e.target.value })}
+                        value={formState.logo_url || ""}
+                        onChange={(e) => setFormState({ ...formState, logo_url: e.target.value })}
+                        placeholder="رابط مباشر للصورة"
+                        className="rounded-xl h-10 text-xs font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">المعرف الاجتماعي (Social Handle)</label>
+                      <Input
+                        value={formState.social_handle || ""}
+                        onChange={(e) => setFormState({ ...formState, social_handle: e.target.value })}
+                        placeholder="@AkwanTravel"
                         className="rounded-xl h-10 text-xs"
                       />
                     </div>
 
                     <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-700 block mb-1">العنوان الرئيسي في البنر (Hero Title)</label>
+                      <label className="font-bold text-slate-700 block mb-1">وصف الموقع في التذييل (Footer Description)</label>
+                      <Textarea
+                        value={formState.footer_desc || ""}
+                        onChange={(e) => setFormState({ ...formState, footer_desc: e.target.value })}
+                        className="rounded-xl min-h-[60px] text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">نص الشارة 1</label>
+                      <Input
+                        value={formState.announcement_badge_1 || ""}
+                        onChange={(e) => setFormState({ ...formState, announcement_badge_1: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">نص الشارة 2</label>
+                      <Input
+                        value={formState.announcement_badge_2 || ""}
+                        onChange={(e) => setFormState({ ...formState, announcement_badge_2: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="font-bold text-slate-700 block mb-1">العنوان الرئيسي 1 (Hero 1)</label>
                       <Input
                         value={formState.hero_title || ""}
                         onChange={(e) => setFormState({ ...formState, hero_title: e.target.value })}
@@ -1151,7 +1231,25 @@ export default function WebsiteManagementPage() {
                     </div>
 
                     <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-700 block mb-1">الوصف الترويجي في البنر (Hero Subtitle)</label>
+                      <label className="font-bold text-slate-700 block mb-1">العنوان الرئيسي 2 (Hero 2)</label>
+                      <Input
+                        value={formState.hero_title_2 || ""}
+                        onChange={(e) => setFormState({ ...formState, hero_title_2: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="font-bold text-slate-700 block mb-1">العنوان الرئيسي 3 (Hero 3)</label>
+                      <Input
+                        value={formState.hero_title_3 || ""}
+                        onChange={(e) => setFormState({ ...formState, hero_title_3: e.target.value })}
+                        className="rounded-xl h-10 text-xs"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="font-bold text-slate-700 block mb-1">الوصف التعريفي للبنر</label>
                       <textarea
                         rows={2}
                         value={formState.hero_subtitle || ""}
@@ -1184,12 +1282,11 @@ export default function WebsiteManagementPage() {
                   <div className="flex flex-wrap items-center gap-3 pt-2">
                     <Button
                       type="button"
-                      onClick={() => {
-                        toast({ title: "جاري إرسال التحديثات لـ Netlify...", description: "تم إرسال إشعار النشر والتزامن السحابي بنجاح وتحديث الموقع المباشر." });
-                      }}
+                      disabled={syncNetlifyMutation.isPending}
+                      onClick={() => syncNetlifyMutation.mutate()}
                       className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs gap-1.5 rounded-xl px-4 cursor-pointer"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
+                      {syncNetlifyMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                       <span>إرسال وتحديث الموقع على Netlify</span>
                     </Button>
                     <span className="text-[11px] text-slate-400">آخر تزامن: الآن (تحديث تلقائي)</span>

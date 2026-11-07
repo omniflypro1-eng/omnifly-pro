@@ -53,19 +53,43 @@ function fmt(n?: number) {
 const LIVE_RENDER_API = "https://omnifly-pro-jdpf.onrender.com";
 
 async function fetchPortalApi(endpoint: string, options?: RequestInit): Promise<Response> {
+  // If we are on Netlify or similar static host, try to fetch static exported data first for config/catalog
+  const isNetlify = typeof window !== "undefined" && (window.location.hostname.includes("netlify") || window.location.hostname.includes("omnifly.app"));
+  
+  if (isNetlify && endpoint.includes("/api/public/website")) {
+    try {
+      // Mapping API endpoints to static JSON file if available
+      const staticRes = await fetch("/website-data.json");
+      if (staticRes.ok) {
+        const fullData = await staticRes.json();
+        if (endpoint.includes("/config")) {
+          return new Response(JSON.stringify(fullData.settings));
+        }
+        if (endpoint.includes("/catalog")) {
+          return new Response(JSON.stringify({ 
+            flights: [], hotels: [], packages: [], visas: [], buses: [], 
+            rides: fullData.services || [] 
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn("Static data fetch failed, falling back to API", e);
+    }
+  }
+
   try {
     const res = await fetch(endpoint, options);
     if (res.ok || (res.status !== 404 && res.status !== 502)) {
       return res;
     }
     // If running on static host where /api is not proxied, query live Render backend directly
-    if (typeof window !== "undefined" && (window.location.hostname.includes("netlify") || !res.ok)) {
+    if (isNetlify || !res.ok) {
       const fallbackUrl = `${LIVE_RENDER_API}${endpoint}`;
       return await fetch(fallbackUrl, options);
     }
     return res;
   } catch (err) {
-    if (typeof window !== "undefined" && window.location.hostname.includes("netlify")) {
+    if (isNetlify) {
       const fallbackUrl = `${LIVE_RENDER_API}${endpoint}`;
       return await fetch(fallbackUrl, options);
     }
@@ -97,6 +121,12 @@ export default function CustomerPortalPage() {
     queryKey: ["public-website-config"],
     queryFn: () => fetchPortalApi("/api/public/website/config").then((r) => r.json())
   });
+
+  React.useEffect(() => {
+    if (siteConfig?.site_name) {
+      document.title = `${siteConfig.site_name} | OmniFly Pro`;
+    }
+  }, [siteConfig]);
 
   // Fetch Catalog
   const { data: catalog } = useQuery<any>({
@@ -287,23 +317,23 @@ export default function CustomerPortalPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-extrabold text-amber-400">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span>أكوان للسفريات والسياحة • Akwan Travel & Tourism</span>
+              <span>{siteConfig?.topbar_announcement || "وكالة نجاز للمشاوير والسفريات والسياحة • Njaz Travel & Tourism"}</span>
             </div>
             <span className="hidden lg:inline-block text-slate-400">|</span>
             <span className="hidden md:flex items-center gap-1 text-slate-300">
               <Headphones className="w-3.5 h-3.5 text-blue-400" />
-              <span>خدمة العملاء: هشام السامعي HESHAM ALSAMEAI</span>
+              <span>{siteConfig?.customer_service_name || "خدمة العملاء المعتمدة"}</span>
             </span>
           </div>
 
           <div className="flex items-center gap-3 text-[11px] font-bold">
             <span className="text-emerald-400 flex items-center gap-1">
               <Phone className="w-3 h-3" />
-              <span>{defaultPhone}</span>
+              <span>{siteConfig?.phone || defaultPhone}</span>
             </span>
             <div className="hidden sm:flex items-center gap-1.5">
-              <span className="px-2 py-0.5 rounded-full bg-blue-900/90 text-blue-200 border border-blue-700/60">حجوزات 24/7</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-900/90 text-emerald-200 border border-emerald-700/60">تأشيرات وطيران</span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-900/90 text-blue-200 border border-blue-700/60">{siteConfig?.announcement_badge_1 || "حجوزات 24/7"}</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-900/90 text-emerald-200 border border-emerald-700/60">{siteConfig?.announcement_badge_2 || "تأشيرات وطيران"}</span>
             </div>
           </div>
         </div>
@@ -313,30 +343,29 @@ export default function CustomerPortalPage() {
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 sm:h-20">
-            {/* Akwan & Njaz Combined Branding Logo */}
+            {/* Logo & Branding */}
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-blue-600 overflow-hidden bg-white p-0.5 shadow-md shrink-0 flex items-center justify-center">
                 <img
-                  src="/assets/aistudio/image_9d8afe8b.png"
-                  alt="أكوان للسفريات والسياحة"
+                  src={siteConfig?.logo_url || "/assets/aistudio/image_9d8afe8b.png"}
+                  alt={siteConfig?.site_name || "أكوان للسفريات والسياحة"}
                   className="w-full h-full object-cover rounded-full"
                   onError={(e) => {
-                    // Fallback if image fails
-                    (e.target as HTMLElement).style.display = "none";
+                    (e.target as HTMLImageElement).src = "/omnisystem-logo.png";
                   }}
                 />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-base sm:text-xl font-black tracking-tight text-blue-950">
-                    أكوان للسفريات والسياحة
+                    {siteConfig?.site_name || "أكوان للسفريات والسياحة"}
                   </span>
                   <Badge className="bg-blue-600 text-white font-bold text-[10px] hidden sm:inline-flex">
-                    Akwan Travel
+                    {siteConfig?.social_handle?.replace('@', '') || "Akwan Travel"}
                   </Badge>
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-500 font-semibold leading-none mt-0.5">
-                  بوابة الحجوزات والمشاوير الذكية • بالتعاون مع نجاز
+                  {siteConfig?.nav_subtitle || "بوابة الحجوزات والمشاوير الذكية"}
                 </p>
               </div>
             </div>
@@ -353,7 +382,7 @@ export default function CustomerPortalPage() {
 
               <button
                 type="button"
-                onClick={() => handleSendWhatsApp(whatsappPhone, "مرحباً، أود استفسار أو حجز رحلة مع أكوان للسفريات والسياحة")}
+                onClick={() => handleSendWhatsApp(whatsappPhone, `مرحباً، أود استفسار أو حجز رحلة مع ${siteConfig?.site_name || "الوكالة"}`)}
                 className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
@@ -401,19 +430,19 @@ export default function CustomerPortalPage() {
               {/* Top Pill */}
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-900/80 border border-blue-400/40 text-blue-100 text-xs font-bold mb-4 shadow-sm backdrop-blur-xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                <span>أكوان للسفريات والسياحة — خدمات سريعة وحجوزات موثوقة 100%</span>
+                <span>{siteConfig?.site_slogan || "وكالة نجاز للمشاوير والسفريات والسياحة — خدمات سريعة وحجوزات موثوقة 100%"}</span>
                 <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
               </div>
 
               <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight mb-4 tracking-tight">
-                سافر بكل راحة وأمان.. <br className="hidden sm:inline" />
+                {siteConfig?.hero_title_2 || "سافر بكل راحة وأمان.."}<br className="hidden sm:inline" />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-emerald-300 to-sky-300">
-                  مع أكوان للسفريات والسياحة
+                  {siteConfig?.hero_title_3 || "مع وكالة نجاز للسياحة"}
                 </span>
               </h1>
 
               <p className="text-slate-300 text-xs sm:text-base leading-relaxed font-medium max-w-2xl mx-auto lg:mx-0">
-                حجوزات طيران عالمية ومحلية، مشاوير ونقل مطارات وحرمين، فنادق فاخرة، باقات سياحية وتأشيرات سفر بكل سرعة وسهولة وبأفضل الأسعار.
+                {siteConfig?.hero_subtitle || "حجوزات طيران عالمية ومحلية، مشاوير ونقل مطارات وحرمين، فنادق فاخرة، باقات سياحية وتأشيرات سفر بكل سرعة وسهولة وبأفضل الأسعار."}
               </p>
 
               {/* Official Customer Contact Badge */}
@@ -422,12 +451,16 @@ export default function CustomerPortalPage() {
                   <Phone className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[11px] text-emerald-300 font-bold">خدمة العملاء والمشاوير 24/7</div>
-                  <div className="text-xs sm:text-sm font-black text-white">هشام السامعي HESHAM ALSAMEAI</div>
+                  <div className="text-[11px] text-emerald-300 font-bold">{siteConfig?.topbar_text || "خدمة العملاء والمشاوير 24/7"}</div>
+                  <div className="text-xs sm:text-sm font-black text-white">{siteConfig?.customer_service_name || "هشام السامعي HESHAM ALSAMEAI"}</div>
                   <div className="text-[11px] text-amber-300 font-bold dir-ltr flex gap-2">
-                    <span>{defaultPhone}</span>
-                    <span>•</span>
-                    <span>+967 718 100 074</span>
+                    <span>{siteConfig?.phone || defaultPhone}</span>
+                    {siteConfig?.secondary_phone && (
+                      <>
+                        <span>•</span>
+                        <span>{siteConfig.secondary_phone}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -440,14 +473,17 @@ export default function CustomerPortalPage() {
                 <div className="relative bg-slate-900 border-2 border-blue-400/50 p-4 rounded-3xl text-center space-y-3 max-w-xs shadow-2xl">
                   <div className="w-36 h-36 mx-auto rounded-full border-4 border-amber-400 p-1 bg-white shadow-xl overflow-hidden">
                     <img
-                      src="/assets/aistudio/image_9d8afe8b.png"
-                      alt="أكوان للسفريات والسياحة"
+                      src={siteConfig?.logo_url || "/assets/aistudio/image_9d8afe8b.png"}
+                      alt={siteConfig?.site_name || "أكوان للسفريات والسياحة"}
                       className="w-full h-full object-cover rounded-full"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "/omnisystem-logo.png";
+                      }}
                     />
                   </div>
                   <div>
-                    <h3 className="font-black text-base text-white">أكوان للسفريات والسياحة</h3>
-                    <p className="text-xs text-amber-300 font-semibold">Akwan Travel & Tourism</p>
+                    <h3 className="font-black text-base text-white">{siteConfig?.site_name || "أكوان للسفريات والسياحة"}</h3>
+                    <p className="text-xs text-amber-300 font-semibold">{siteConfig?.social_handle || "@Njaz"}</p>
                   </div>
                   <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-300 flex items-center justify-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -835,7 +871,7 @@ export default function CustomerPortalPage() {
                     <Search className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-black text-slate-900">استعلام وتتبع حجز أكوان للسفريات</h3>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">{`استعلام وتتبع حجز ${siteConfig?.site_name || "أكوان للسفريات"}`}</h3>
                     <p className="text-xs text-slate-500 mt-1">أدخل رقم الحجز المرجعي أو رقم الجوال للاطلاع على تفاصيل تذكرتك وتحميلها</p>
                   </div>
 
@@ -1006,7 +1042,7 @@ export default function CustomerPortalPage() {
                   <CheckCircle2 className="w-8 sm:w-10 h-8 sm:h-10" />
                 </div>
                 <div>
-                  <h3 className="text-lg sm:text-xl font-black text-slate-900">تم تسجيل حجزك بنجاح في أكوان للسفريات! 🎉</h3>
+                  <h3 className="text-lg sm:text-xl font-black text-slate-900">{`تم تسجيل حجزك بنجاح في ${siteConfig?.site_name || "أكوان للسفريات"}! 🎉`}</h3>
                   <p className="text-xs text-slate-500 mt-1">تذكرتك وقسيمة الخدمة معتمدة وجاهزة للاستخدام</p>
                 </div>
 
@@ -1089,7 +1125,7 @@ export default function CustomerPortalPage() {
             <div className="text-center max-w-xl mx-auto mb-6">
               <Badge className="bg-blue-50 text-blue-900 border-blue-200 mb-2">طلب مشوار أو رحلة مخصصة</Badge>
               <h3 className="text-xl sm:text-2xl font-black text-slate-900">هل تحتاج ترتيب مشوار خاص أو باقة سفر عائلية؟</h3>
-              <p className="text-xs text-slate-500 mt-1">فريق أكوان للسفريات والسياحة برئاسة هشام السامعي جاهز لخدمتك على مدار الساعة</p>
+              <p className="text-xs text-slate-500 mt-1">{`فريق ${siteConfig?.site_name || "أكوان للسفريات"} برئاسة ${siteConfig?.customer_service_name?.split(':')[1]?.trim() || siteConfig?.customer_service_name || "هشام السامعي"} جاهز لخدمتك على مدار الساعة`}</p>
             </div>
 
             <form onSubmit={handleInquirySubmit} className="space-y-4">
@@ -1159,23 +1195,26 @@ export default function CustomerPortalPage() {
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full border border-amber-400 overflow-hidden bg-white p-0.5 shrink-0">
                 <img
-                  src="/assets/aistudio/image_9d8afe8b.png"
-                  alt="أكوان للسفريات والسياحة"
+                  src={siteConfig?.logo_url || "/assets/aistudio/image_9d8afe8b.png"}
+                  alt={siteConfig?.site_name || "أكوان للسفريات والسياحة"}
                   className="w-full h-full object-cover rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "/omnisystem-logo.png";
+                  }}
                 />
               </div>
-              <span className="font-black text-sm text-white">أكوان للسفريات والسياحة</span>
+              <span className="font-black text-sm text-white">{siteConfig?.site_name || "أكوان للسفريات والسياحة"}</span>
             </div>
             <p className="text-slate-400 text-xs leading-relaxed mt-2">
-              وكالة أكوان للسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران الدولية والمحلية، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة.
+              {siteConfig?.footer_desc || "وكالة أكوان للسفريات والسياحة — نسعد بخدمتكم في حجوزات الطيران الدولية والمحلية، المشاوير السياحية وتوصيل المطارات، الفنادق، وباقات السفر المتكاملة."}
             </p>
             <div className="pt-2 text-amber-400 font-bold text-xs">
-              خدمة العملاء: هشام السامعي HESHAM ALSAMEAI
+              {siteConfig?.customer_service_name || "خدمة العملاء: هشام السامعي HESHAM ALSAMEAI"}
             </div>
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-3">الخدمات السريعة</h4>
+            <h4 className="text-white font-bold mb-3">{siteConfig?.footer_quick_services_title || "الخدمات السريعة"}</h4>
             <ul className="space-y-2 text-slate-300">
               <li><button onClick={() => setActiveTab("rides")} className="hover:text-amber-400 transition-colors">المشاوير وتوصيل المطارات VIP</button></li>
               <li><button onClick={() => setActiveTab("flights")} className="hover:text-amber-400 transition-colors">حجز تذاكر الطيران المباشرة</button></li>
@@ -1186,28 +1225,30 @@ export default function CustomerPortalPage() {
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-3">التواصل المباشر</h4>
+            <h4 className="text-white font-bold mb-3">{siteConfig?.footer_contact_title || "التواصل المباشر"}</h4>
             <ul className="space-y-2 text-slate-300">
-              <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-amber-400" /> <span>{defaultPhone}</span></li>
-              <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-amber-400" /> <span>+967 718 100 074</span></li>
-              <li className="flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-amber-400" /> <span>info@akwan-travel.com</span></li>
+              <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-amber-400" /> <span>{siteConfig?.phone || defaultPhone}</span></li>
+              {siteConfig?.secondary_phone && (
+                <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-amber-400" /> <span>{siteConfig.secondary_phone}</span></li>
+              )}
+              <li className="flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-amber-400" /> <span>{siteConfig?.email || "info@akwan-travel.com"}</span></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="text-white font-bold mb-3">ضمانات الخدمة</h4>
+            <h4 className="text-white font-bold mb-3">{siteConfig?.footer_guarantee_title || "ضمانات الخدمة"}</h4>
             <p className="text-slate-400 mb-3 text-xs leading-relaxed">
-              جميع الحجوزات مؤكدة برقم مرجعي PNR رسمي معتمد، مع متابعة دقيقة وتواصل مباشر بالواتساب طوال رحلتك.
+              {siteConfig?.footer_guarantee_desc || "جميع الحجوزات مؤكدة برقم مرجعي PNR رسمي معتمد، مع متابعة دقيقة وتواصل مباشر بالواتساب طوال رحلتك."}
             </p>
             <div className="flex items-center gap-2 p-2.5 rounded-xl bg-blue-900 border border-blue-800 text-emerald-400 text-xs font-bold">
               <ShieldCheck className="w-4 h-4 shrink-0" />
-              <span>حجوزات آمنة ومرخصة 100%</span>
+              <span>{siteConfig?.footer_license_badge || "حجوزات آمنة ومرخصة 100%"}</span>
             </div>
           </div>
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 mt-8 border-t border-blue-900 text-center text-slate-400 text-[11px] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span>جميع الحقوق محفوظة © {new Date().getFullYear()} أكوان للسفريات والسياحة — Akwan Travel & Tourism.</span>
+          <span>{siteConfig?.footer_copyright || `جميع الحقوق محفوظة © ${new Date().getFullYear()} أكوان للسفريات والسياحة — Akwan Travel & Tourism.`}</span>
           <span className="text-amber-400 font-bold">بوابة الحجوزات الذكية والسريعة</span>
         </div>
       </footer>
@@ -1256,7 +1297,7 @@ export default function CustomerPortalPage() {
 
         <button
           type="button"
-          onClick={() => handleSendWhatsApp(whatsappPhone, "مرحباً أكوان للسفريات، أود الاستفسار والحجز معكم")}
+          onClick={() => handleSendWhatsApp(whatsappPhone, `مرحباً ${siteConfig?.site_name || "أكوان للسفريات"}، أود الاستفسار والحجز معكم`)}
           className="flex flex-col items-center gap-0.5 py-1 px-2 text-emerald-600 hover:text-emerald-700 transition-all font-bold cursor-pointer"
         >
           <MessageSquare className="w-5 h-5" />
