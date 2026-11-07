@@ -50,6 +50,29 @@ function fmt(n?: number) {
   return Number(n ?? 0).toLocaleString("ar-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const LIVE_RENDER_API = "https://omnifly-pro-jdpf.onrender.com";
+
+async function fetchPortalApi(endpoint: string, options?: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(endpoint, options);
+    if (res.ok || (res.status !== 404 && res.status !== 502)) {
+      return res;
+    }
+    // If running on static host where /api is not proxied, query live Render backend directly
+    if (typeof window !== "undefined" && (window.location.hostname.includes("netlify") || !res.ok)) {
+      const fallbackUrl = `${LIVE_RENDER_API}${endpoint}`;
+      return await fetch(fallbackUrl, options);
+    }
+    return res;
+  } catch (err) {
+    if (typeof window !== "undefined" && window.location.hostname.includes("netlify")) {
+      const fallbackUrl = `${LIVE_RENDER_API}${endpoint}`;
+      return await fetch(fallbackUrl, options);
+    }
+    throw err;
+  }
+}
+
 export default function CustomerPortalPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("rides");
@@ -72,13 +95,13 @@ export default function CustomerPortalPage() {
   // Fetch Website Branding & Settings
   const { data: siteConfig } = useQuery<any>({
     queryKey: ["public-website-config"],
-    queryFn: () => fetch("/api/public/website/config").then((r) => r.json())
+    queryFn: () => fetchPortalApi("/api/public/website/config").then((r) => r.json())
   });
 
   // Fetch Catalog
   const { data: catalog } = useQuery<any>({
     queryKey: ["public-website-catalog"],
-    queryFn: () => fetch("/api/public/website/catalog").then((r) => r.json())
+    queryFn: () => fetchPortalApi("/api/public/website/catalog").then((r) => r.json())
   });
 
   // Fallback Rides if DB empty
@@ -136,7 +159,7 @@ export default function CustomerPortalPage() {
   // Book Mutation
   const bookMutation = useMutation({
     mutationFn: (payload: any) =>
-      fetch("/api/public/website/bookings", {
+      fetchPortalApi("/api/public/website/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -208,7 +231,7 @@ export default function CustomerPortalPage() {
     setIsLookingUp(true);
     setLookupResults(null);
     try {
-      const res = await fetch(`/api/public/website/lookup?query=${encodeURIComponent(lookupQuery.trim())}`);
+      const res = await fetchPortalApi(`/api/public/website/lookup?query=${encodeURIComponent(lookupQuery.trim())}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "لم يتم العثور على حجز");
       setLookupResults(data);
@@ -226,7 +249,7 @@ export default function CustomerPortalPage() {
       return;
     }
     try {
-      const res = await fetch("/api/public/website/inquiries", {
+      const res = await fetchPortalApi("/api/public/website/inquiries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inquiryForm)

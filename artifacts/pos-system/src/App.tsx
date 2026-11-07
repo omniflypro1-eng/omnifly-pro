@@ -510,7 +510,11 @@ function Router() {
         <ProtectedRoute><BrochuresPage /></ProtectedRoute>
       </Route>
       <Route path="/">
-        <ProtectedRoute requireAdmin><TravelDashboardPage /></ProtectedRoute>
+        {typeof window !== "undefined" && (window.location.hostname.includes("netlify.app") || window.location.hostname.includes("netlify.com") || window.location.search.includes("mode=portal") || window.location.search.includes("portal=1")) ? (
+          <CustomerPortalPage />
+        ) : (
+          <ProtectedRoute requireAdmin><TravelDashboardPage /></ProtectedRoute>
+        )}
       </Route>
       <Route component={NotFound} />
     </Switch>

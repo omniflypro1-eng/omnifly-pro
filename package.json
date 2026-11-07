@@ -10,6 +10,7 @@
     "install:all": "npm install",
     "postinstall": "node -e \"if (process.env.ELECTRON_BUILD === '1') { try { require('child_process').execSync('npx electron-rebuild -f -w better-sqlite3', { stdio: 'inherit' }); } catch(e){} }\"",
     "dev": "tsx server.ts",
+    "build:client": "vite build && node -e \"const fs = require('fs'); if (fs.existsSync('dist/artifacts/pos-system/src/index.html')) { fs.copyFileSync('dist/artifacts/pos-system/src/index.html', 'dist/index.html'); }\"",
     "build": "vite build && node -e \"const fs = require('fs'); if (fs.existsSync('dist/artifacts/pos-system/src/index.html')) { fs.copyFileSync('dist/artifacts/pos-system/src/index.html', 'dist/index.html'); }\" && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && npm run build:electron",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
