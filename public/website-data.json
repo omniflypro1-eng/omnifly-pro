@@ -36,7 +36,7 @@
     "facebook_url": "https://facebook.com/Akwan",
     "x_url": "https://x.com/Akwan",
     "instagram_url": "https://instagram.com/Akwan",
-    "logo_url": "",
+    "logo_url": "/uploads/website/WhatsApp Image 2026-08-29 at 3.39.47 AM.jpeg",
     "rides_image_url": "",
     "flight_image_url": "",
     "hotel_image_url": "",
@@ -64,5 +64,5 @@
     "currency": "SAR"
   },
   "services": [],
-  "last_sync": "2026-11-07T03:17:49.997Z"
+  "last_sync": "2026-11-07T03:39:36.352Z"
 }
