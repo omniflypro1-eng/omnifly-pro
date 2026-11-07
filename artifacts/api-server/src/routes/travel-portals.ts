@@ -11,11 +11,6 @@ const router = Router();
 // AUTOMATIC & INSTANT CLOUD SYNC ENGINE (NETLIFY & CLOUD BACKEND)
 // ============================================================================
 
-const GITHUB_OWNER = "omniflypro1-eng";
-const GITHUB_REPO = "omnifly-pro";
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || (["ghp", "zwk7dSn4wpOWSdIzNiyKhF8JiboF5P4BusY5"].join("_"));
-const LIVE_RENDER_API = "https://omnifly-pro-jdpf.onrender.com";
-
 let gitSyncTimeout: NodeJS.Timeout | null = null;
 let isGitSyncRunning = false;
 let hasPendingGitSync = false;
@@ -53,73 +48,19 @@ export function exportWebsiteDataToFile() {
     }
 
     console.log("[Auto-Sync] Exported fresh website data to JSON files successfully.");
-    return { data, dataJson };
+    return data;
   } catch (err: any) {
     console.error("[Auto-Sync] Error exporting website data:", err.message);
     return null;
   }
 }
 
-// 2. Direct GitHub Contents REST API Commit (Runs anywhere without requiring Git CLI)
-export async function commitWebsiteDataToGitHub(dataJson: string) {
-  const branches = ["main", "master"];
-  let anySuccess = false;
-
-  for (const branch of branches) {
-    try {
-      const getUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/website-data.json?ref=${branch}`;
-      const getRes = await fetch(getUrl, {
-        headers: {
-          Authorization: `Bearer ${GITHUB_TOKEN}`,
-          "User-Agent": "OmniFly-Pro-SyncEngine",
-          Accept: "application/vnd.github.v3+json"
-        }
-      });
-
-      let sha: string | undefined = undefined;
-      if (getRes.ok) {
-        const fileInfo: any = await getRes.json();
-        sha = fileInfo.sha;
-      }
-
-      const putUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/website-data.json`;
-      const putRes = await fetch(putUrl, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${GITHUB_TOKEN}`,
-          "User-Agent": "OmniFly-Pro-SyncEngine",
-          "Content-Type": "application/json",
-          Accept: "application/vnd.github.v3+json"
-        },
-        body: JSON.stringify({
-          message: "Auto-Sync: Instant website content & pricing update for Netlify",
-          content: Buffer.from(dataJson, "utf8").toString("base64"),
-          branch,
-          ...(sha ? { sha } : {})
-        })
-      });
-
-      if (putRes.ok) {
-        console.log(`[Auto-Sync] Successfully pushed website-data.json directly to GitHub (${branch})`);
-        anySuccess = true;
-      } else {
-        const errText = await putRes.text();
-        console.warn(`[Auto-Sync] GitHub API push on branch ${branch}:`, putRes.status, errText);
-      }
-    } catch (err: any) {
-      console.warn(`[Auto-Sync] GitHub API commit notice on branch ${branch}:`, err.message);
-    }
-  }
-
-  return anySuccess;
-}
-
-// 3. Direct HTTP push to live Render backend for sub-second real-time update
+// 2. Direct HTTP push to live Render backend for sub-second real-time update
 async function pushToLiveRender(data: any) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
-    const renderUrl = `${LIVE_RENDER_API}/api/public/website/sync-push`;
+    const renderUrl = "https://omnifly-pro-jdpf.onrender.com/api/public/website/sync-push";
     
     const resp = await fetch(renderUrl, {
       method: "POST",
@@ -139,96 +80,12 @@ async function pushToLiveRender(data: any) {
       console.warn("[Auto-Sync] Live Render returned status:", resp.status);
     }
   } catch (err: any) {
-    // Non-fatal: Render might be cold or sleeping, GitHub push triggers Netlify deploy
+    // Non-fatal: Render might be cold or offline, Git push will handle the deploy
     console.log("[Auto-Sync] Direct HTTP push to live Render skipped/failed:", err.message);
   }
 }
 
-// 4. Pull customer online bookings and inquiries from cloud backend to local desktop system
-export async function pullCloudBookingsAndInquiries() {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const pullUrl = `${LIVE_RENDER_API}/api/public/website/sync-pull?secret=omnifly_live_sync_2026`;
-
-    const res = await fetch(pullUrl, {
-      headers: { "Cache-Control": "no-cache" },
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      return { pulledBookings: 0, pulledInquiries: 0 };
-    }
-
-    const payload: any = await res.json();
-    let newBookingsCount = 0;
-    let newInquiriesCount = 0;
-
-    // Process incoming bookings
-    if (Array.isArray(payload.bookings)) {
-      for (const b of payload.bookings) {
-        if (!b.booking_ref) continue;
-        const exists = db.prepare("SELECT id FROM website_online_bookings WHERE booking_ref = ?").get(b.booking_ref);
-        if (!exists) {
-          db.prepare(`
-            INSERT INTO website_online_bookings (
-              booking_ref, service_type, service_title, customer_name,
-              customer_phone, customer_email, passport_number, nationality,
-              origin, destination, departure_date, return_date,
-              passengers_count, passengers_details, total_amount, currency,
-              payment_method, payment_status, booking_status, pnr, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(
-            b.booking_ref, b.service_type || "خدمة سياحية", b.service_title || "حجز أونلاين",
-            b.customer_name, b.customer_phone, b.customer_email || null,
-            b.passport_number || null, b.nationality || "سعودي",
-            b.origin || null, b.destination || null,
-            b.departure_date || null, b.return_date || null,
-            Number(b.passengers_count || 1),
-            b.passengers_details ? (typeof b.passengers_details === "string" ? b.passengers_details : JSON.stringify(b.passengers_details)) : null,
-            Number(b.total_amount || 0), b.currency || "SAR",
-            b.payment_method || "credit_card", b.payment_status || "paid",
-            b.booking_status || "confirmed", b.pnr || null, b.notes || null
-          );
-          newBookingsCount++;
-
-          // Auto-insert customer to local CRM if not present
-          try {
-            const cust = db.prepare("SELECT id FROM customers WHERE phone = ?").get(b.customer_phone);
-            if (!cust) {
-              db.prepare("INSERT INTO customers (name, phone, email, notes) VALUES (?, ?, ?, 'تم التسجيل تلقائياً من حجز الموقع')")
-                .run(b.customer_name, b.customer_phone, b.customer_email || null);
-            }
-          } catch {}
-        }
-      }
-    }
-
-    // Process incoming inquiries
-    if (Array.isArray(payload.inquiries)) {
-      for (const inq of payload.inquiries) {
-        if (!inq.phone || !inq.message) continue;
-        const exists = db.prepare("SELECT id FROM website_inquiries WHERE phone = ? AND message = ?").get(inq.phone, inq.message);
-        if (!exists) {
-          db.prepare("INSERT INTO website_inquiries (name, phone, email, service_interest, message, status) VALUES (?, ?, ?, ?, ?, ?)")
-            .run(inq.name, inq.phone, inq.email || null, inq.service_interest || "استفسار موقع", inq.message, inq.status || "new");
-          newInquiriesCount++;
-        }
-      }
-    }
-
-    if (newBookingsCount > 0 || newInquiriesCount > 0) {
-      console.log(`[Auto-Sync] Received ${newBookingsCount} new online bookings and ${newInquiriesCount} inquiries from cloud.`);
-    }
-
-    return { pulledBookings: newBookingsCount, pulledInquiries: newInquiriesCount };
-  } catch (err: any) {
-    return { pulledBookings: 0, pulledInquiries: 0 };
-  }
-}
-
-// 5. Worker for running Git Push & GitHub REST commit safely
+// 3. Worker for running Git Push safely without concurrency collisions
 async function executeGitPushWorker(userId?: number, userName?: string) {
   if (isGitSyncRunning) {
     hasPendingGitSync = true;
@@ -239,98 +96,57 @@ async function executeGitPushWorker(userId?: number, userName?: string) {
   hasPendingGitSync = false;
 
   try {
-    // Export fresh data
-    const exportResult = exportWebsiteDataToFile();
-    if (exportResult?.dataJson) {
-      // 1. Commit directly via GitHub REST API (always works on Windows desktop without Git installed)
-      await commitWebsiteDataToGitHub(exportResult.dataJson);
+    // Remove stale git lock file if abandoned
+    const lockPath = path.resolve(process.cwd(), '.git/index.lock');
+    if (fs.existsSync(lockPath)) {
+      try { fs.unlinkSync(lockPath); } catch {}
     }
 
-    // 2. Also try local Git push if Git CLI is installed and repo is present (non-blocking)
-    try {
-      const lockPath = path.resolve(process.cwd(), '.git/index.lock');
-      if (fs.existsSync(lockPath)) {
-        try { fs.unlinkSync(lockPath); } catch {}
-      }
-
-      const gitCmd = 'git add . && git commit --allow-empty -m "Auto-Sync: Website content update for Netlify deploy" && git push origin master --force && git push origin master:main --force';
-      const output = execSync(gitCmd, { encoding: 'utf8', stdio: 'pipe', timeout: 35000 });
-      console.log("[Auto-Sync] Git Output:", output.trim().split('\n').slice(-2).join(' '));
-    } catch (gitErr: any) {
-      console.log("[Auto-Sync] Local git CLI push skipped (GitHub API push handled deployment):", gitErr.message);
-    }
-
-    // 3. Pull any pending customer bookings from cloud
-    await pullCloudBookingsAndInquiries();
+    console.log("[Auto-Sync] Initiating automated Git Push to Netlify & GitHub...");
+    const gitCmd = 'git add . && git commit --allow-empty -m "Auto-Sync: Website content update for Netlify deploy" && git push origin HEAD:main --force && git push origin HEAD:master --force';
+    const output = execSync(gitCmd, { encoding: 'utf8', stdio: 'pipe', timeout: 35000 });
+    console.log("[Auto-Sync] Git Output:", output.trim().split('\n').slice(-2).join(' '));
 
     if (userId && userName) {
       logAudit(userId, userName, "WEBSITE_AUTO_SYNC", "تزامن سحابي تلقائي ولحظي مع Netlify");
     }
   } catch (err: any) {
-    console.warn("[Auto-Sync] Worker notice:", err.message);
+    console.warn("[Auto-Sync] Git Push notice:", err.message);
   } finally {
     isGitSyncRunning = false;
+    // If another sync was requested while this push was active, run one final batch
     if (hasPendingGitSync) {
       hasPendingGitSync = false;
-      setTimeout(() => executeGitPushWorker(userId, userName), 1500);
+      setTimeout(() => executeGitPushWorker(userId, userName), 1000);
     }
   }
 }
 
-// 6. Main Debounced Auto-Sync Function (called automatically on any edit)
+// 4. Main Debounced Auto-Sync Function (called automatically on any edit)
 export function scheduleAutoSync(userId?: number, userName?: string) {
   // 1. Instantly export to JSON
-  const exportResult = exportWebsiteDataToFile();
+  const data = exportWebsiteDataToFile();
 
   // 2. Instantly push to live cloud server via HTTP (sub-second)
-  if (exportResult?.data) {
-    pushToLiveRender(exportResult.data);
+  if (data) {
+    pushToLiveRender(data);
   }
 
-  // 3. Debounce the Git/GitHub Push to Netlify by 1.5 seconds so rapid edits are grouped cleanly
+  // 3. Debounce the Git Push to Netlify by 2 seconds so rapid edits are grouped cleanly
   if (gitSyncTimeout) {
     clearTimeout(gitSyncTimeout);
   }
   gitSyncTimeout = setTimeout(() => {
     executeGitPushWorker(userId, userName);
-  }, 1500);
+  }, 2000);
 }
 
 // Backward-compatible triggerNetlifySync
 export async function triggerNetlifySync(userId: number, userName: string) {
-  try {
-    const exportResult = exportWebsiteDataToFile();
-    if (exportResult?.data) {
-      pushToLiveRender(exportResult.data);
-    }
-    if (exportResult?.dataJson) {
-      commitWebsiteDataToGitHub(exportResult.dataJson).catch(e => console.warn(e));
-    }
-    const pullResult = await pullCloudBookingsAndInquiries();
-    
-    // Schedule background git push
-    scheduleAutoSync(userId, userName);
-
-    const extraMsg = pullResult.pulledBookings > 0 
-      ? ` (تم استلام ${pullResult.pulledBookings} حجز جديد)`
-      : "";
-
-    return { 
-      success: true, 
-      message: `تم التزامن السحابي التلقائي واللحظي مع موقع Netlify بنجاح${extraMsg}` 
-    };
-  } catch (err: any) {
-    console.warn("[Auto-Sync] triggerNetlifySync handled non-fatal error:", err.message);
-    return { success: true, message: "تم التزامن السحابي التلقائي مع موقع Netlify بنجاح." };
-  }
+  scheduleAutoSync(userId, userName);
+  return { success: true, message: "تم إرسال التحديثات السحابية اللحظية والتزامن التلقائي مع Netlify بنجاح." };
 }
 
-// Periodic background pull (every 45s) to pull any customer bookings made on Netlify
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    pullCloudBookingsAndInquiries().catch(() => {});
-  }, 45000);
-}
 
 
 // ============================================================================
@@ -1272,30 +1088,13 @@ router.post("/public/website/sync-push", (req, res) => {
       }
     }
 
+    // Export to local files
     exportWebsiteDataToFile();
+
     res.json({ success: true, message: "تم استقبال وتطبيق التزامن اللحظي بنجاح" });
   } catch (err: any) {
     console.error("[Auto-Sync Push Error]:", err);
     res.status(500).json({ error: "فشل استقبال التزامن", message: err.message });
-  }
-});
-
-// 19.6 Real-time cloud sync pull provider (used by desktop systems to pull online bookings & inquiries)
-router.get("/public/website/sync-pull", (req, res) => {
-  try {
-    const secret = req.query.secret || req.headers["x-sync-secret"];
-    if (secret !== "omnifly_live_sync_2026") {
-      res.status(403).json({ error: "غير مصرح" });
-      return;
-    }
-
-    const bookings = db.prepare("SELECT * FROM website_online_bookings ORDER BY id DESC LIMIT 500").all();
-    const inquiries = db.prepare("SELECT * FROM website_inquiries ORDER BY id DESC LIMIT 500").all();
-
-    res.json({ success: true, bookings, inquiries });
-  } catch (err: any) {
-    console.error("[Auto-Sync Pull Error]:", err);
-    res.status(500).json({ error: "فشل تزويد بيانات التزامن", message: err.message });
   }
 });
 

@@ -103,7 +103,7 @@ async function fetchPortalApi(endpoint: string, options?: RequestInit): Promise<
         clearTimeout(directTimeout);
         if (directRes.ok) return directRes;
       } catch (directErr) {
-        console.warn("Direct live Render API call notice:", directErr);
+        console.warn("Direct live Render API call failed:", directErr);
       }
     }
   }
@@ -121,9 +121,9 @@ async function fetchPortalApi(endpoint: string, options?: RequestInit): Promise<
           return new Response(JSON.stringify(fullData.settings || {}));
         }
         if (endpoint.includes("/catalog")) {
-          return new Response(JSON.stringify({ 
+          return new Response(JSON.stringify(fullData.catalog || { 
             rides: fullData.services || [],
-            flights: fullData.flights || fullData.ndcOffers || [],
+            flights: fullData.flights || [],
             hotels: fullData.hotels || [],
             packages: fullData.packages || [],
             visas: fullData.visas || [],

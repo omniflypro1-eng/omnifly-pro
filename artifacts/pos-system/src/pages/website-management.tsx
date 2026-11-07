@@ -162,11 +162,9 @@ export default function WebsiteManagementPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-website-config"] });
       queryClient.invalidateQueries({ queryKey: ["public-website-config"] });
       queryClient.invalidateQueries({ queryKey: ["public-website-catalog"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-website-bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-website-inquiries"] });
       toast({ 
-        title: "تم الحفظ والتزامن التلقائي اللحظي بنجاح ✅", 
-        description: "تم تحديث البيانات وإرسالها تلقائياً وفورياً إلى موقع Netlify واستقبال الحجوزات." 
+        title: "تم الحفظ والتزامن التلقائي بنجاح ✅", 
+        description: "تم تحديث البيانات وإرسالها تلقائياً وفورياً إلى موقع Netlify." 
       });
       syncNetlifyMutation.mutate();
     },
@@ -175,22 +173,17 @@ export default function WebsiteManagementPage() {
     }
   });
 
-  // Netlify Cloud Sync Mutation (Instant Bi-Directional Push & Pull)
+  // Netlify Cloud Sync Mutation
   const syncNetlifyMutation = useMutation({
     mutationFn: () =>
       fetchWithAuth("/api/admin/website/sync-netlify", {
         method: "POST"
       }),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["admin-website-bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-website-inquiries"] });
-      toast({ 
-        title: "التزامن السحابي التلقائي نشط ولحظي ⚡", 
-        description: data.message || "تم تحديث ونشر الموقع على Netlify واستقبال الحجوزات بنجاح" 
-      });
+      toast({ title: "التزامن السحابي التلقائي نشط 🚀", description: data.message || "تم تحديث ونشر الموقع بنجاح" });
     },
     onError: (err: any) => {
-      console.warn("Netlify sync warning:", err);
+      toast({ title: "تنبيه التزامن", description: err.message, variant: "destructive" });
     }
   });
 
@@ -251,9 +244,10 @@ export default function WebsiteManagementPage() {
       setServiceModalOpen(false);
       setEditingService(null);
       toast({
-        title: "تم الحفظ بنجاح ✅",
-        description: editingService ? "تم تحديث بيانات الخدمة بنجاح" : "تمت إضافة الخدمة الجديدة للموقع بنجاح"
+        title: "تم الحفظ والتزامن التلقائي ✅",
+        description: editingService ? "تم تحديث بيانات الخدمة وإرسالها للموقع فورياً" : "تمت إضافة الخدمة الجديدة للموقع فورياً"
       });
+      syncNetlifyMutation.mutate();
     },
     onError: (err: any) => {
       toast({ title: "فشل الحفظ", description: err.message, variant: "destructive" });
@@ -267,7 +261,8 @@ export default function WebsiteManagementPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-website-services"] });
       queryClient.invalidateQueries({ queryKey: ["public-website-catalog"] });
-      toast({ title: "تم الحذف بنجاح 🗑️", description: "تمت إزالة الخدمة من الموقع" });
+      toast({ title: "تم الحذف والتزامن التلقائي 🗑️", description: "تمت إزالة الخدمة وتحديث الموقع فورياً" });
+      syncNetlifyMutation.mutate();
     },
     onError: (err: any) => {
       toast({ title: "فشل الحذف", description: err.message, variant: "destructive" });
@@ -1343,21 +1338,21 @@ export default function WebsiteManagementPage() {
                       </div>
                       <div>
                         <h4 className="text-sm font-black text-white flex items-center gap-2">
-                          <span>التزامن السحابي التلقائي واللحظي مع موقع Netlify</span>
+                          <span>التحديث والتزامن السحابي التلقائي مع الموقع (Netlify)</span>
                         </h4>
                         <span className="text-[11px] text-slate-400 block mt-0.5">
-                          ربط مباشر بين النظام المكتبي المحلي والموقع المنشور على Netlify
+                          ربط سحابي فوري ومستمر مع مستودع GitHub وموقع Netlify
                         </span>
                       </div>
                     </div>
                     <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 flex items-center gap-1.5 shadow-xs">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span>تزامن تلقائي نشط ولحظي ⚡</span>
+                      <span>تحديث تلقائي لحظي نشط ⚡</span>
                     </span>
                   </div>
 
                   <p className="text-xs text-slate-300 leading-relaxed">
-                    يتم إرسال ونشر كافة التعديلات في النظام (الهوية، الشعار، المحتوى، الأسعار، الخدمات، بوابات الدفع) تلقائياً وبشكل فوري ولحظي إلى موقعك على Netlify، مع استقبال طلبات وحجوزات العملاء في النظام المحلي تلقائياً دون الحاجة لأي تدخل يدوي.
+                    يتم إرسال ونشر كافة التحديثات في النظام (الهوية، الشعار، الأسعار، الخدمات، والمحتوى) تلقائياً وفورياً إلى موقعك على Netlify بمجرد الحفظ دون الحاجة لأي إجراء يدوي، مع إمكانية المزامنة الفورية عند الرغبة.
                   </p>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
@@ -1369,7 +1364,7 @@ export default function WebsiteManagementPage() {
                         className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs gap-1.5 rounded-xl px-4 cursor-pointer shadow-sm"
                       >
                         {syncNetlifyMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                        <span>مزامنة سحابية واستقبال الحجوزات الآن</span>
+                        <span>مزامنة وتحديث فوري الآن</span>
                       </Button>
 
                       <a href="https://omniflysystempro.netlify.app" target="_blank" rel="noreferrer">
@@ -1387,7 +1382,7 @@ export default function WebsiteManagementPage() {
 
                     <span className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>آخر تزامن: الآن (تحديث لحظي مستمر)</span>
+                      <span>آخر تزامن: متزامن تلقائياً (تحديث لحظي مستمر)</span>
                     </span>
                   </div>
                 </div>
