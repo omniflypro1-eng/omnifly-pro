@@ -1199,8 +1199,20 @@ export default function WebsiteManagementPage() {
                                 const file = e.target.files?.[0];
                                 if (file) {
                                   const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    setFormState({ ...formState, logo_url: reader.result as string });
+                                  reader.onloadend = async () => {
+                                    const base64Data = reader.result as string;
+                                    try {
+                                      const res: any = await fetchWithAuth("/api/admin/website/upload-logo", {
+                                        method: "POST",
+                                        body: JSON.stringify({ base64Data, fileName: file.name })
+                                      });
+                                      if (res.logo_url) {
+                                        setFormState({ ...formState, logo_url: res.logo_url });
+                                        toast({ title: "تم رفع الشعار بنجاح ✅", description: "تم حفظ الشعار في ملفات النظام." });
+                                      }
+                                    } catch (err: any) {
+                                      toast({ title: "فشل رفع الشعار", description: err.message, variant: "destructive" });
+                                    }
                                   };
                                   reader.readAsDataURL(file);
                                 }

@@ -400,16 +400,25 @@ export default function CustomerPortalPage() {
                 <span className="xs:hidden">تتبع</span>
               </Button>
 
-              <a href="/website-management">
-                <Button
-                  size="sm"
-                  className="gap-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl px-2.5 sm:px-3.5 h-9 shadow-xs cursor-pointer"
-                  title="الرجوع للوحة التحكم وإدارة النظام"
-                >
-                  <ArrowRight className="w-3.5 h-3.5" />
-                  <span>الرجوع للنظام</span>
-                </Button>
-              </a>
+              <Button
+                size="sm"
+                className="gap-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl px-2.5 sm:px-3.5 h-9 shadow-xs cursor-pointer"
+                title="الرجوع للوحة التحكم وإدارة النظام"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    if (window.location.hostname.includes("netlify") || window.location.hostname.includes("omnifly.app")) {
+                      // On live site, try to go to the expected management URL or just history back
+                      window.location.href = "/website-management";
+                    } else {
+                      // In local preview, just go back or use the internal router
+                      window.history.back();
+                    }
+                  }
+                }}
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+                <span>الرجوع للنظام</span>
+              </Button>
             </div>
           </div>
         </div>

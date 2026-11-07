@@ -1,8 +1,44 @@
 import { Router } from "express";
+import fs from "node:fs";
+import { execSync } from "node:child_process";
+import path from "node:path";
 import { db, createDoubleEntryJournal, logAudit } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 
 const router = Router();
+
+// Helper for triggering Netlify Cloud Sync via Git Push
+async function triggerNetlifySync(userId: number, userName: string) {
+  try {
+    // 1. Export current settings and catalog to public/website-data.json for static fallback on Netlify
+    const settings = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
+    const services = db.prepare("SELECT * FROM website_custom_services WHERE is_active = 1").all();
+    
+    const data = {
+      settings,
+      services,
+      last_sync: new Date().toISOString()
+    };
+
+    const publicDir = path.resolve(process.cwd(), 'public');
+    if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+    fs.writeFileSync(path.join(publicDir, 'website-data.json'), JSON.stringify(data, null, 2));
+
+    // 2. Perform Git Push to trigger Netlify Build
+    // Using --allow-empty to avoid failure if no files changed
+    console.log("[Netlify Sync] Starting Git Push sequence...");
+    const gitCmd = 'git add . && git commit --allow-empty -m "Auto-Sync: Website content update for Netlify deploy" && git push origin master --force && git push origin master:main --force';
+    const output = execSync(gitCmd, { encoding: 'utf8' });
+    console.log("[Netlify Sync] Git Output:", output);
+
+    logAudit(userId, userName, "WEBSITE_CLOUD_SYNC", "إرسال التحديثات والتزامن السحابي المباشر مع Netlify");
+    return { success: true, message: "تمت عملية التزامن السحابي المباشر وتحديث الموقع على Netlify بنجاح." };
+  } catch (err: any) {
+    console.error("[Netlify Sync] Error:", err.message);
+    throw err;
+  }
+}
+
 
 // ============================================================================
 // B2B CORPORATE PORTAL API ENDPOINTS
@@ -759,7 +795,59 @@ router.put("/admin/website/config", (req, res) => {
   logAudit(user.id, user.name, "WEBSITE_CMS_UPDATED", "تحديث إعدادات ومحتوى الموقع الإلكتروني للعملاء");
 
   const updated = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
+  
+  // Auto-trigger Netlify sync on update
+  triggerNetlifySync(user.id, user.name).catch(e => console.error("Auto-sync error:", e));
+
   res.json({ success: true, settings: updated });
+});
+
+// 18.1 Admin Upload Website Logo (Local File System Storage)
+router.post("/admin/website/upload-logo", async (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+
+  try {
+    const { base64Data, fileName = "website-logo.png" } = req.body;
+    if (!base64Data) {
+      res.status(400).json({ error: "بيانات الصورة (Base64) مطلوبة" });
+      return;
+    }
+
+    // Extract base64 part
+    const matches = base64Data.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
+    const buffer = matches ? Buffer.from(matches[2], 'base64') : Buffer.from(base64Data, 'base64');
+
+    // Ensure directory exists
+    const uploadDir = path.resolve(process.cwd(), 'public/uploads/website');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+    // Save file
+    const filePath = path.join(uploadDir, fileName);
+    fs.writeFileSync(filePath, buffer);
+
+    // Update database with local URL (relative to public)
+    const publicUrl = `/uploads/website/${fileName}`;
+    db.prepare("UPDATE website_settings SET logo_url = ? WHERE id = 1").run(publicUrl);
+
+    // Also update system-wide logo if requested
+    try {
+      db.prepare("UPDATE document_print_settings SET logo_url = ? WHERE id = 1").run(publicUrl);
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('logoUrl', ?)").run(publicUrl);
+    } catch (e) {
+      console.warn("Could not sync logo to system settings:", e);
+    }
+
+    logAudit(user.id, user.name, "LOGO_UPLOADED", `تم رفع شعار جديد للموقع: ${fileName}`);
+    
+    // Auto-trigger sync to push the new file to Netlify
+    triggerNetlifySync(user.id, user.name).catch(e => console.error("Auto-sync error:", e));
+
+    res.json({ success: true, logo_url: publicUrl });
+  } catch (err: any) {
+    console.error("Logo Upload Error:", err);
+    res.status(500).json({ error: "فشل رفع الشعار", message: err.message });
+  }
 });
 
 // 19.0 Admin Trigger Cloud Sync to Netlify via Git Push
@@ -768,28 +856,8 @@ router.post("/admin/website/sync-netlify", async (req, res) => {
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
 
   try {
-    const fs = require('fs');
-    const { execSync } = require('child_process');
-
-    // 1. Export current settings to public/website-data.json for static fallback on Netlify
-    const settings = db.prepare("SELECT * FROM website_settings WHERE id = 1").get();
-    const services = db.prepare("SELECT * FROM website_custom_services WHERE is_active = 1").all();
-    
-    const data = {
-      settings,
-      services,
-      last_sync: new Date().toISOString()
-    };
-
-    fs.writeFileSync(path.resolve(process.cwd(), 'public/website-data.json'), JSON.stringify(data, null, 2));
-
-    // 2. Perform Git Push to trigger Netlify Build
-    // Using --force to ensure sync if remote diverged
-    execSync('git add public/website-data.json && git commit -m "Auto-Sync: Website content update for Netlify deploy" && git push origin master --force && git push origin master:main --force', { stdio: 'inherit' });
-
-    logAudit(user.id, user.name, "WEBSITE_CLOUD_SYNC", "إرسال التحديثات والتزامن السحابي المباشر مع Netlify");
-
-    res.json({ success: true, message: "تمت عملية التزامن السحابي المباشر وتحديث الموقع على Netlify بنجاح." });
+    const result = await triggerNetlifySync(user.id, user.name);
+    res.json(result);
   } catch (err: any) {
     console.error("Netlify Sync Error:", err);
     res.status(500).json({ error: "فشل التزامن مع Netlify", message: err.message });
