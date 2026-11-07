@@ -12,6 +12,7 @@ import {
   convertCurrency,
   getSystemPrimaryCurrency,
 } from "../lib/currency-converter";
+import { scheduleAutoSync } from "./travel-portals";
 
 const router = Router();
 
@@ -214,6 +215,13 @@ router.put("/settings", (req, res) => {
         }
       }
       invalidateBusinessDayConfigCache();
+
+      // Trigger instantaneous automatic cloud sync to Netlify & Portal
+      try {
+        scheduleAutoSync(user.id, user.name || user.username);
+      } catch (syncErr) {
+        console.warn("Auto-sync trigger warning from settings:", syncErr);
+      }
     }
     res.json(getSettingsObj());
   } catch (err: any) {

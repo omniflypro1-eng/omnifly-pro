@@ -9,5 +9,8 @@ coverage/
 !.env.example
 *.db-shm
 *.db-wal
+*.corrupt.*
+*.db.corrupt*
 .aistudio/
+
 

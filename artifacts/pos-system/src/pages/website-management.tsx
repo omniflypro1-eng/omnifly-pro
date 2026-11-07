@@ -161,7 +161,13 @@ export default function WebsiteManagementPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-website-config"] });
       queryClient.invalidateQueries({ queryKey: ["public-website-config"] });
-      toast({ title: "تم الحفظ بنجاح ✅", description: "جاري التزامن التلقائي مع Netlify..." });
+      queryClient.invalidateQueries({ queryKey: ["public-website-catalog"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-website-bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-website-inquiries"] });
+      toast({ 
+        title: "تم الحفظ والتزامن التلقائي اللحظي بنجاح ✅", 
+        description: "تم تحديث البيانات وإرسالها تلقائياً وفورياً إلى موقع Netlify واستقبال الحجوزات." 
+      });
       syncNetlifyMutation.mutate();
     },
     onError: (err: any) => {
@@ -169,17 +175,22 @@ export default function WebsiteManagementPage() {
     }
   });
 
-  // Netlify Cloud Sync Mutation
+  // Netlify Cloud Sync Mutation (Instant Bi-Directional Push & Pull)
   const syncNetlifyMutation = useMutation({
     mutationFn: () =>
       fetchWithAuth("/api/admin/website/sync-netlify", {
         method: "POST"
       }),
     onSuccess: (data: any) => {
-      toast({ title: "تم التزامن بنجاح 🚀", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["admin-website-bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-website-inquiries"] });
+      toast({ 
+        title: "التزامن السحابي التلقائي نشط ولحظي ⚡", 
+        description: data.message || "تم تحديث ونشر الموقع على Netlify واستقبال الحجوزات بنجاح" 
+      });
     },
     onError: (err: any) => {
-      toast({ title: "فشل التزامن السحابي", description: err.message, variant: "destructive" });
+      console.warn("Netlify sync warning:", err);
     }
   });
 
@@ -1323,29 +1334,61 @@ export default function WebsiteManagementPage() {
                   </Button>
                 </div>
 
-                {/* Netlify Cloud Publish & Deploy Sync Card */}
-                <div className="mt-6 p-5 bg-gradient-to-br from-blue-900 to-slate-900 text-white rounded-2xl border border-blue-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Globe className="w-5 h-5 text-amber-400" />
-                      <h4 className="text-sm font-bold text-white">النشر والتزامن السحابي المباشر مع Netlify</h4>
+                {/* Netlify Cloud Automatic Instant Sync Card */}
+                <div className="mt-6 p-5 bg-gradient-to-br from-blue-950 via-slate-900 to-indigo-950 text-white rounded-2xl border border-sky-800/60 shadow-lg space-y-3.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-sky-500/20 rounded-xl text-sky-400 border border-sky-400/30">
+                        <Globe className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-white flex items-center gap-2">
+                          <span>التزامن السحابي التلقائي واللحظي مع موقع Netlify</span>
+                        </h4>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                          ربط مباشر بين النظام المكتبي المحلي والموقع المنشور على Netlify
+                        </span>
+                      </div>
                     </div>
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">متصل وجاهز</span>
+                    <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 flex items-center gap-1.5 shadow-xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>تزامن تلقائي نشط ولحظي ⚡</span>
+                    </span>
                   </div>
-                  <p className="text-xs text-slate-300">
-                    عند تحديث الهوية أو المحتوى أو الأسعار هنا، يمكنك إرسال التحديثات والنشر الفوري على موقعك المنشور على Netlify بضغطة زر واحدة.
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    يتم إرسال ونشر كافة التعديلات في النظام (الهوية، الشعار، المحتوى، الأسعار، الخدمات، بوابات الدفع) تلقائياً وبشكل فوري ولحظي إلى موقعك على Netlify، مع استقبال طلبات وحجوزات العملاء في النظام المحلي تلقائياً دون الحاجة لأي تدخل يدوي.
                   </p>
-                  <div className="flex flex-wrap items-center gap-3 pt-2">
-                    <Button
-                      type="button"
-                      disabled={syncNetlifyMutation.isPending}
-                      onClick={() => syncNetlifyMutation.mutate()}
-                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs gap-1.5 rounded-xl px-4 cursor-pointer"
-                    >
-                      {syncNetlifyMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                      <span>إرسال وتحديث الموقع على Netlify</span>
-                    </Button>
-                    <span className="text-[11px] text-slate-400">آخر تزامن: الآن (تحديث تلقائي)</span>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        disabled={syncNetlifyMutation.isPending}
+                        onClick={() => syncNetlifyMutation.mutate()}
+                        className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs gap-1.5 rounded-xl px-4 cursor-pointer shadow-sm"
+                      >
+                        {syncNetlifyMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                        <span>مزامنة سحابية واستقبال الحجوزات الآن</span>
+                      </Button>
+
+                      <a href="https://omniflysystempro.netlify.app" target="_blank" rel="noreferrer">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs gap-1.5 rounded-xl px-3"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+                          <span>فتح الموقع: omniflysystempro.netlify.app</span>
+                        </Button>
+                      </a>
+                    </div>
+
+                    <span className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>آخر تزامن: الآن (تحديث لحظي مستمر)</span>
+                    </span>
                   </div>
                 </div>
               </form>

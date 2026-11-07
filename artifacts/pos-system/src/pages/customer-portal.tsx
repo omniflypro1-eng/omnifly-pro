@@ -53,48 +53,90 @@ function fmt(n?: number) {
 const LIVE_RENDER_API = "https://omnifly-pro-jdpf.onrender.com";
 
 async function fetchPortalApi(endpoint: string, options?: RequestInit): Promise<Response> {
-  // If we are on Netlify or similar static host, try to fetch static exported data first for config/catalog
   const isNetlify = typeof window !== "undefined" && (window.location.hostname.includes("netlify") || window.location.hostname.includes("omnifly.app"));
   
-  if (isNetlify && endpoint.includes("/api/public/website")) {
+  // 1. Prioritize real-time live API with cache-buster and no-cache headers
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const urlWithBuster = endpoint + (endpoint.includes('?') ? '&' : '?') + `_t=${Date.now()}`;
+    
+    const res = await fetch(urlWithBuster, {
+      ...options,
+      headers: {
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        ...options?.headers
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      return res;
+    }
+
+    // If on Netlify or status not ok, query live Render backend directly
+    if (isNetlify || !res.ok) {
+      const fallbackUrl = `${LIVE_RENDER_API}${endpoint}${endpoint.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+      const directController = new AbortController();
+      const directTimeout = setTimeout(() => directController.abort(), 3500);
+      const directRes = await fetch(fallbackUrl, {
+        ...options,
+        headers: { "Cache-Control": "no-cache", ...options?.headers },
+        signal: directController.signal
+      });
+      clearTimeout(directTimeout);
+      if (directRes.ok) return directRes;
+    }
+  } catch (err) {
+    if (isNetlify) {
+      try {
+        const fallbackUrl = `${LIVE_RENDER_API}${endpoint}${endpoint.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+        const directController = new AbortController();
+        const directTimeout = setTimeout(() => directController.abort(), 3500);
+        const directRes = await fetch(fallbackUrl, {
+          ...options,
+          headers: { "Cache-Control": "no-cache", ...options?.headers },
+          signal: directController.signal
+        });
+        clearTimeout(directTimeout);
+        if (directRes.ok) return directRes;
+      } catch (directErr) {
+        console.warn("Direct live Render API call notice:", directErr);
+      }
+    }
+  }
+
+  // 2. Static Fallback to website-data.json if live backend is temporarily sleeping or offline
+  if (endpoint.includes("/api/public/website")) {
     try {
-      // Mapping API endpoints to static JSON file if available
-      const staticRes = await fetch("/website-data.json");
+      const staticRes = await fetch(`/website-data.json?_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
       if (staticRes.ok) {
         const fullData = await staticRes.json();
         if (endpoint.includes("/config")) {
-          return new Response(JSON.stringify(fullData.settings));
+          return new Response(JSON.stringify(fullData.settings || {}));
         }
         if (endpoint.includes("/catalog")) {
           return new Response(JSON.stringify({ 
-            flights: [], hotels: [], packages: [], visas: [], buses: [], 
-            rides: fullData.services || [] 
+            rides: fullData.services || [],
+            flights: fullData.flights || fullData.ndcOffers || [],
+            hotels: fullData.hotels || [],
+            packages: fullData.packages || [],
+            visas: fullData.visas || [],
+            buses: fullData.buses || []
           }));
         }
       }
     } catch (e) {
-      console.warn("Static data fetch failed, falling back to API", e);
+      console.warn("Static data fetch failed, falling back to basic fetch", e);
     }
   }
 
-  try {
-    const res = await fetch(endpoint, options);
-    if (res.ok || (res.status !== 404 && res.status !== 502)) {
-      return res;
-    }
-    // If running on static host where /api is not proxied, query live Render backend directly
-    if (isNetlify || !res.ok) {
-      const fallbackUrl = `${LIVE_RENDER_API}${endpoint}`;
-      return await fetch(fallbackUrl, options);
-    }
-    return res;
-  } catch (err) {
-    if (isNetlify) {
-      const fallbackUrl = `${LIVE_RENDER_API}${endpoint}`;
-      return await fetch(fallbackUrl, options);
-    }
-    throw err;
-  }
+  return fetch(endpoint, options);
 }
 
 export default function CustomerPortalPage() {
@@ -116,10 +158,13 @@ export default function CustomerPortalPage() {
     });
   };
 
-  // Fetch Website Branding & Settings
+  // Fetch Website Branding & Settings (Auto-refetches in background every 12 seconds for instantaneous real-time sync)
   const { data: siteConfig } = useQuery<any>({
     queryKey: ["public-website-config"],
-    queryFn: () => fetchPortalApi("/api/public/website/config").then((r) => r.json())
+    queryFn: () => fetchPortalApi("/api/public/website/config").then((r) => r.json()),
+    refetchInterval: 12000,
+    staleTime: 4000,
+    refetchOnWindowFocus: true
   });
 
   React.useEffect(() => {
@@ -128,10 +173,13 @@ export default function CustomerPortalPage() {
     }
   }, [siteConfig]);
 
-  // Fetch Catalog
+  // Fetch Catalog (Auto-refetches in background every 15 seconds for instantaneous real-time sync)
   const { data: catalog } = useQuery<any>({
     queryKey: ["public-website-catalog"],
-    queryFn: () => fetchPortalApi("/api/public/website/catalog").then((r) => r.json())
+    queryFn: () => fetchPortalApi("/api/public/website/catalog").then((r) => r.json()),
+    refetchInterval: 15000,
+    staleTime: 4000,
+    refetchOnWindowFocus: true
   });
 
   // Fallback Rides if DB empty
