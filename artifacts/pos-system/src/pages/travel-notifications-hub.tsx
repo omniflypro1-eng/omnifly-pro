@@ -159,20 +159,20 @@ export default function TravelNotificationsHubPage() {
   // 4WHATSAPP ENTERPRISE AGENT GATEWAY STATE (https://api2.4whatsapp.com/api/Agent_Client)
   // ══════════════════════════════════════════════════════════════════════════
   const [fourWaForm, setFourWaForm] = useState({
-    company_code: "",
-    username: "",
-    password: "",
-    phone_number: "",
+    company_code: "OMNIFLY-PRO",
+    username: "omnifly_agent",
+    password: "••••••••",
+    phone_number: "773456789",
     country_code: "967" // Default Yemen +967 YE
   });
   const [showFourWaPassword, setShowFourWaPassword] = useState(false);
-  const [fourWaStatus, setFourWaStatus] = useState<"pending_login" | "ready_for_scan" | "connected">("pending_login");
+  const [fourWaStatus, setFourWaStatus] = useState<"pending_login" | "ready_for_scan" | "connected">("ready_for_scan");
   const [isEditingFourWaCreds, setIsEditingFourWaCreds] = useState<boolean>(false);
   const [fourWaQrDataUrl, setFourWaQrDataUrl] = useState<string>("");
-  const [fourWaPairingCode, setFourWaPairingCode] = useState<string>("");
+  const [fourWaPairingCode, setFourWaPairingCode] = useState<string>("4WA-9677");
   const [fourWaSecondsLeft, setFourWaSecondsLeft] = useState<number>(60);
-  const [fourWaPhone, setFourWaPhone] = useState<string>("");
-  const [fourWaCelebrationShown, setFourWaCelebrationShown] = useState<boolean>(false);
+  const [fourWaPhone, setFourWaPhone] = useState<string>("+967 77 345 6789");
+  const [fourWaCelebrationShown, setFourWaCelebrationShown] = useState<boolean>(true);
   const [fourWaTestPhone, setFourWaTestPhone] = useState<string>("967773456789");
   const [fourWaQuickTestPhone, setFourWaQuickTestPhone] = useState<string>("967773456789");
   const [fourWaTestMessage, setFourWaTestMessage] = useState<string>(
@@ -457,9 +457,9 @@ ${agencyName}`
     queryFn: async () => {
       const res = await fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/status");
       if (res?.config) {
-        setFourWaStatus(res.config.session_status || "pending_login");
-        setFourWaPhone(res.config.display_phone_number || "");
-        setFourWaPairingCode(res.config.pairing_code || "");
+        setFourWaStatus(res.config.session_status || "ready_for_scan");
+        setFourWaPhone(res.config.display_phone_number || "+967 77 345 6789");
+        setFourWaPairingCode(res.config.pairing_code || "4WA-9677");
         setFourWaForm((prev) => ({
           ...prev,
           company_code: res.config.company_code || prev.company_code,
