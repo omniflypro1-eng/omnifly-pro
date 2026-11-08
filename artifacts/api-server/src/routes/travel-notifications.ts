@@ -6,6 +6,7 @@ import { getBusinessDate } from "../lib/business-day";
 import { enrichPassengerWithLiveDates, formatRemainingDaysArabic, calcRemainingDays, calcDaysSpent } from "../lib/passenger-calculations";
 import fs from "node:fs";
 import path from "node:path";
+import QRCode from "qrcode";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
@@ -70,6 +71,40 @@ export function initWhatsAppAutomationSchema() {
     try {
       db.prepare("ALTER TABLE travel_whatsapp_automation_config ADD COLUMN client_type TEXT DEFAULT 'desktop'").run();
     } catch {}
+
+    // Travel services WhatsApp automation settings columns
+    const serviceColumns = [
+      "enable_flight_notifications INTEGER DEFAULT 1",
+      "flight_message_template TEXT DEFAULT 'عزيزنا المسافر {passenger_name} ✈️ نود تذكيركم بموعد رحلتكم رقم {flight_no} المتجهة إلى {destination} غداً بتاريخ {departure_date}. نتمنى لكم رحلة سعيدة وآمنة مع وكالة أومني فلاي للسفريات ✈️'",
+      "flight_timing_mode TEXT DEFAULT 'before_24h'",
+      "flight_attach_pdf INTEGER DEFAULT 1",
+      "enable_visa_notifications INTEGER DEFAULT 1",
+      "visa_message_template TEXT DEFAULT 'بشرى سارة عزيزنا {passenger_name}! 🎉 تم تأكيد صدور تأشيرة {country} الخاصة بجواز سفركم رقم {passport_no} بنجاح! يسعدنا خدمتكم في وكالة أومني فلاي 🌍'",
+      "visa_timing_mode TEXT DEFAULT 'immediate'",
+      "visa_attach_pdf INTEGER DEFAULT 1",
+      "enable_hotel_notifications INTEGER DEFAULT 1",
+      "hotel_message_template TEXT DEFAULT 'مرحباً عزيزنا {passenger_name} 🏨 تم تأكيد حجز فندقكم {hotel_name} - {city}. نتمنى لكم إقامة ممتعة ومريحة 🌟'",
+      "hotel_timing_mode TEXT DEFAULT 'immediate'",
+      "hotel_attach_pdf INTEGER DEFAULT 1",
+      "enable_bus_notifications INTEGER DEFAULT 1",
+      "bus_message_template TEXT DEFAULT 'عزيزنا المسافر {passenger_name} 🚌 تم إصدار تذكرة رحلة النقل البري بنجاح! خط السير: {route}، المقعد: {seat_no}. رافقتكم السلامة 🌟'",
+      "bus_timing_mode TEXT DEFAULT 'immediate'",
+      "bus_attach_pdf INTEGER DEFAULT 1",
+      "enable_package_notifications INTEGER DEFAULT 1",
+      "package_message_template TEXT DEFAULT 'أهلاً بك عزيزنا {passenger_name} 🌟 نرفق لكم تفاصيل برنامجكم السياحي والعمرة المعتمد من وكالة أومني فلاي. تقبل الله طاعتكم ونتمنى لكم رحلة ممتعة 🕋'",
+      "package_timing_mode TEXT DEFAULT 'immediate'",
+      "package_attach_pdf INTEGER DEFAULT 1",
+      "enable_accounting_notifications INTEGER DEFAULT 1",
+      "accounting_message_template TEXT DEFAULT 'عزيزنا العميل {passenger_name} المحترم 💵 تم استلام دفعتكم المالية بنجاح بموجب سند قبض رقم {voucher_no}. شاكرين حسن تعاملكم 🌟'",
+      "accounting_timing_mode TEXT DEFAULT 'immediate'",
+      "accounting_attach_pdf INTEGER DEFAULT 1",
+      "preferred_gateway TEXT DEFAULT '4whatsapp'"
+    ];
+    for (const col of serviceColumns) {
+      try {
+        db.prepare(`ALTER TABLE travel_whatsapp_automation_config ADD COLUMN ${col}`).run();
+      } catch {}
+    }
 
     // Ensure extra columns on travel_notification_logs
     try {
@@ -589,6 +624,31 @@ export interface WhatsAppAutomationConfig {
   is_authorized?: number;
   authorized_at?: string;
   client_type?: string;
+  enable_flight_notifications?: number;
+  flight_message_template?: string;
+  flight_timing_mode?: string;
+  flight_attach_pdf?: number;
+  enable_visa_notifications?: number;
+  visa_message_template?: string;
+  visa_timing_mode?: string;
+  visa_attach_pdf?: number;
+  enable_hotel_notifications?: number;
+  hotel_message_template?: string;
+  hotel_timing_mode?: string;
+  hotel_attach_pdf?: number;
+  enable_bus_notifications?: number;
+  bus_message_template?: string;
+  bus_timing_mode?: string;
+  bus_attach_pdf?: number;
+  enable_package_notifications?: number;
+  package_message_template?: string;
+  package_timing_mode?: string;
+  package_attach_pdf?: number;
+  enable_accounting_notifications?: number;
+  accounting_message_template?: string;
+  accounting_timing_mode?: string;
+  accounting_attach_pdf?: number;
+  preferred_gateway?: string;
   updated_at?: string;
 }
 
@@ -604,6 +664,25 @@ export function getWhatsAppAutomationConfig(): WhatsAppAutomationConfig {
         anti_ban_delay_sec: Number(row.anti_ban_delay_sec || 3),
         is_authorized: row.is_authorized !== undefined ? Number(row.is_authorized) : 1,
         client_type: row.client_type || "desktop",
+        enable_flight_notifications: row.enable_flight_notifications !== undefined ? Number(row.enable_flight_notifications) : 1,
+        flight_timing_mode: row.flight_timing_mode || "before_24h",
+        flight_attach_pdf: row.flight_attach_pdf !== undefined ? Number(row.flight_attach_pdf) : 1,
+        enable_visa_notifications: row.enable_visa_notifications !== undefined ? Number(row.enable_visa_notifications) : 1,
+        visa_timing_mode: row.visa_timing_mode || "immediate",
+        visa_attach_pdf: row.visa_attach_pdf !== undefined ? Number(row.visa_attach_pdf) : 1,
+        enable_hotel_notifications: row.enable_hotel_notifications !== undefined ? Number(row.enable_hotel_notifications) : 1,
+        hotel_timing_mode: row.hotel_timing_mode || "immediate",
+        hotel_attach_pdf: row.hotel_attach_pdf !== undefined ? Number(row.hotel_attach_pdf) : 1,
+        enable_bus_notifications: row.enable_bus_notifications !== undefined ? Number(row.enable_bus_notifications) : 1,
+        bus_timing_mode: row.bus_timing_mode || "immediate",
+        bus_attach_pdf: row.bus_attach_pdf !== undefined ? Number(row.bus_attach_pdf) : 1,
+        enable_package_notifications: row.enable_package_notifications !== undefined ? Number(row.enable_package_notifications) : 1,
+        package_timing_mode: row.package_timing_mode || "immediate",
+        package_attach_pdf: row.package_attach_pdf !== undefined ? Number(row.package_attach_pdf) : 1,
+        enable_accounting_notifications: row.enable_accounting_notifications !== undefined ? Number(row.enable_accounting_notifications) : 1,
+        accounting_timing_mode: row.accounting_timing_mode || "immediate",
+        accounting_attach_pdf: row.accounting_attach_pdf !== undefined ? Number(row.accounting_attach_pdf) : 1,
+        preferred_gateway: row.preferred_gateway || "4whatsapp"
       };
     }
   } catch (err) {
@@ -624,6 +703,31 @@ export function getWhatsAppAutomationConfig(): WhatsAppAutomationConfig {
     auto_apply_on_new_passenger: 1,
     is_authorized: 1,
     client_type: "desktop",
+    enable_flight_notifications: 1,
+    flight_message_template: "عزيزنا المسافر {passenger_name} ✈️ نود تذكيركم بموعد رحلتكم رقم {flight_no} المتجهة إلى {destination} غداً بتاريخ {departure_date}. نتمنى لكم رحلة سعيدة وآمنة مع وكالة أومني فلاي للسفريات ✈️",
+    flight_timing_mode: "before_24h",
+    flight_attach_pdf: 1,
+    enable_visa_notifications: 1,
+    visa_message_template: "بشرى سارة عزيزنا {passenger_name}! 🎉 تم تأكيد صدور تأشيرة {country} الخاصة بجواز سفركم رقم {passport_no} بنجاح! يسعدنا خدمتكم في وكالة أومني فلاي 🌍",
+    visa_timing_mode: "immediate",
+    visa_attach_pdf: 1,
+    enable_hotel_notifications: 1,
+    hotel_message_template: "مرحباً عزيزنا {passenger_name} 🏨 تم تأكيد حجز فندقكم {hotel_name} - {city}. نتمنى لكم إقامة ممتعة ومريحة 🌟",
+    hotel_timing_mode: "immediate",
+    hotel_attach_pdf: 1,
+    enable_bus_notifications: 1,
+    bus_message_template: "عزيزنا المسافر {passenger_name} 🚌 تم إصدار تذكرة رحلة النقل البري بنجاح! خط السير: {route}، المقعد: {seat_no}. رافقتكم السلامة 🌟",
+    bus_timing_mode: "immediate",
+    bus_attach_pdf: 1,
+    enable_package_notifications: 1,
+    package_message_template: "أهلاً بك عزيزنا {passenger_name} 🌟 نرفق لكم تفاصيل برنامجكم السياحي والعمرة المعتمد من وكالة أومني فلاي. تقبل الله طاعتكم ونتمنى لكم رحلة ممتعة 🕋",
+    package_timing_mode: "immediate",
+    package_attach_pdf: 1,
+    enable_accounting_notifications: 1,
+    accounting_message_template: "عزيزنا العميل {passenger_name} المحترم 💵 تم استلام دفعتكم المالية بنجاح بموجب سند قبض رقم {voucher_no}. شاكرين حسن تعاملكم 🌟",
+    accounting_timing_mode: "immediate",
+    accounting_attach_pdf: 1,
+    preferred_gateway: "4whatsapp"
   };
 }
 
@@ -646,6 +750,31 @@ export function saveWhatsAppAutomationConfig(cfg: Partial<WhatsAppAutomationConf
       auto_apply_on_new_passenger = ?,
       is_authorized = ?,
       client_type = ?,
+      enable_flight_notifications = ?,
+      flight_message_template = ?,
+      flight_timing_mode = ?,
+      flight_attach_pdf = ?,
+      enable_visa_notifications = ?,
+      visa_message_template = ?,
+      visa_timing_mode = ?,
+      visa_attach_pdf = ?,
+      enable_hotel_notifications = ?,
+      hotel_message_template = ?,
+      hotel_timing_mode = ?,
+      hotel_attach_pdf = ?,
+      enable_bus_notifications = ?,
+      bus_message_template = ?,
+      bus_timing_mode = ?,
+      bus_attach_pdf = ?,
+      enable_package_notifications = ?,
+      package_message_template = ?,
+      package_timing_mode = ?,
+      package_attach_pdf = ?,
+      enable_accounting_notifications = ?,
+      accounting_message_template = ?,
+      accounting_timing_mode = ?,
+      accounting_attach_pdf = ?,
+      preferred_gateway = ?,
       authorized_at = CASE WHEN ? = 1 AND authorized_at IS NULL THEN datetime('now', 'localtime') ELSE authorized_at END,
       updated_at = datetime('now', 'localtime')
     WHERE id = 1
@@ -663,8 +792,69 @@ export function saveWhatsAppAutomationConfig(cfg: Partial<WhatsAppAutomationConf
     merged.auto_apply_on_new_passenger ? 1 : 0,
     merged.is_authorized !== undefined ? (merged.is_authorized ? 1 : 0) : 1,
     merged.client_type || "desktop",
+    merged.enable_flight_notifications !== undefined ? (merged.enable_flight_notifications ? 1 : 0) : 1,
+    merged.flight_message_template || "",
+    merged.flight_timing_mode || "before_24h",
+    merged.flight_attach_pdf !== undefined ? (merged.flight_attach_pdf ? 1 : 0) : 1,
+    merged.enable_visa_notifications !== undefined ? (merged.enable_visa_notifications ? 1 : 0) : 1,
+    merged.visa_message_template || "",
+    merged.visa_timing_mode || "immediate",
+    merged.visa_attach_pdf !== undefined ? (merged.visa_attach_pdf ? 1 : 0) : 1,
+    merged.enable_hotel_notifications !== undefined ? (merged.enable_hotel_notifications ? 1 : 0) : 1,
+    merged.hotel_message_template || "",
+    merged.hotel_timing_mode || "immediate",
+    merged.hotel_attach_pdf !== undefined ? (merged.hotel_attach_pdf ? 1 : 0) : 1,
+    merged.enable_bus_notifications !== undefined ? (merged.enable_bus_notifications ? 1 : 0) : 1,
+    merged.bus_message_template || "",
+    merged.bus_timing_mode || "immediate",
+    merged.bus_attach_pdf !== undefined ? (merged.bus_attach_pdf ? 1 : 0) : 1,
+    merged.enable_package_notifications !== undefined ? (merged.enable_package_notifications ? 1 : 0) : 1,
+    merged.package_message_template || "",
+    merged.package_timing_mode || "immediate",
+    merged.package_attach_pdf !== undefined ? (merged.package_attach_pdf ? 1 : 0) : 1,
+    merged.enable_accounting_notifications !== undefined ? (merged.enable_accounting_notifications ? 1 : 0) : 1,
+    merged.accounting_message_template || "",
+    merged.accounting_timing_mode || "immediate",
+    merged.accounting_attach_pdf !== undefined ? (merged.accounting_attach_pdf ? 1 : 0) : 1,
+    merged.preferred_gateway || "4whatsapp",
     merged.is_authorized ? 1 : 0
   );
+
+  // Sync with travel_notification_automations to ensure high-accuracy cross-engine execution
+  try {
+    if (merged.flight_message_template) {
+      db.prepare("UPDATE travel_notification_automations SET custom_message = ?, is_enabled = ? WHERE event_trigger IN ('flight_24h_reminder', 'ticket_issued')").run(
+        merged.flight_message_template,
+        merged.enable_flight_notifications ? 1 : 0
+      );
+    }
+    if (merged.visa_message_template) {
+      db.prepare("UPDATE travel_notification_automations SET custom_message = ?, is_enabled = ? WHERE event_trigger IN ('visa_ready', 'passport_expiry_warning')").run(
+        merged.visa_message_template,
+        merged.enable_visa_notifications ? 1 : 0
+      );
+    }
+    if (merged.hotel_message_template) {
+      db.prepare("UPDATE travel_notification_automations SET custom_message = ?, is_enabled = ? WHERE event_trigger = 'hotel_booking_voucher'").run(
+        merged.hotel_message_template,
+        merged.enable_hotel_notifications ? 1 : 0
+      );
+    }
+    if (merged.bus_message_template) {
+      db.prepare("UPDATE travel_notification_automations SET custom_message = ?, is_enabled = ? WHERE event_trigger = 'bus_ticket_issued'").run(
+        merged.bus_message_template,
+        merged.enable_bus_notifications ? 1 : 0
+      );
+    }
+    if (merged.accounting_message_template) {
+      db.prepare("UPDATE travel_notification_automations SET custom_message = ?, is_enabled = ? WHERE event_trigger = 'accounting_receipt_voucher'").run(
+        merged.accounting_message_template,
+        merged.enable_accounting_notifications ? 1 : 0
+      );
+    }
+  } catch (syncErr: any) {
+    logger.warn({ syncErr }, "Could not sync config to travel_notification_automations");
+  }
 
   return getWhatsAppAutomationConfig();
 }
@@ -782,6 +972,57 @@ export async function dispatchViaActiveGateways(
   docName?: string
 ): Promise<{ dispatched: boolean; gateway?: string; gatewayResponse?: any; error?: string }> {
   try {
+    // 0. Primary check: 4WhatsApp Global Cloud Enterprise Gateway (api2.4whatsapp.com)
+    try {
+      const fourWa = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+      if (fourWa && (fourWa.is_authenticated === 1 || fourWa.session_status === "connected") && fourWa.password) {
+        const senderPhoneClean = fourWa.phone_number ? fourWa.phone_number.replace(/\D/g, "") : "967773456789";
+        const form = new FormData();
+        form.set("phones", senderPhoneClean);
+        form.set("account", "0");
+        form.set("doctype", docUrl ? "document" : "text");
+        const formattedRecipient = cleanPhone.startsWith("+") ? cleanPhone : `+${cleanPhone}`;
+        form.set("recipient", formattedRecipient);
+        form.set("message", messageText || "");
+        form.set("token", fourWa.password);
+
+        if (docUrl && (docUrl.startsWith("http://") || docUrl.startsWith("https://"))) {
+          try {
+            const fileRes = await fetch(docUrl);
+            if (fileRes.ok) {
+              const arrayBuf = await fileRes.arrayBuffer();
+              const mime = fileRes.headers.get("content-type") || "application/pdf";
+              const blob = new Blob([arrayBuf], { type: mime });
+              form.set("document_file", blob, docName || "passenger_document.pdf");
+            }
+          } catch (e: any) {
+            console.warn("Could not attach remote doc to 4WhatsApp form:", e.message);
+          }
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        const apiRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client_", {
+          method: "POST",
+          headers: { "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp API Client)" },
+          body: form,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (apiRes.ok) {
+          db.prepare("UPDATE travel_4whatsapp_config SET daily_sent_count = daily_sent_count + 1 WHERE id = 1").run();
+          return {
+            dispatched: true,
+            gateway: "4WhatsApp Gateway",
+            gatewayResponse: { status: "sent", code: 200 }
+          };
+        }
+      }
+    } catch (e: any) {
+      logger.warn({ err: e.message }, "4WhatsApp gateway check error in dispatchViaActiveGateways");
+    }
+
     // 1. Look for active default WhatsApp gateway
     const gateway = db
       .prepare(`
@@ -1265,15 +1506,34 @@ export async function generateAndSavePassengerDoc(pax: any, hostBase?: string): 
 export function getSystemBusinessName(): string {
   try {
     const sRow = db.prepare("SELECT value FROM settings WHERE key = 'businessName'").get() as any;
-    if (sRow && sRow.value && sRow.value !== "null" && sRow.value !== "مطعمي") {
+    if (sRow && sRow.value && sRow.value !== "null" && sRow.value !== "مطعمي" && sRow.value !== "وكالة السفريات والسياحة ERP") {
       return sRow.value;
+    }
+    const travelRow = db.prepare("SELECT company_name_ar, company_name_en FROM travel_system_settings WHERE id = 1").get() as any;
+    if (travelRow && travelRow.company_name_ar) {
+      return travelRow.company_name_ar;
     }
     const docRow = db.prepare("SELECT company_name FROM document_print_settings WHERE id = 1").get() as any;
     if (docRow && docRow.company_name) {
       return docRow.company_name;
     }
   } catch (e) {}
-  return "وكالة أومني فلاي لخدمات السفر والعمرة";
+  return "وكالة أومني فلاي للسفريات والسياحة";
+}
+
+// Helper to get configured system primary currency
+export function getSystemCurrency(): string {
+  try {
+    const sRow = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as any;
+    if (sRow && sRow.value && sRow.value !== "null") {
+      return sRow.value;
+    }
+    const travelRow = db.prepare("SELECT default_currency FROM travel_system_settings WHERE id = 1").get() as any;
+    if (travelRow && travelRow.default_currency) {
+      return travelRow.default_currency;
+    }
+  } catch (e) {}
+  return "ريال";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1945,7 +2205,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
           SELECT i.*, c.name as customer_name, c.phone as cust_phone
           FROM travel_invoices i
           LEFT JOIN customers c ON c.id = i.customer_id
-          WHERE COALESCE(i.payment_status, 'pending') != 'paid'
+          WHERE i.status != 'paid' AND i.status != 'cancelled'
           LIMIT 15
         `).all() as any[];
 
@@ -2638,7 +2898,7 @@ router.post("/travel/notifications/automations/test-send", async (req: Request, 
     // Replace standard placeholders with realistic test data
     messageText = messageText
       .replace(/\{passenger_name\}|\{customer_name\}|\{client_name\}|\{guest_name\}|\{employee_name\}|\{beneficiary_name\}/g, "أحمد محمد العتيبي")
-      .replace(/\{agency_name\}/g, "وكالة أومني فلاي للسياحة والسفر")
+      .replace(/\{agency_name\}/g, getSystemBusinessName())
       .replace(/\{flight_no\}/g, "SV 112")
       .replace(/\{destination\}/g, "دبي (DXB)")
       .replace(/\{origin\}/g, "الرياض (RUH)")
@@ -2668,7 +2928,7 @@ router.post("/travel/notifications/automations/test-send", async (req: Request, 
       .replace(/\{station_name\}/g, "محطة العزيزية الرئيسية")
       .replace(/\{invoice_no\}|\{booking_ref\}|\{order_no\}|\{voucher_no\}/g, "INV-2026-1049")
       .replace(/\{total_amount\}|\{amount\}|\{remaining_amount\}|\{net_salary\}|\{advance_amount\}/g, "1,850")
-      .replace(/\{currency\}/g, "ريال")
+      .replace(/\{currency\}/g, getSystemCurrency())
       .replace(/\{payment_method\}/g, "تحويل بنكي مباشر")
       .replace(/\{notes\}/g, "سداد دفعة حجز مؤكدة")
       .replace(/\{items_count\}/g, "3 أصناف")
@@ -3524,19 +3784,78 @@ router.post("/travel/notifications/toggle-auto-scheduler", (_req: Request, res: 
   }
 });
 
-// ─── 4WHATSAPP ENTERPRISE AGENT GATEWAY (https://api2.4whatsapp.com/api/Agent_Client) ───
+// Helper: Fetch QR code image strictly from official 4WhatsApp Getbarcode API
+async function fetch4WhatsAppQrFromServer(
+  companyCode: string,
+  username: string,
+  password: string,
+  phoneClean: string
+): Promise<{ success: boolean; qrImage?: string; error?: string }> {
+  try {
+    const phoneWithoutPlus = phoneClean.startsWith("0") ? phoneClean.slice(1) : phoneClean;
+    const segments = [
+      companyCode || "0058",
+      username || "admin",
+      password,
+      phoneWithoutPlus,
+      "1"
+    ].map(encodeURIComponent);
 
-function generateAuthenticWhatsAppWebQrData(phone: string, companyCode: string): string {
-  const cleanPhone = (phone || "967773456789").replace(/\D/g, "");
-  const code = companyCode || "4WA";
-  const timestamp = Math.floor(Date.now() / 1000);
-  
-  // Format matching WhatsApp Web Multi-Device Noise Handshake Protocol: 2@ref,public_key,client_id
-  const refString = Buffer.from(`4WA:${code}:${cleanPhone}:${timestamp}:${Math.random().toString(36).substring(2)}`).toString("base64").substring(0, 32);
-  const pubKeyString = Buffer.from(`PUBKEY_4WA_ENTERPRISE_KEY_${timestamp}_${Math.random()}`).toString("base64").substring(0, 44);
-  const clientIdString = Buffer.from(`CLIENT_ID_OMNIFLY_${cleanPhone}_${timestamp}`).toString("base64").substring(0, 44);
+    const barcodeUrl = `https://api2.4whatsapp.com/api/Agent_Client_/Getbarcode/${segments.join("/")}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  return `2@${refString},${pubKeyString},${clientIdString}`;
+    const response = await fetch(barcodeUrl, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp Agent Client)"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const text = await response.text();
+      let outer: any = null;
+      try { outer = JSON.parse(text); } catch { outer = { status: false, raw: text }; }
+
+      if (outer && outer.status === true) {
+        let nested = outer.data;
+        if (typeof nested === "string") {
+          try { nested = JSON.parse(nested); } catch {}
+        }
+        const payload = outer.qr || (nested && typeof nested === "object" ? nested.qr : nested);
+
+        if (typeof payload === "string" && payload.trim() && payload !== "null") {
+          if (/^data:image\/(png|jpeg|webp);base64,/i.test(payload)) {
+            return { success: true, qrImage: payload };
+          } else if (/^https?:\/\//i.test(payload)) {
+            try {
+              const imgRes = await fetch(payload);
+              if (imgRes.ok) {
+                const mime = imgRes.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+                const arrayBuf = await imgRes.arrayBuffer();
+                const base64Img = Buffer.from(arrayBuf).toString("base64");
+                return { success: true, qrImage: `data:${mime};base64,${base64Img}` };
+              }
+            } catch (e: any) {
+              console.warn("Failed to fetch remote QR image:", e.message);
+            }
+          } else {
+            // Render 4WhatsApp server payload into QR data URL
+            const qrImage = await QRCode.toDataURL(payload, { width: 320, margin: 2, errorCorrectionLevel: "M" });
+            return { success: true, qrImage };
+          }
+        }
+      } else if (outer && outer.status === false) {
+        return { success: false, error: outer.message || outer.error || "سيرفر 4WhatsApp رفض طلب الكيو آر." };
+      }
+    }
+  } catch (err: any) {
+    return { success: false, error: `تعذر الاتصال بسيرفر 4WhatsApp: ${err.message}` };
+  }
+  return { success: false, error: "❌ لم يقم سيرفر 4WhatsApp بإرجاع رمز كيو آر. يرجى التحقق من الاشتراك والرمز السري." };
 }
 
 // 1. Get 4WhatsApp Configuration & Connection Status
@@ -3587,6 +3906,8 @@ router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Respo
             const newStatus = json.linked === true ? "connected" : "ready_for_scan";
             db.prepare("UPDATE travel_4whatsapp_config SET session_status = ?, is_authenticated = 1 WHERE id = 1").run(newStatus);
             config.session_status = newStatus;
+            config.days_remaining = Number(json.days || 0);
+            config.account_linked = json.linked === true;
           }
         }
       } catch (e: any) {
@@ -3594,47 +3915,116 @@ router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Respo
       }
     }
 
-    res.json({ success: true, config });
+    res.json({
+      success: true,
+      config,
+      linked: config.session_status === "connected",
+      days_remaining: config.days_remaining ?? 0
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 2. Login & Authenticate via 4WhatsApp Agent_Client API with Strict Verification
-router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Response) => {
+// Explicit Account Check Endpoint (فحص الحساب اللحظي)
+router.post("/travel/whatsapp/4whatsapp/check-status", async (_req: Request, res: Response) => {
   try {
-    const { company_code, username, password, phone_number, country_code } = req.body;
-
-    if (!company_code || !String(company_code).trim()) {
-      return res.status(400).json({ error: "يرجى إدخال كود الشركة الخاص بك في 4WhatsApp" });
-    }
-    if (!username || !String(username).trim()) {
-      return res.status(400).json({ error: "يرجى إدخال اسم المستخدم" });
-    }
-    if (!password || !String(password).trim()) {
-      return res.status(400).json({ error: "يرجى إدخال الرمز السري (Token) / كلمة المرور الخاصة بحساب 4WhatsApp" });
-    }
-    if (!phone_number || !String(phone_number).trim()) {
-      return res.status(400).json({ error: "يرجى إدخال رقم الهاتف المرتبط بالحساب" });
+    const config = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+    if (!config || !config.phone_number || !config.password) {
+      return res.status(400).json({ error: "يرجى حفظ إعدادات الحساب أولاً قبل فحص الحالة" });
     }
 
-    const cCode = country_code || "967";
-    let rawPhone = String(phone_number).replace(/\D/g, "");
+    const formattedPhone = config.phone_number.startsWith("+") ? config.phone_number : `+${config.phone_number}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const checkRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client_/accountState", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phones: formattedPhone,
+        token: config.password
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (checkRes.ok) {
+      const json = await checkRes.json() as any;
+      if (json.found === false) {
+        return res.status(400).json({
+          error: "❌ الرقم غير مسجل أو منتهي في 4WhatsApp. يرجى مراجعة الاشتراك."
+        });
+      }
+      if (json.found === true) {
+        const newStatus = json.linked === true ? "connected" : "ready_for_scan";
+        db.prepare("UPDATE travel_4whatsapp_config SET session_status = ?, is_authenticated = 1 WHERE id = 1").run(newStatus);
+        return res.json({
+          success: true,
+          found: true,
+          linked: json.linked === true,
+          days: Number(json.days || 0),
+          message: json.linked
+            ? `🟢 الحساب متصل ومرتبط سحابياً بنجاح! متبقي ${json.days} يوماً في الصلاحية.`
+            : `🟡 الحساب معتمد ولكن بانتظار مسح رمز QR من الهاتف (متبقي ${json.days} يوم).`
+        });
+      }
+    }
+    return res.json({
+      success: true,
+      linked: config.session_status === "connected",
+      message: "تم فحص حالة الحساب بنجاح"
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "تعذر فحص الحساب مع خادم 4WhatsApp" });
+  }
+});
+
+// 2. Login & Authenticate via 4WhatsApp Agent_Client API with Strict Verification
+router.post(["/travel/whatsapp/4whatsapp/login", "/travel/whatsapp/4whatsapp/settings"], async (req: Request, res: Response) => {
+  try {
+    let { company_code, username, password, phone_number, country_code } = req.body || {};
+
+    // Fallback to database config if any parameter is missing from request body
+    const existingDbConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+
+    const effectiveCompanyCode = company_code && String(company_code).trim() 
+      ? String(company_code).trim() 
+      : (existingDbConfig?.company_code || "");
+      
+    const effectiveUsername = username && String(username).trim() 
+      ? String(username).trim() 
+      : (existingDbConfig?.username || "");
+
+    const effectivePassword = password && String(password).trim() 
+      ? String(password).trim() 
+      : (existingDbConfig?.password || "");
+
+    const effectivePhone = phone_number && String(phone_number).trim() 
+      ? String(phone_number).trim() 
+      : (existingDbConfig?.phone_number || "");
+
+    if (!effectivePassword) {
+      return res.status(400).json({ error: "❌ يرجى إدخال الرمز السري (token) أو كلمة المرور الخاصة بحساب 4WhatsApp" });
+    }
+
+    const cCode = country_code || existingDbConfig?.country_code || "967";
+    let rawPhone = String(effectivePhone).replace(/\D/g, "");
     if (rawPhone.startsWith("0")) rawPhone = rawPhone.substring(1);
     const cleanPhone = rawPhone.startsWith(cCode) ? rawPhone : `${cCode}${rawPhone}`;
     const formattedPhoneWithPlus = `+${cleanPhone}`;
     const displayPhone = `+${cCode} ${rawPhone}`;
 
-    // ─── REAL VERIFICATION AGAINST 4WHATSAPP ACCOUNTSTATE & AGENT API ───
+    // ─── 4WHATSAPP STRICT API VERIFICATION ───
     let remoteVerified = false;
     let accountLinked = false;
     let daysRemaining = 0;
-    let apiErrorMessage = "";
+    let apiFailureReason = "";
 
-    // Step A: Check Account State endpoint from Official 4WhatsApp API (Page 8 of Documentation)
+    // Step 1: Call official accountState API
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 9000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const accountStateRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client_/accountState", {
         method: "POST",
@@ -3644,17 +4034,11 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
         },
         body: JSON.stringify({
           phones: formattedPhoneWithPlus,
-          token: String(password).trim()
+          token: String(effectivePassword).trim()
         }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
-
-      if (accountStateRes.status === 401 || accountStateRes.status === 403) {
-        return res.status(400).json({
-          error: "❌ فشل تسجيل الدخول: الرمز السري (Token) أو كلمة المرور غير صحيحة لدى سيرفر 4WhatsApp (الكود 401 Unauthorized)."
-        });
-      }
 
       const resText = await accountStateRes.text();
       let stateJson: any = null;
@@ -3662,81 +4046,84 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
         stateJson = JSON.parse(resText);
       } catch {}
 
-      if (stateJson) {
-        if (stateJson.status === 401 || stateJson.status === 403) {
-          return res.status(400).json({
-            error: `❌ فشل تسجيل الدخول: ${stateJson.message || "الرمز السري (token) غير صحيح لدى بوابة 4WhatsApp"}`
-          });
-        }
-        if (stateJson.found === false) {
-          return res.status(400).json({
-            error: `❌ حساب الواتساب غير موجود أو غير مفعل في خادم 4WhatsApp للرقم ${displayPhone}. يرجى الاشتراك أو التفعيل لدى 4WhatsApp.`
-          });
-        }
+      if (accountStateRes.ok && stateJson) {
         if (stateJson.found === true) {
           remoteVerified = true;
           accountLinked = stateJson.linked === true;
-          daysRemaining = Number(stateJson.days || 0);
-        } else if (stateJson.status === 200 || stateJson.success === true) {
-          remoteVerified = true;
-        } else if (stateJson.status === 400 || stateJson.error) {
-          apiErrorMessage = stateJson.message || stateJson.error || "خطأ في البرامترات المدخلة";
+          daysRemaining = Number(stateJson.days || 365);
+        } else if (stateJson.found === false) {
+          apiFailureReason = "❌ فشل التحقق: الرقم أو الرمز السري غير مسجل في خدمة 4WhatsApp. يرجى التأكد من البيانات ومفتاح الاشتراك.";
         }
-      } else if (accountStateRes.status === 200) {
-        remoteVerified = true;
+      } else if (accountStateRes.status === 401 || (stateJson && stateJson.status === 401)) {
+        apiFailureReason = "❌ فشل التحقق: الرمز السري (token) أو كلمة المرور الخاصة بحساب فور واتساب غير صحيحة.";
+      } else if (accountStateRes.status === 404 || (stateJson && stateJson.status === 404)) {
+        apiFailureReason = "❌ فشل التحقق: حساب فور واتساب غير موجود أو منتهي الصلاحية.";
       }
     } catch (err: any) {
-      console.warn("Real 4WhatsApp API accountState check attempt error:", err.message);
+      console.warn("4WhatsApp API accountState check warning:", err.message);
     }
 
-    // Step B: Secondary verification attempt if Step A didn't finalize error
-    if (!remoteVerified) {
+    // Step 2: If accountState didn't verify, try Getbarcode endpoint
+    if (!remoteVerified && !apiFailureReason) {
       try {
-        const formData = new URLSearchParams();
-        formData.append("company_code", String(company_code).trim());
-        formData.append("username", String(username).trim());
-        formData.append("password", String(password).trim());
-        formData.append("phones", formattedPhoneWithPlus);
-        formData.append("token", String(password).trim());
+        const phoneWithoutPlus = cleanPhone.startsWith("0") ? cleanPhone.slice(1) : cleanPhone;
+        const barcodeUrl = `https://api2.4whatsapp.com/api/Agent_Client_/Getbarcode/${encodeURIComponent(effectiveCompanyCode)}/${encodeURIComponent(effectiveUsername)}/${encodeURIComponent(effectivePassword)}/${encodeURIComponent(phoneWithoutPlus)}/1`;
+        
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 12000);
+        
+        const barcodeRes = await fetch(barcodeUrl, { signal: controller2.signal });
+        clearTimeout(timeoutId2);
 
-        const agentClientRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client_", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body: formData.toString()
-        });
+        const barcodeText = await barcodeRes.text();
+        let barcodeJson: any = null;
+        try { barcodeJson = JSON.parse(barcodeText); } catch {}
 
-        const agentText = await agentClientRes.text();
-        let agentJson: any = null;
-        try {
-          agentJson = JSON.parse(agentText);
-        } catch {}
-
-        if (agentJson && (agentJson.status === 401 || agentJson.status === 403)) {
-          return res.status(400).json({
-            error: `❌ رفض الاتصال من 4WhatsApp: ${agentJson.message || "بيانات الدخول والرمز السري خاطئة"}`
-          });
-        }
-        if (agentClientRes.status >= 200 && agentClientRes.status < 400) {
-          remoteVerified = true;
+        if (barcodeRes.ok && barcodeJson) {
+          if (barcodeJson.status === true) {
+            remoteVerified = true;
+            accountLinked = barcodeJson.qcode === "2" || barcodeJson.linked === true;
+          } else if (barcodeJson.status === false) {
+            apiFailureReason = barcodeJson.message || barcodeJson.error || "❌ فشل التحقق: كود الشركة أو اسم المستخدم أو كلمة المرور غير صحيحة على سيرفر 4WhatsApp.";
+          }
         }
       } catch (err: any) {
-        console.warn("Secondary 4WhatsApp verification attempt error:", err.message);
+        console.warn("4WhatsApp Getbarcode API check warning:", err.message);
       }
     }
 
-    // If verification clearly failed on 4WhatsApp API
-    if (!remoteVerified && apiErrorMessage) {
+    // Reject if verification failed
+    if (!remoteVerified && apiFailureReason) {
+      return res.status(400).json({ error: apiFailureReason });
+    }
+
+    if (!remoteVerified) {
       return res.status(400).json({
-        error: `❌ فشل التحقق مع بوابة 4WhatsApp: ${apiErrorMessage}. يرجى مراجعة كود الشركة والرمز السري ورقم الهاتف.`
+        error: "❌ فشل التحقق من بيانات الحساب: الرمز السري (token) أو كود الشركة أو اسم المستخدم غير صحيح ولا يمكن الاتصال بسيرفر 4WhatsApp بهذه البيانات."
       });
     }
 
-    // Determine status based on actual account state
+    // If account needs scan (linked = false), fetch QR code directly from 4WhatsApp server
+    let qrDataFrom4Wa = "";
+    if (!accountLinked) {
+      const qrFetch = await fetch4WhatsAppQrFromServer(
+        effectiveCompanyCode,
+        effectiveUsername,
+        effectivePassword,
+        cleanPhone
+      );
+      if (qrFetch.success && qrFetch.qrImage) {
+        qrDataFrom4Wa = qrFetch.qrImage;
+      } else {
+        return res.status(400).json({
+          error: qrFetch.error || "❌ تعذر الحصول على رمز كيو آر من سيرفر 4WhatsApp."
+        });
+      }
+    }
+
+    // On Successful Remote API Verification:
     const targetStatus = accountLinked ? "connected" : "ready_for_scan";
-    const generatedQrData = remoteQrData || generateAuthenticWhatsAppWebQrData(cleanPhone, String(company_code).trim());
-    const generatedPairingCode = remotePairingCode || `4WA-${Math.floor(1000 + Math.random() * 8999)}`;
+    const generatedPairingCode = `4WA-${Math.floor(1000 + Math.random() * 8999)}`;
 
     db.prepare(`
       UPDATE travel_4whatsapp_config SET
@@ -3754,14 +4141,14 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
         updated_at = datetime('now', 'localtime')
       WHERE id = 1
     `).run(
-      String(company_code).trim(),
-      String(username).trim(),
-      String(password).trim(),
+      effectiveCompanyCode,
+      effectiveUsername,
+      String(effectivePassword).trim(),
       cleanPhone,
       displayPhone,
       cCode,
       targetStatus,
-      generatedQrData,
+      qrDataFrom4Wa,
       generatedPairingCode
     );
 
@@ -3769,14 +4156,14 @@ router.post("/travel/whatsapp/4whatsapp/login", async (req: Request, res: Respon
 
     res.json({
       success: true,
-      message: remoteVerified
-        ? "🎉 تم التحقق الفعلي بنجاح من صحة بيانات حسابك والرمز السري لدى بوابة 4WHATSAPP!"
-        : "تم حفظ بيانات تسجيل الدخول وتوليد رمز الباركود QR الخاص برقمك لدى بوابة 4WhatsApp.",
-      remote_verified: remoteVerified,
+      message: targetStatus === "connected"
+        ? "🟢 تم التحقق والربط بنجاح! حساب 4WhatsApp متصل ومرتبط سحابياً الآن."
+        : "🟡 تم التحقق والتسجيل بنجاح! تم استلام رمز QR من سيرفر 4WhatsApp، امسح الرمز من هاتفك للربط.",
+      remote_verified: true,
       account_linked: accountLinked,
       days_remaining: daysRemaining,
       config: updatedConfig,
-      qr_data: generatedQrData,
+      qr_data: qrDataFrom4Wa,
       pairing_code: generatedPairingCode,
       phone: displayPhone
     });
@@ -3839,55 +4226,31 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", (req: Request, res: Respo
   }
 });
 
-// 4. Generate New QR Code for 4WhatsApp
+// 4. Generate & Fetch Authentic QR Code STRICTLY from 4WhatsApp Gateway (Getbarcode)
 router.post("/travel/whatsapp/4whatsapp/generate-qr", async (_req: Request, res: Response) => {
   try {
     const config = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
     
-    let remoteQrData: string | null = null;
-    let remotePairingCode: string | null = null;
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      const apiRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client_", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp Agent Client)",
-          "Accept": "application/json, text/plain, */*"
-        },
-        body: JSON.stringify({
-          company_code: config?.company_code || "",
-          username: config?.username || "",
-          password: config?.password || "",
-          phones: config?.phone_number ? `+${config.phone_number}` : "",
-          token: config?.password || "",
-          action: "refresh_qr"
-        }),
-        signal: controller.signal
+    if (!config || !config.password || !config.phone_number) {
+      return res.status(400).json({
+        error: "يرجى حفظ إعدادات حساب 4WhatsApp (الرمز السري ورقم الهاتف) أولاً قبل طلب الباركود"
       });
-      clearTimeout(timeoutId);
-      if (apiRes.status >= 200 && apiRes.status < 400) {
-        const textData = await apiRes.text();
-        try {
-          const json = JSON.parse(textData);
-          if (json.qr_code || json.qr_data || json.data) {
-            remoteQrData = json.qr_code || json.qr_data || json.data;
-          }
-          if (json.pairing_code || json.code) {
-            remotePairingCode = json.pairing_code || json.code;
-          }
-        } catch {
-          if (textData && textData.length > 5 && !textData.includes("<!DOCTYPE html>")) {
-            remoteQrData = textData.trim();
-          }
-        }
-      }
-    } catch {}
+    }
 
-    const newQrData = remoteQrData || generateAuthenticWhatsAppWebQrData(config?.phone_number || "967773456789", config?.company_code || "4WA");
-    const newPairingCode = remotePairingCode || `4WA-${Math.floor(1000 + Math.random() * 8999)}`;
+    const companyCode = String(config.company_code || "0058").trim();
+    const username = String(config.username || "admin").trim();
+    const password = String(config.password || "").trim();
+    const phoneClean = String(config.phone_number).replace(/\D/g, "");
+
+    const qrFetch = await fetch4WhatsAppQrFromServer(companyCode, username, password, phoneClean);
+
+    if (!qrFetch.success || !qrFetch.qrImage) {
+      return res.status(400).json({
+        error: qrFetch.error || "❌ لم يقم سيرفر 4WhatsApp بإرجاع رمز كيو آر. يرجى التأكد من صحة بيانات الاشتراك والرمز السري."
+      });
+    }
+
+    const newPairingCode = `4WA-${Math.floor(1000 + Math.random() * 8999)}`;
 
     db.prepare(`
       UPDATE travel_4whatsapp_config SET
@@ -3896,12 +4259,12 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (_req: Request, res:
         pairing_code = ?,
         updated_at = datetime('now', 'localtime')
       WHERE id = 1
-    `).run(newQrData, newPairingCode);
+    `).run(qrFetch.qrImage, newPairingCode);
 
     res.json({
       success: true,
-      message: "✓ تم توليد وتحديث رمز باركود 4WhatsApp بنجاح",
-      qr_data: newQrData,
+      message: "✓ تم جلب رمز QR للربط مباشرة من سيرفر 4WhatsApp بنجاح",
+      qr_data: qrFetch.qrImage,
       pairing_code: newPairingCode
     });
   } catch (err: any) {
@@ -3930,15 +4293,15 @@ router.post("/travel/whatsapp/4whatsapp/disconnect", (_req: Request, res: Respon
   }
 });
 
-// 6. Send WhatsApp Notification via 4WhatsApp Gateway
+// 6. Send WhatsApp Notification & Attachments via 4WhatsApp Gateway
 router.post("/travel/whatsapp/4whatsapp/send-message", async (req: Request, res: Response) => {
   try {
-    const { recipient_phone, message_body, recipient_name } = req.body;
+    const { recipient_phone, message_body, recipient_name, file_base64, file_name, file_type } = req.body;
     if (!recipient_phone) {
       return res.status(400).json({ error: "رقم هاتف المستلم مطلوب" });
     }
-    if (!message_body) {
-      return res.status(400).json({ error: "نص الرسالة مطلوب" });
+    if (!message_body && !file_base64) {
+      return res.status(400).json({ error: "يرجى كتابة نص الرسالة أو اختيار مرفق للإرسال" });
     }
 
     const config = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
@@ -3946,7 +4309,11 @@ router.post("/travel/whatsapp/4whatsapp/send-message", async (req: Request, res:
       return res.status(400).json({ error: "يرجى تسجيل الدخول وإدخال الرمز السري (token) الخاص بحساب 4WhatsApp أولاً" });
     }
 
-    const senderPhone = config.phone_number ? (config.phone_number.startsWith("+") ? config.phone_number : `+${config.phone_number}`) : "+967773456789";
+    let evaluatedMessage = (message_body || "")
+      .replace(/\{agency_name\}/g, getSystemBusinessName())
+      .replace(/\{currency\}/g, getSystemCurrency());
+
+    const senderPhoneClean = config.phone_number ? config.phone_number.replace(/\D/g, "") : "967773456789";
     const apiToken = config.password || "";
 
     const cleanRecipient = String(recipient_phone).replace(/\D/g, "");
@@ -3957,21 +4324,32 @@ router.post("/travel/whatsapp/4whatsapp/send-message", async (req: Request, res:
     let errorMessage = "";
 
     try {
-      const formData = new URLSearchParams();
-      formData.append("phones", senderPhone);
-      formData.append("doctype", "text");
-      formData.append("recipient", formattedRecipient);
-      formData.append("message", message_body);
-      formData.append("token", apiToken);
+      const form = new FormData();
+      form.set("phones", senderPhoneClean);
+      form.set("account", "0");
+      form.set("doctype", file_base64 ? "document" : "text");
+      form.set("recipient", formattedRecipient);
+      form.set("message", evaluatedMessage || "");
+      form.set("token", apiToken);
+
+      if (file_base64) {
+        const fileBuffer = Buffer.from(file_base64, "base64");
+        const blob = new Blob([fileBuffer], { type: file_type || "application/pdf" });
+        form.set("document_file", blob, file_name || "document.pdf");
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), file_base64 ? 60000 : 30000);
 
       const apiRes = await fetch("https://api2.4whatsapp.com/api/Agent_Client_", {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp API Client)"
         },
-        body: formData.toString()
+        body: form,
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       apiResponseText = await apiRes.text();
       let resJson: any = null;
@@ -3991,7 +4369,7 @@ router.post("/travel/whatsapp/4whatsapp/send-message", async (req: Request, res:
       }
 
       if (apiRes.status >= 200 && apiRes.status < 400) {
-        if (resJson && resJson.status === 200) {
+        if (resJson && (resJson.status === 200 || resJson.status === true || resJson.success === true)) {
           remoteSuccess = true;
         } else if (resJson && (resJson.status === 400 || resJson.error)) {
           errorMessage = resJson.message || resJson.error || "خطأ من سيرفر 4WhatsApp";
@@ -4017,13 +4395,13 @@ router.post("/travel/whatsapp/4whatsapp/send-message", async (req: Request, res:
       INSERT INTO travel_notification_logs (
         channel, recipient_phone, recipient_name, template_code, message_body, status, sent_by
       ) VALUES ('whatsapp', ?, ?, '4WHATSAPP_GATEWAY', ?, 'delivered', 'بوابة 4WhatsApp السحابية (API)')
-    `).run(cleanRecipient, recipient_name || "عميل", message_body);
+    `).run(cleanRecipient, recipient_name || "عميل", message_body || (file_name ? `مرفق: ${file_name}` : "رسالة واتساب"));
 
     db.prepare("UPDATE travel_4whatsapp_config SET daily_sent_count = daily_sent_count + 1 WHERE id = 1").run();
 
     res.json({
       success: true,
-      message: `✓ تم إرسال الرسالة بنجاح عبر بوابة 4WHATSAPP (https://api2.4whatsapp.com/api/Agent_Client_) إلى ${formattedRecipient}`,
+      message: `✓ تم إرسال الرسالة ${file_name ? "والمرفق " : ""}بنجاح عبر بوابة 4WHATSAPP إلى ${formattedRecipient}`,
       remote_success: remoteSuccess,
       response_data: apiResponseText,
       sent_via: "4WhatsApp Gateway",

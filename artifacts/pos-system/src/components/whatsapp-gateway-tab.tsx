@@ -129,20 +129,19 @@ export function WhatsAppGatewayTab({
     }
   });
 
-  // Fetch extracted contacts directory (Passengers, Customers, Suppliers)
-  const { data: contactsDirectory } = useQuery<any>({
-    queryKey: ["travel-whatsapp-contacts-directory"],
+  // Fetch recent passengers for automatic phone number pull preview
+  const { data: passengers = [], isLoading: isLoadingPassengers } = useQuery<any[]>({
+    queryKey: ["travel-passengers-preview"],
     queryFn: async () => {
       const token = localStorage.getItem("pos_token") ?? "";
-      const res = await fetch("/api/travel/whatsapp/contacts-directory", {
+      const res = await fetch("/api/travel/passengers", {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!res.ok) return { passengers: [], customers: [], suppliers: [], totalCount: 0 };
-      return res.json();
+      if (!res.ok) return [];
+      const json = await res.json();
+      return Array.isArray(json) ? json.slice(0, 8) : [];
     }
   });
-
-  const [selectedContactCategory, setSelectedContactCategory] = useState<"passengers" | "customers" | "suppliers">("passengers");
 
   // Local draft state for notification settings
   const [settingsDraft, setSettingsDraft] = useState<any>({
@@ -556,7 +555,8 @@ export function WhatsAppGatewayTab({
                       { tag: "{hotel_name}", label: "اسم الفندق" },
                       { tag: "{voucher_no}", label: "رقم الفوتشر" },
                       { tag: "{remaining_days}", label: "الأيام المتبقية" },
-                      { tag: "{agency_name}", label: "اسم الوكالة" }
+                      { tag: "{agency_name}", label: "اسم النشاط/الوكالة" },
+                      { tag: "{currency}", label: "العملة الرئيسية" }
                     ].map((item) => (
                       <button
                         key={item.tag}
@@ -573,117 +573,57 @@ export function WhatsAppGatewayTab({
                 </div>
               </div>
 
-              {/* 4. Auto-Pull WhatsApp Numbers Directory (المسافرين، العملاء، والموردين) */}
+              {/* 4. Auto-Pull Passenger Numbers List / Live Preview */}
               <div className="pt-4 border-t border-slate-100 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-blue-600" />
                     <span className="text-xs font-bold text-slate-900">
-                      دليل أرقام الواتساب المسحوبة تلقائياً من أقسام النظام (العملاء، المسافرين، والموردين):
+                      أرقام وبيانات المسافرين المسحوبة تلقائياً من نظام الحجوزات والسفريات:
                     </span>
                     <Badge variant="outline" className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border-emerald-200">
-                      إجمالي المتاح: {contactsDirectory?.totalCount || 0} رقم
+                      سحب آلي فوري ({passengers.length} مسافر)
                     </Badge>
                   </div>
                   <span className="text-[11px] text-slate-400">
-                    يسحب النظام أرقام العملاء، المسافرين، والموردين تلقائياً لتشغيل التنبيهات المجدولة والإرسال الآلي
+                    يسحب النظام أرقام هواتف المسافرين تلقائياً لإرسال التنبيهات المجدولة
                   </span>
-                </div>
-
-                {/* Category Selector Tabs */}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedContactCategory("passengers")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      selectedContactCategory === "passengers"
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    <span>✈️ المسافرين</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
-                      {contactsDirectory?.passengers?.length || 0}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedContactCategory("customers")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      selectedContactCategory === "customers"
-                        ? "bg-emerald-600 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    <span>👥 العملاء</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
-                      {contactsDirectory?.customers?.length || 0}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedContactCategory("suppliers")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      selectedContactCategory === "suppliers"
-                        ? "bg-purple-600 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    <span>🏢 الموردين</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
-                      {contactsDirectory?.suppliers?.length || 0}
-                    </span>
-                  </button>
                 </div>
 
                 <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/50">
                   <table className="w-full text-right text-xs">
                     <thead>
                       <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
-                        <th className="p-2.5 pr-4">الاسم المسجل</th>
-                        <th className="p-2.5">رقم الهاتف / الواتساب</th>
-                        <th className="p-2.5">الجهة / التصنيف</th>
-                        <th className="p-2.5">البيانات المتاحة</th>
+                        <th className="p-2.5 pr-4">اسم المسافر</th>
+                        <th className="p-2.5">رقم الهاتف (المسحوب آلياً)</th>
+                        <th className="p-2.5">رقم الجواز</th>
+                        <th className="p-2.5">تاريخ السفر</th>
+                        <th className="p-2.5">نوع التأشيرة / الخدمة</th>
                         <th className="p-2.5 text-center">اختبار الإرسال</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200/60 bg-white">
-                      {((contactsDirectory as any)?.[selectedContactCategory] || []).length > 0 ? (
-                        ((contactsDirectory as any)?.[selectedContactCategory] || []).map((item: any) => (
-                          <tr key={`${selectedContactCategory}-${item.id}`} className="hover:bg-slate-50/80 transition-colors">
+                      {passengers.length > 0 ? (
+                        passengers.map((pax) => (
+                          <tr key={pax.id} className="hover:bg-slate-50/80 transition-colors">
                             <td className="p-2.5 pr-4 font-bold text-slate-900">
-                              {item.name || `جهة #${item.id}`}
+                              {pax.name_ar || pax.name_en || `مسافر #${pax.id}`}
                             </td>
                             <td className="p-2.5 font-mono font-bold text-emerald-700">
-                              {item.phone || item.mobile || "غير مسجل"}
+                              {pax.phone || pax.mobile || "غير مسجل"}
                             </td>
+                            <td className="p-2.5 font-mono text-slate-600">{pax.passport_number || "-"}</td>
+                            <td className="p-2.5 text-slate-600">{pax.travel_date || "-"}</td>
                             <td className="p-2.5">
-                              <Badge variant="outline" className={`text-[10px] font-bold ${
-                                selectedContactCategory === 'passengers' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                selectedContactCategory === 'customers' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                'bg-purple-50 text-purple-700 border-purple-200'
-                              }`}>
-                                {selectedContactCategory === 'passengers' ? 'مسافر سياحي' :
-                                 selectedContactCategory === 'customers' ? 'عميل معتمد' : 'مورد / شركة'}
-                              </Badge>
-                            </td>
-                            <td className="p-2.5 text-slate-600 font-mono text-[11px]">
-                              {item.passport_number ? `جواز: ${item.passport_number}` : item.email ? item.email : item.travel_date ? `سفر: ${item.travel_date}` : "مكتمل البيانات"}
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                {pax.visa_type || "تذكرة / حجز سياحي"}
+                              </span>
                             </td>
                             <td className="p-2.5 text-center">
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleSelectPassengerForTest({
-                                  id: item.id,
-                                  name_ar: item.name,
-                                  phone: item.phone,
-                                  passport_number: item.passport_number || "---",
-                                  travel_date: item.travel_date || "2026/11/15",
-                                  visa_type: selectedContactCategory === 'passengers' ? 'تأشيرة سياحية' : selectedContactCategory === 'customers' ? 'فاتورة عميل' : 'سند صرف مورد'
-                                })}
+                                onClick={() => handleSelectPassengerForTest(pax)}
                                 className="text-[11px] h-7 px-2.5 rounded-lg border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-bold gap-1"
                               >
                                 <Send className="w-3 h-3 text-emerald-600" />
@@ -694,8 +634,8 @@ export function WhatsAppGatewayTab({
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="p-4 text-center text-slate-400">
-                            لا توجد سجلات هاتف مسجلة حالياً في هذا القسم
+                          <td colSpan={6} className="p-4 text-center text-slate-400">
+                            لا توجد سجلات مسافرين حالياً في النظام
                           </td>
                         </tr>
                       )}

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
+import QRCode from "qrcode";
 import { AdminLayout } from "@/components/admin-layout";
+import { WhatsAppGatewayTab } from "@/components/whatsapp-gateway-tab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,7 +151,7 @@ export const COUNTRY_CODES = [
 export default function TravelNotificationsHubPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { agencyName } = useAgencyConfig();
+  const { agencyName, currency } = useAgencyConfig();
   const [activeTab, setActiveTab] = useState<"meta_connect" | "automations" | "templates" | "instant_send" | "billing" | "logs">("meta_connect");
 
   // Connection Mode State: 4WhatsApp (Enterprise Gateway) vs QR Code vs Meta Cloud API
@@ -176,8 +178,31 @@ export default function TravelNotificationsHubPage() {
   const [fourWaTestPhone, setFourWaTestPhone] = useState<string>("967773456789");
   const [fourWaQuickTestPhone, setFourWaQuickTestPhone] = useState<string>("967773456789");
   const [fourWaTestMessage, setFourWaTestMessage] = useState<string>(
-    "عزيزنا المسافر، مرحباً بك في وكالة أومني فلاي للسفريات والسياحة ✈️ نؤكد جاهزية خدمة الرسائل التلقائية عبر بوابة 4WhatsApp الرسمية بنجاح!"
+    `عزيزنا المسافر، مرحباً بك في ${agencyName} ✈️ نؤكد جاهزية خدمة الرسائل التلقائية عبر بوابة 4WhatsApp الرسمية بنجاح!`
   );
+  const [fourWaAttachment, setFourWaAttachment] = useState<{ file: File; base64: string; name: string; type: string } | null>(null);
+  const [fourWaFileDragging, setFourWaFileDragging] = useState(false);
+
+  const handleFourWaFileSelect = (file?: File) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير", description: "الحد الأقصى للمرفق هو 10 ميجابايت", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const resultStr = reader.result as string;
+      const base64 = resultStr.includes(",") ? resultStr.split(",")[1] : resultStr;
+      setFourWaAttachment({
+        file,
+        base64,
+        name: file.name,
+        type: file.type || "application/octet-stream"
+      });
+      toast({ title: "✓ تم إرفاق الملف بنجاح", description: `${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)` });
+    };
+    reader.readAsDataURL(file);
+  };
 
   // ══════════════════════════════════════════════════════════════════════════
   // DYNAMIC WHATSAPP WEB AUTO-URL DISPATCHER STATE
@@ -188,7 +213,7 @@ export default function TravelNotificationsHubPage() {
 `عزيزنا العميل *محمد اليمني* المحترم 🌟
 مرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين بوكالتكم.
 إجمالي المسافرين: 3
-شكراً لتعاملكم مع أومني فلاي للسفريات والسياحة ✈️.`
+شكراً لتعاملكم مع ${agencyName} ✈️.`
   );
 
   const generateWhatsAppWebUrl = (phone: string, text: string) => {
@@ -221,13 +246,47 @@ export default function TravelNotificationsHubPage() {
   const [popupTestStatus, setPopupTestStatus] = useState<"not_tested" | "allowed" | "blocked">("not_tested");
   const [notificationStatus, setNotificationStatus] = useState<string>(typeof Notification !== "undefined" ? Notification.permission : "default");
   const [webDirectPhone, setWebDirectPhone] = useState("966505544332");
-  const [webDirectText, setWebDirectText] = useState("مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من وكالة أومني فلاي للسفريات ✈️");
+  const [webDirectText, setWebDirectText] = useState(`مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من ${agencyName} ✈️`);
 
   // WhatsApp Desktop & Meta Portal Direct Access State
   const [desktopPhone, setDesktopPhone] = useState("966505544332");
   const [desktopMessage, setDesktopMessage] = useState(
-    `عزيزنا المسافر، نؤكد لكم إصدار تذكرة السفر رقم SV-89201 بنجاح عبر وكالة أومني فلاي ✈️\nنتمنى لكم رحلة ممتعة وآمنة!`
+    `عزيزنا المسافر، نؤكد لكم إصدار تذكرة السفر رقم SV-89201 بنجاح عبر ${agencyName} ✈️\nنتمنى لكم رحلة ممتعة وآمنة!`
   );
+
+  // Sync business name dynamically when updated from General Settings
+  useEffect(() => {
+    if (agencyName) {
+      setFourWaTestMessage(
+        `عزيزنا المسافر، مرحباً بك في ${agencyName} ✈️ نؤكد جاهزية خدمة الرسائل التلقائية عبر بوابة 4WhatsApp الرسمية بنجاح!`
+      );
+      setAutoLinkMessage(
+`عزيزنا العميل *محمد اليمني* المحترم 🌟
+مرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين بوكالتكم.
+إجمالي المسافرين: 3
+شكراً لتعاملكم مع ${agencyName} ✈️.`
+      );
+      setWebDirectText(`مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من ${agencyName} ✈️`);
+      setDesktopMessage(
+        `عزيزنا المسافر، نؤكد لكم إصدار تذكرة السفر رقم SV-89201 بنجاح عبر ${agencyName} ✈️\nنتمنى لكم رحلة ممتعة وآمنة!`
+      );
+      setMetaForm((prev) => ({
+        ...prev,
+        business_name: agencyName
+      }));
+      setSendForm((prev) => ({
+        ...prev,
+        message_body: `عزيزنا المسافر عبدالله العتيبي 👋
+يسعدنا إبلاغك بتأكيد حجز رحلتك بنجاح ✈️
+رقم الحجز (PNR): 6X9ZKL
+رقم التذكرة: 065-2415896321
+الرحلة: SV 112 من الرياض إلى دبي
+المغادرة: 10 نوفمبر 2026 الساعة 08:10 صباحاً
+نتمنى لكم رحلة سعيدة وموفقة! 🌟
+${agencyName}`
+      }));
+    }
+  }, [agencyName]);
   const [desktopLaunchStatus, setDesktopLaunchStatus] = useState<"idle" | "launched">("idle");
 
   // Native WhatsApp Desktop Protocol Launcher (whatsapp://)
@@ -447,8 +506,21 @@ ${agencyName}`
   // Generate real camera-scannable QR code whenever qrSessionData updates
   useEffect(() => {
     const rawQrString = qrSessionData?.qr_data || "2@0gJ3kK9XOmniflyWAAuthToken_MultiDeviceSecureNoiseHandshake";
-    const dataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(rawQrString)}`;
-    setRealQrDataUrl(dataUrl);
+    QRCode.toDataURL(rawQrString, {
+      width: 280,
+      margin: 1,
+      errorCorrectionLevel: "H",
+      color: {
+        dark: "#111b21",
+        light: "#ffffff",
+      },
+    })
+      .then((dataUrl) => {
+        setRealQrDataUrl(dataUrl);
+      })
+      .catch((err) => {
+        console.error("Error generating real QR Code:", err);
+      });
   }, [qrSessionData?.qr_data]);
 
   // ─── 4WHATSAPP ENTERPRISE STATUS QUERY & QR CODE GENERATOR ───
@@ -474,14 +546,33 @@ ${agencyName}`
 
   // Generate real camera-scannable QR code for 4WhatsApp
   useEffect(() => {
+    if (!fourWaData?.qr_data) return;
+    if (fourWaData.qr_data.startsWith("data:image/")) {
+      setFourWaQrDataUrl(fourWaData.qr_data);
+      return;
+    }
+
     const defaultRef = btoa(`4WA_OMNIFLY_${Date.now()}_SECURE_PAIRING_SESSION`).substring(0, 32);
     const defaultPubKey = btoa(`4WA_PUBKEY_NOISE_HANDSHAKE_${Date.now()}`).substring(0, 44);
     const defaultClientId = btoa(`4WA_CLIENT_ID_OMNIFLY_GATEWAY_${Date.now()}`).substring(0, 44);
     const fallbackNoiseQr = `2@${defaultRef},${defaultPubKey},${defaultClientId}`;
 
-    const rawQr = fourWaData?.qr_data && fourWaData.qr_data.length > 10 ? fourWaData.qr_data : fallbackNoiseQr;
-    const dataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(rawQr)}`;
-    setFourWaQrDataUrl(dataUrl);
+    const rawQr = fourWaData.qr_data.length > 10 ? fourWaData.qr_data : fallbackNoiseQr;
+    QRCode.toDataURL(rawQr, {
+      width: 320,
+      margin: 1,
+      errorCorrectionLevel: "H",
+      color: {
+        dark: "#111b21",
+        light: "#ffffff",
+      },
+    })
+      .then((dataUrl) => {
+        setFourWaQrDataUrl(dataUrl);
+      })
+      .catch((err) => {
+        console.error("Error generating 4WhatsApp QR Code:", err);
+      });
   }, [fourWaData?.qr_data]);
 
   // 4WhatsApp 60-Second Auto Refresh Timer
@@ -804,9 +895,16 @@ ${agencyName}`
       toast({ title: "خطأ في تحديث الباركود", description: err.message, variant: "destructive" })
   });
 
-  // 5. 4WhatsApp Send Message
+  // 5. 4WhatsApp Send Message & Attachment
   const fourWaSendMessageMutation = useMutation({
-    mutationFn: (vars: { recipient_phone: string; message_body: string; recipient_name?: string }) =>
+    mutationFn: (vars: { 
+      recipient_phone: string; 
+      message_body: string; 
+      recipient_name?: string;
+      file_base64?: string;
+      file_name?: string;
+      file_type?: string;
+    }) =>
       fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/send-message", {
         method: "POST",
         body: JSON.stringify(vars)
@@ -814,6 +912,7 @@ ${agencyName}`
     onSuccess: (res) => {
       refetchFourWa();
       refetchLogs();
+      setFourWaAttachment(null);
       toast({
         title: "✓ تم إرسال الرسالة بنجاح عبر بوابة 4WHATSAPP!",
         description: res.message
@@ -821,6 +920,21 @@ ${agencyName}`
     },
     onError: (err: any) =>
       toast({ title: "فشل الإرسال عبر 4WhatsApp", description: err.message, variant: "destructive" })
+  });
+
+  // 6. 4WhatsApp Live Check Status (فحص الحساب اللحظي)
+  const fourWaCheckStatusMutation = useMutation({
+    mutationFn: () =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/check-status", { method: "POST" }),
+    onSuccess: (data) => {
+      refetchFourWa();
+      toast({
+        title: data.linked ? "🟢 الحساب مرتبط ونشط!" : "🟡 الحساب بحاجة لمسح رمز QR",
+        description: data.message
+      });
+    },
+    onError: (err: any) =>
+      toast({ title: "فحص الحساب", description: err.message, variant: "destructive" })
   });
 
   // ─── AUTO-SCHEDULER STATUS QUERY & MUTATIONS ───
@@ -959,134 +1073,46 @@ ${agencyName}`
     return matchDept && matchSearch;
   });
 
-  const activeAutomationsCount = automations.filter((a) => a.is_enabled === 1).length;
-  const pausedAutomationsCount = automations.filter((a) => a.is_enabled === 0).length;
-
   return (
     <AdminLayout>
       <div className="space-y-6 max-w-7xl mx-auto pb-16">
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* MODERN ENTERPRISE HERO / HEADER */}
+        {/* CLEAN MINIMAL HEADER */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
-        <div className="relative rounded-3xl overflow-hidden border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white p-6 lg:p-8 shadow-2xl">
-          {/* Subtle Ambient Radial Lighting */}
-          <div className="absolute top-0 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-white font-bold">
-                  <MessageSquare className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-xl lg:text-2xl font-black tracking-tight text-white">
-                      مركز تنبيهات وربط واتساب السحابي المتقدم
-                    </h1>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-xs">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>متصل سحابياً</span>
-                    </span>
-                  </div>
-                  <p className="text-xs lg:text-sm text-slate-300 font-medium mt-0.5">
-                    الربط المباشر عبر مسح الباركود (QR Code Multi-Device) أو واجهة Meta Cloud الرسمية مع أتمتة شاملة لكافة أقسام النظام
-                  </p>
-                </div>
-              </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-1">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center font-bold">
+              <MessageSquare className="w-5 h-5" />
             </div>
-
-            {/* Quick Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Button
-                onClick={() => {
-                  setActiveTab("meta_connect");
-                  setConnectionMode("qr_code");
-                }}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-2 px-4 py-2 rounded-xl shadow-lg shadow-emerald-600/25 transition-all hover:scale-[1.02]"
-              >
-                <QrCode className="w-4 h-4" />
-                <span>ربط بالباركود (QR Code)</span>
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => setSmartImportModalOpen(true)}
-                className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs gap-1.5 px-3.5 py-2 rounded-xl backdrop-blur-md"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span>استيراد ذكي</span>
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => setOnboardingModalOpen(true)}
-                className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-bold text-xs gap-1.5 px-3.5 py-2 rounded-xl backdrop-blur-md"
-              >
-                <HelpCircle className="w-3.5 h-3.5 text-blue-300" />
-                <span>دليل الإعداد</span>
-              </Button>
-
-              <a
-                href="https://developers.facebook.com/apps"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-md transition-all whitespace-nowrap"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-blue-200" />
-                <span>منصة Meta ↗</span>
-              </a>
+            <div>
+              <h1 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">
+                مركز تنبيهات وربط واتساب
+              </h1>
+              <p className="text-xs text-slate-500 font-medium">
+                بوابة الإرسال والربط السحابي، محرك الأتمتة الشامل، وإدارة القوالب والتقارير
+              </p>
             </div>
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-slate-800/80 text-xs">
-            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400">
-                <Wifi className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px] font-medium">حالة الاتصال والربط:</span>
-                <span className="font-bold text-emerald-400 text-xs flex items-center gap-1">
-                  <span>نشط ومؤكد 100%</span>
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                <Zap className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px] font-medium">قواعد الأتمتة:</span>
-                <span className="font-bold text-white text-xs font-mono">
-                  {automations.length} قاعدة ({activeAutomationsCount} مفعلة)
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
-                <Coins className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px] font-medium">رصيد المحادثات:</span>
-                <span className="font-bold text-amber-300 text-xs font-mono">
-                  {billingData?.balance ? Number(billingData.balance).toLocaleString() : "5,000"} محادثة
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
-                <ShieldCheck className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px] font-medium">سعة الإرسال اليومية:</span>
-                <span className="font-bold text-purple-300 text-xs font-mono">10,000 Messages/Day</span>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSmartImportModalOpen(true)}
+              className="text-xs font-semibold gap-1.5 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-500" />
+              <span>استيراد ذكي</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setOnboardingModalOpen(true)}
+              className="text-xs font-semibold gap-1.5 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
+              <span>دليل الإعداد</span>
+            </Button>
           </div>
         </div>
 
@@ -1103,8 +1129,8 @@ ${agencyName}`
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`}
             >
-              <QrCode className="w-4 h-4 text-emerald-500" />
-              <span>ربط واتساب (باركود QR & Meta)</span>
+              <MessageSquare className="w-4 h-4 text-emerald-500" />
+              <span>بوابة وربط واتساب (4WhatsApp Gateway)</span>
             </button>
 
             <button
@@ -1173,2559 +1199,33 @@ ${agencyName}`
         {/* TAB 1: WHATSAPP LINKING (DUAL MODE: QR CODE BARCODE & META CLOUD API) */}
         {/* ══════════════════════════════════════════════════════════════════════════ */}
         {activeTab === "meta_connect" && (
-          <div className="space-y-6">
-            {/* Top Method Selector Switcher */}
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 lg:p-5 rounded-3xl shadow-lg border border-slate-700 flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  <Smartphone className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-sm lg:text-base font-black text-white flex items-center gap-2">
-                    <span>اختر طريقة ربط واتساب بالنظام</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 font-bold">
-                      معايير عالمية متقدمة
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-0.5">
-                    يمكنك ربط واتساب بسهولة تامة عبر مسح الباركود (مثل واتساب ويب) أو عبر واجهة Meta Cloud الرسمية المضمّنة
-                  </p>
-                </div>
-              </div>
-
-              {/* Mode Toggle Buttons */}
-              <div className="bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800 flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setConnectionMode("4whatsapp")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    connectionMode === "4whatsapp"
-                      ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-md shadow-purple-600/30 font-black"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>1. بوابة 4WHATSAPP (https://api2.4whatsapp.com)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setConnectionMode("qr_code")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    connectionMode === "qr_code"
-                      ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30 font-black"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  <QrCode className="w-4 h-4 text-emerald-300" />
-                  <span>2. مسح الباركود (QR Web & Desktop)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setConnectionMode("embedded")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    connectionMode === "embedded"
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30 font-black"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800"
-                  }`}
-                >
-                  <Globe className="w-4 h-4 text-blue-300" />
-                  <span>3. الربط الرسمي (Meta Cloud API)</span>
-                </button>
-              </div>
-            </div>
-
-            {/* ─────────────────────────────────────────────────────────── */}
-            {/* SUB-VIEW 0: 4WHATSAPP ENTERPRISE AGENT GATEWAY (api2.4whatsapp.com) */}
-            {/* ─────────────────────────────────────────────────────────── */}
-            {connectionMode === "4whatsapp" && (
-              <div className="space-y-6">
-                {/* 4WhatsApp Global Gateway Banner */}
-                <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-96 h-full bg-purple-500/10 blur-3xl pointer-events-none" />
-                  <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 relative z-10">
-                    <div className="flex items-start gap-4">
-                      <div className="p-3.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0">
-                        <Zap className="w-8 h-8 text-indigo-400" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-black text-white">
-                            بوابة 4WHATSAPP السحابية العالمية المتقدمة (Agent Client Gateway)
-                          </h3>
-                          <Badge className="bg-purple-600 text-white font-bold text-[10px] shadow-xs">
-                            https://api2.4whatsapp.com/api/Agent_Client ✓
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
-                          نظام ربط ومصادقة الحسابات عبر وكيل <strong>4WHATSAPP</strong> الرسمي. يتيح تسجيل دخول الشركة بالبيانات المعتمدة والتحقق التلقائي مع فتح رمز الـ QR Code فورياً لربط رقم الهاتف وإرسال كافة إشعارات السفر، الحجوزات، الفواتير، وسندات القبض آلياً بدون أي انقطاع.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      {fourWaStatus === "connected" ? (
-                        <Badge className="bg-emerald-500 text-white px-3 py-1.5 rounded-xl font-bold text-xs gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-100" />
-                          <span>متصل برقم: {fourWaPhone}</span>
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl font-bold text-xs gap-1.5">
-                          <Radio className="w-4 h-4 text-amber-300 animate-pulse" />
-                          <span>تم تسجيل الحساب - بانتظار مسح الباركود</span>
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Celebration Alert if verified */}
-                {fourWaCelebrationShown && (
-                  <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-2 border-emerald-500/60 rounded-3xl p-5 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3 duration-300">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl shrink-0">
-                        🎉
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-black text-emerald-300 flex items-center gap-2">
-                          <span>ألف مبروك! تم تسجيل حسابك والتحقق من صحة البيانات بنجاح</span>
-                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md font-mono">
-                            HTTP 200 Verified
-                          </span>
-                        </h4>
-                        <p className="text-xs text-slate-200 mt-1 leading-relaxed">
-                          تم التحقق من بيانات الدخول بنجاح عبر مفتاح <strong>https://api2.4whatsapp.com/api/Agent_Client</strong>. تم فتح رمز الـ QR Code أدناه لمسحه عبر هاتفك وإتمام عملية الربط فوراً!
-                        </p>
-                      </div>
-                    </div>
-
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        const el = document.getElementById("fourWaQrBox");
-                        if (el) el.scrollIntoView({ behavior: "smooth" });
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-9 px-4 gap-1.5 shrink-0"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      <span>الانتقال لمسح الباركود الآن ⬇️</span>
-                    </Button>
-                  </div>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* TWO-COLUMN GRID: 4WHATSAPP LOGIN CARD (IMAGE MATCH) + QR CODE DISPLAY */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                  {/* Left Column: 4WHATSAPP Login Card OR Connected Account State */}
-                  <div className="lg:col-span-6 flex justify-center">
-                    {fourWaStatus === "connected" && !isEditingFourWaCreds ? (
-                      <Card className="w-full max-w-md border-2 border-emerald-500/60 shadow-2xl rounded-3xl overflow-hidden bg-white relative">
-                        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 p-6 text-white text-right">
-                          <div className="flex items-center justify-between mb-3">
-                            <Badge className="bg-white/20 hover:bg-white/30 text-white font-bold text-xs gap-1 backdrop-blur-sm">
-                              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse inline-block" />
-                              <span>متصل ومرتبط سحابياً</span>
-                            </Badge>
-                            <span className="text-xs font-black tracking-wider text-emerald-100 font-sans">
-                              4WHATSAPP CLOUD
-                            </span>
-                          </div>
-                          <h3 className="text-xl font-black">حساب الواتساب المرتبط بالنظام</h3>
-                          <p className="text-xs text-emerald-100 mt-1">
-                            بيانات تسجيل الدخول وجلسة الربط محفوظة بشكل دائم في قاعدة البيانات
-                          </p>
-                        </div>
-
-                        <CardContent className="p-6 space-y-4" dir="rtl">
-                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2.5 text-xs">
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500 font-medium">كود الشركة:</span>
-                              <span className="font-mono font-bold text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                {fourWaForm.company_code || "OMNI-FLY"}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500 font-medium">اسم المستخدم:</span>
-                              <span className="font-bold text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
-                                {fourWaForm.username || "omnifly_admin"}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500 font-medium">رقم الهاتف المقترن:</span>
-                              <span className="font-mono font-black text-emerald-700 text-sm bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200" dir="ltr">
-                                {fourWaPhone}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-500 font-medium">حالة الحفظ الدائم:</span>
-                              <span className="text-emerald-700 font-bold flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>دائم (لا يفصل عند التحديث)</span>
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Quick Message Test Send */}
-                          <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100 space-y-2">
-                            <label className="text-xs font-bold text-indigo-950 block">
-                              تجربة إرسال رسالة واتساب فورية عبر رقمك المقترن:
-                            </label>
-                            <div className="flex gap-2">
-                              <Input
-                                value={fourWaQuickTestPhone}
-                                onChange={(e) => setFourWaQuickTestPhone(e.target.value)}
-                                placeholder="967773456789"
-                                dir="ltr"
-                                className="h-9 text-xs font-mono font-bold bg-white rounded-xl"
-                              />
-                              <Button
-                                size="sm"
-                                disabled={fourWaSendMessageMutation.isPending}
-                                onClick={() => {
-                                  fourWaSendMessageMutation.mutate({
-                                    recipient_phone: fourWaQuickTestPhone,
-                                    message_body: `السلام عليكم، هذه رسالة تأكيد ربط واتساب بالنظام بنجاح من وكالة ${agencyName} عبر بوابة 4WhatsApp السحابية. كود الشركة: ${fourWaForm.company_code}`
-                                  });
-                                }}
-                                className="h-9 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shrink-0 gap-1.5"
-                              >
-                                {fourWaSendMessageMutation.isPending ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Send className="w-3.5 h-3.5" />
-                                )}
-                                <span>إرسال تجريبي</span>
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <Button
-                              variant="outline"
-                              onClick={() => setIsEditingFourWaCreds(true)}
-                              className="text-xs h-9 rounded-xl font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1.5"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                              <span>تعديل بيانات الدخول</span>
-                            </Button>
-
-                            <Button
-                              variant="outline"
-                              onClick={() => fourWaDisconnectMutation.mutate()}
-                              disabled={fourWaDisconnectMutation.isPending}
-                              className="text-xs h-9 rounded-xl font-bold border-rose-200 text-rose-700 hover:bg-rose-50 gap-1.5"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span>فصل وإعادة الربط</span>
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <Card className="w-full max-w-md border border-slate-200/90 shadow-2xl rounded-3xl overflow-hidden bg-white relative">
-                        {/* Subtle Pattern Background */}
-                        <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] opacity-40 pointer-events-none" />
-
-                        <CardContent className="p-8 relative z-10 space-y-6">
-                          {/* 4WHATSAPP Official Logo */}
-                          <div className="flex flex-col items-center justify-center text-center space-y-2 pt-2">
-                            <div className="relative flex items-center justify-center">
-                              {/* Stylized 4WhatsApp SVG Icon matching brand image */}
-                              <svg className="w-24 h-16" viewBox="0 0 120 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                {/* Motion Streaks */}
-                                <path d="M15 15H45" stroke="#00b4d8" strokeWidth="5" strokeLinecap="round" />
-                                <path d="M5 32H35" stroke="#0077b6" strokeWidth="5" strokeLinecap="round" />
-                                <path d="M22 49H52" stroke="#023e8a" strokeWidth="5" strokeLinecap="round" />
-                                <circle cx="28" cy="15" r="3" fill="#00b4d8" />
-                                <circle cx="12" cy="32" r="3" fill="#0077b6" />
-                                <circle cx="32" cy="49" r="3" fill="#023e8a" />
-                                {/* Large Stylized 'W' Circle Emblem */}
-                                <circle cx="80" cy="35" r="28" fill="#e0f2fe" />
-                                <path d="M66 24L74 46L80 32L86 46L94 24" stroke="#0284c7" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                            <div className="font-black text-xl tracking-wider text-[#023e8a] font-sans">
-                              4WHATSAPP
-                            </div>
-                          </div>
-
-                          {/* Title: تسجيل الدخول */}
-                          <div className="text-center pt-1">
-                            <h2 className="text-2xl font-black text-slate-800 tracking-tight">
-                              تسجيل الدخول
-                            </h2>
-                            <div className="w-full border-t border-slate-200 mt-4" />
-                          </div>
-
-                          {/* Form Inputs */}
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              setIsEditingFourWaCreds(false);
-                              fourWaLoginMutation.mutate(fourWaForm);
-                            }}
-                            className="space-y-4"
-                            dir="rtl"
-                          >
-                            {/* Field 1: كود الشركة */}
-                            <div className="space-y-1.5 text-right">
-                              <label className="text-xs font-bold text-slate-700 block">
-                                كود الشركة
-                              </label>
-                              <Input
-                                value={fourWaForm.company_code}
-                                onChange={(e) => setFourWaForm({ ...fourWaForm, company_code: e.target.value })}
-                                placeholder="ادخل الكود الخاص بشركتك"
-                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
-                                required
-                              />
-                            </div>
-
-                            {/* Field 2: اسم المستخدم */}
-                            <div className="space-y-1.5 text-right">
-                              <label className="text-xs font-bold text-slate-700 block">
-                                اسم المستخدم
-                              </label>
-                              <Input
-                                value={fourWaForm.username}
-                                onChange={(e) => setFourWaForm({ ...fourWaForm, username: e.target.value })}
-                                placeholder="ادخل اسم المستخدم"
-                                className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50"
-                                required
-                              />
-                            </div>
-
-                            {/* Field 3: كلمة المرور */}
-                            <div className="space-y-1.5 text-right">
-                              <label className="text-xs font-bold text-slate-700 block">
-                                كلمة المرور
-                              </label>
-                              <div className="relative">
-                                <Input
-                                  type={showFourWaPassword ? "text" : "password"}
-                                  value={fourWaForm.password}
-                                  onChange={(e) => setFourWaForm({ ...fourWaForm, password: e.target.value })}
-                                  placeholder="ادخل كلمة المرور"
-                                  className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 pl-10"
-                                  required
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setShowFourWaPassword(!showFourWaPassword)}
-                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                >
-                                  {showFourWaPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Field 4: رقم التلفون */}
-                            <div className="space-y-1.5 text-right">
-                              <label className="text-xs font-bold text-slate-700 block">
-                                رقم التلفون
-                              </label>
-                              <div className="flex items-center gap-2" dir="ltr">
-                                {/* Country Code Dropdown */}
-                                <select
-                                  value={fourWaForm.country_code}
-                                  onChange={(e) => setFourWaForm({ ...fourWaForm, country_code: e.target.value })}
-                                  className="h-11 px-3 rounded-xl border border-slate-200 bg-slate-50/80 text-xs font-bold font-mono text-slate-800 shrink-0 focus:outline-none focus:border-purple-500"
-                                >
-                                  <option value="967">967+ YE 🇾🇪</option>
-                                  <option value="966">966+ SA 🇸🇦</option>
-                                  <option value="20">20+ EG 🇪🇬</option>
-                                  <option value="971">971+ AE 🇦🇪</option>
-                                  <option value="965">965+ KW 🇰🇼</option>
-                                  <option value="968">968+ OM 🇴🇲</option>
-                                  <option value="974">974+ QA 🇶🇦</option>
-                                  <option value="962">962+ JO 🇯🇴</option>
-                                </select>
-
-                                {/* Phone input */}
-                                <Input
-                                  value={fourWaForm.phone_number}
-                                  onChange={(e) => setFourWaForm({ ...fourWaForm, phone_number: e.target.value })}
-                                  placeholder="ادخل رقم الهاتف الخاص بك"
-                                  dir="rtl"
-                                  className="h-11 rounded-xl text-xs text-right border-slate-200 focus:border-purple-500 bg-slate-50/50 flex-1 font-mono font-bold"
-                                  required
-                                />
-                              </div>
-                            </div>
-
-                            {/* Submit Button with Purple/Violet Gradient Matching Image */}
-                            <div className="pt-2">
-                              <Button
-                                type="submit"
-                                disabled={fourWaLoginMutation.isPending}
-                                className="w-full h-12 rounded-full font-bold text-sm text-white bg-gradient-to-r from-[#7367f0] to-[#685dd8] hover:from-[#665ae0] hover:to-[#574cc8] shadow-lg shadow-indigo-500/30 transition-all duration-200"
-                              >
-                                {fourWaLoginMutation.isPending ? (
-                                  <div className="flex items-center gap-2">
-                                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                                    <span>جاري التحقق عبر api2.4whatsapp.com...</span>
-                                  </div>
-                                ) : (
-                                  <span>تسجيل الدخول</span>
-                                )}
-                              </Button>
-                            </div>
-
-                            {/* Footer Terms & Privacy Link */}
-                            <div className="text-center pt-2">
-                              <p className="text-xs text-slate-500">
-                                قبل المتابعة، تأكد من قراءة{" "}
-                                <a
-                                  href="https://4whatsapp.com/privacy-policy"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 font-bold hover:underline"
-                                >
-                                  سياسة الخصوصية
-                                </a>
-                              </p>
-                            </div>
-                          </form>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-
-                  {/* Right Column: QR Code Display & 4WhatsApp Session Controller */}
-                  <div id="fourWaQrBox" className="lg:col-span-6 space-y-5">
-                    <Card className="border border-purple-200 shadow-xl rounded-3xl overflow-hidden bg-white">
-                      <CardHeader className="bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border-b border-purple-100 pb-3.5">
-                        <div className="flex items-center justify-between">
-                          <Badge className="bg-purple-600 text-white font-bold text-xs gap-1">
-                            <QrCode className="w-3.5 h-3.5" />
-                            <span>رمز QR الخاص برقمك</span>
-                          </Badge>
-                          <span className="text-[11px] font-bold text-indigo-700 font-mono">
-                            جلسة 4WhatsApp السحابية
-                          </span>
-                        </div>
-                        <CardTitle className="text-base font-black text-slate-800 pt-2 flex items-center gap-2">
-                          <Smartphone className="w-5 h-5 text-purple-600" />
-                          <span>مسح الباركود لربط واتساب بالهاتف (4WhatsApp Multi-Device)</span>
-                        </CardTitle>
-                        <CardDescription className="text-xs text-slate-600">
-                          امسح رمز الباركود المعروض أدناه عبر كاميرا واتساب بهاتفك لربط حساب الشركة فوراً
-                        </CardDescription>
-                      </CardHeader>
-
-                      <CardContent className="p-6 space-y-6">
-                        {/* QR Code Container with Center Logo & Countdown */}
-                        <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-3xl border-2 border-dashed border-purple-200 relative">
-                          <div className="relative bg-white p-4 rounded-3xl shadow-xl border border-slate-200">
-                            {fourWaQrDataUrl ? (
-                              <img
-                                src={fourWaQrDataUrl}
-                                alt="4WhatsApp QR Code"
-                                className="w-64 h-64 object-contain rounded-2xl"
-                              />
-                            ) : (
-                              <div className="w-64 h-64 flex items-center justify-center bg-slate-100 rounded-2xl text-slate-400">
-                                <RefreshCw className="w-8 h-8 animate-spin text-purple-600" />
-                              </div>
-                            )}
-
-                            {/* Centered 4WhatsApp Badge Overlay */}
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-2xl shadow-lg border-2 border-purple-500 flex items-center justify-center">
-                              <span className="font-black text-xs text-[#023e8a]">4WA</span>
-                            </div>
-                          </div>
-
-                          {/* Countdown Timer Badge */}
-                          <div className="mt-4 flex items-center gap-2 bg-purple-100/80 text-purple-800 px-4 py-1.5 rounded-full text-xs font-bold border border-purple-200">
-                            <Clock className="w-3.5 h-3.5 text-purple-600" />
-                            <span>ينتهي الرمز خلال:</span>
-                            <span className="font-mono text-sm font-black text-purple-900">{fourWaSecondsLeft} ثانية</span>
-                          </div>
-
-                          {/* 8-Digit Pairing Code Fallback */}
-                          <div className="mt-3 text-center">
-                            <span className="text-[11px] text-slate-500 block">أو استخدم رمز الاقتران المباشر:</span>
-                            <div className="inline-flex items-center gap-2 mt-1 bg-white px-3 py-1 rounded-xl border border-slate-200 font-mono font-black text-slate-800 text-xs">
-                              <span>{fourWaPairingCode}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(fourWaPairingCode);
-                                  toast({ title: "✓ تم نسخ رمز الاقتران" });
-                                }}
-                                className="text-slate-400 hover:text-slate-700"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 3 Step Instructions */}
-                        <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-100 text-xs text-slate-700 space-y-2">
-                          <span className="font-black text-indigo-950 block">خطوات الربط الصحيحة بالهاتف:</span>
-                          <ol className="list-decimal list-inside space-y-1.5 pr-1 text-slate-700 leading-relaxed text-[11px]">
-                            <li>افتح تطبيق واتساب على هاتفك المسجل (<strong>{fourWaPhone}</strong>).</li>
-                            <li>اضغط على خيارات (⋮) أو الإعدادات &gt; <strong>الأجهزة المرتبطة (Linked Devices)</strong> &gt; <strong>ربط جهاز</strong>.</li>
-                            <li>وجّه كاميرا الهاتف نحو الرمز المعروض أعلاه، وسيتم تأكيد الربط فورياً.</li>
-                          </ol>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="space-y-2 pt-1">
-                          <Button
-                            onClick={() => fourWaConfirmScanMutation.mutate()}
-                            disabled={fourWaConfirmScanMutation.isPending}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 rounded-xl gap-2 shadow-md shadow-emerald-600/20"
-                          >
-                            <CheckCircle2 className="w-4 h-4 text-emerald-100" />
-                            <span>تأكيد مسح الباركود وربط الجهاز بنجاح 🚀</span>
-                          </Button>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button
-                              variant="outline"
-                              onClick={() => fourWaGenerateQrMutation.mutate()}
-                              disabled={fourWaGenerateQrMutation.isPending}
-                              className="text-xs h-9 rounded-xl font-bold border-purple-200 text-purple-700 hover:bg-purple-50 gap-1.5"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              <span>تحديث رمز الباركود</span>
-                            </Button>
-
-                            <Button
-                              variant="outline"
-                              onClick={() => fourWaDisconnectMutation.mutate()}
-                              disabled={fourWaDisconnectMutation.isPending}
-                              className="text-xs h-9 rounded-xl font-bold border-rose-200 text-rose-700 hover:bg-rose-50 gap-1.5"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span>إلغاء الربط مؤقتاً</span>
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* INTERACTIVE TOOL: DYNAMIC WHATSAPP WEB AUTO-URL DISPATCHER */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                <Card className="border-2 border-emerald-500/40 shadow-xl rounded-3xl overflow-hidden bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/30">
-                  <CardHeader className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white pb-4 border-b border-emerald-800">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Send className="w-5 h-5 text-emerald-400" />
-                          <CardTitle className="text-base font-black text-white">
-                            مُوَلّد ومُرسل روابط واتساب ويب التلقائية (Dynamic WhatsApp Web Auto-URL)
-                          </CardTitle>
-                          <Badge className="bg-emerald-500 text-white font-bold text-[10px]">
-                            تغيير الرقم تلقائياً ✓
-                          </Badge>
-                        </div>
-                        <CardDescription className="text-xs text-emerald-200 mt-1">
-                          الإجابة على استفسار الإرسال الآلي عبر رابط web.whatsapp.com/send مع تغيير الرقم ديناميكياً
-                        </CardDescription>
-                      </div>
-
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          const url = generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage);
-                          window.open(url, "_blank");
-                        }}
-                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl h-9 px-4 gap-1.5 shrink-0 shadow-lg"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>فتح الرابط في واتساب ويب فوراً 🚀</span>
-                      </Button>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-6 space-y-5">
-                    {/* Direct answer banner */}
-                    <div className="p-4 rounded-2xl bg-emerald-100/70 border border-emerald-300 text-xs text-emerald-950 space-y-1.5 leading-relaxed">
-                      <div className="font-bold flex items-center gap-2 text-emerald-900">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                        <span>نعم، يستطيع النظام الإرسال الآلي والتوجيه التلقائي عبر هذا الرابط لـ واتساب ويب مع تغيير الرقم!</span>
-                      </div>
-                      <p className="text-[11px] text-emerald-900 leading-relaxed">
-                        بروتوكول واتساب ويب الرسمي <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-800">https://web.whatsapp.com/send/?phone=...&text=...&type=phone_number&app_absent=0</code> يتيح للنظام استبدال رقم الهاتف ونص الرسالة ديناميكياً لكل مسافر أو عميل، وفتح المحادثة فوراً بدون حفظ الرقم في جهات الاتصال.
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {/* Left: Interactive Input Fields */}
-                      <div className="space-y-3.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">
-                              رقم الواتساب المستلم (مع رمز الدولة):
-                            </label>
-                            <Input
-                              value={autoLinkPhone}
-                              onChange={(e) => setAutoLinkPhone(e.target.value)}
-                              placeholder="967773456789"
-                              dir="ltr"
-                              className="font-mono font-bold text-xs h-10 rounded-xl"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">
-                              اسم العميل / المسافر:
-                            </label>
-                            <Input
-                              value={autoLinkCustomerName}
-                              onChange={(e) => setAutoLinkCustomerName(e.target.value)}
-                              placeholder="محمد اليمني"
-                              className="text-xs h-10 rounded-xl"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Quick Presets */}
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-600 block mb-1.5">
-                            قوالب الرسائل السريعة للتعبئة التلقائية:
-                          </label>
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAutoLinkCustomerName("محمد اليمني");
-                                setAutoLinkPhone("967773456789");
-                                setAutoLinkMessage(
-`عزيزنا العميل *محمد اليمني* المحترم 🌟
-مرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين بوكالتكم.
-إجمالي المسافرين: 3
-شكراً لتعاملكم مع أومني فلاي للسفريات والسياحة ✈️.`
-                                );
-                              }}
-                              className="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold hover:bg-emerald-200 border border-emerald-300"
-                            >
-                              📋 تقرير المسافرين (الطلب الحالي)
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAutoLinkCustomerName("عبدالله العتيبي");
-                                setAutoLinkPhone("966505544332");
-                                setAutoLinkMessage(
-`سعادة المسافر *عبدالله العتيبي* المحترم ✈️
-تم تأكيد حجز تذكرتكم رقم #SV-99201 على رحلة الرياض - دبي.
-موعد الإقلاع: غداً الساعة 08:30 صباحاً.
-وكالة أومني فلاي تتمنى لكم رحلة ميمونة!`
-                                );
-                              }}
-                              className="text-[10px] px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 font-bold hover:bg-blue-200 border border-blue-300"
-                            >
-                              ✈️ تذكرة سفر
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAutoLinkCustomerName("شركة الأفق الذهبي");
-                                setAutoLinkPhone("967771234567");
-                                setAutoLinkMessage(
-`سعادة العميل، تم استلام دفعتكم وسند القبض رقم #REC-8841 بقيمة 2,500 ريال بنجاح 💳.
-شاكرين ثقتكم الدائمة بوكالة أومني فلاي للسياحة.`
-                                );
-                              }}
-                              className="text-[10px] px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-bold hover:bg-purple-200 border border-purple-300"
-                            >
-                              🧾 سند قبض مالي
-                            </button>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">
-                            نص الرسالة المراد إرسالها:
-                          </label>
-                          <Textarea
-                            rows={5}
-                            value={autoLinkMessage}
-                            onChange={(e) => setAutoLinkMessage(e.target.value)}
-                            className="text-xs leading-relaxed font-sans rounded-xl resize-none"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Right: Live Generated Link Preview & Action Triggers */}
-                      <div className="space-y-3.5 flex flex-col justify-between">
-                        <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">
-                            الرابط التلقائي المولد حياً (Live Generated URL):
-                          </label>
-                          <div className="p-3 bg-slate-900 text-emerald-400 rounded-2xl font-mono text-[11px] border border-slate-700 break-all select-all leading-relaxed max-h-32 overflow-y-auto">
-                            {generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage)}
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
-                            <span>يتضمن: الرقم + النص المرمز URL Encoded + وسم Phone Number</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage));
-                                toast({ title: "✓ تم نسخ الرابط الكامل للحافظة" });
-                              }}
-                              className="text-blue-600 font-bold hover:underline flex items-center gap-1"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>نسخ الرابط</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Dispatch Options */}
-                        <div className="space-y-2 pt-2">
-                          <Button
-                            onClick={() => {
-                              const url = generateWhatsAppWebUrl(autoLinkPhone, autoLinkMessage);
-                              window.open(url, "_blank");
-                            }}
-                            className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-bold text-xs h-10 rounded-xl gap-2 shadow-md"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            <span>1. فتح وإرسال عبر واتساب ويب (الرابط التلقائي) 🚀</span>
-                          </Button>
-
-                          <Button
-                            onClick={() =>
-                              fourWaSendMessageMutation.mutate({
-                                recipient_phone: autoLinkPhone,
-                                message_body: autoLinkMessage,
-                                recipient_name: autoLinkCustomerName
-                              })
-                            }
-                            disabled={fourWaSendMessageMutation.isPending}
-                            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs h-10 rounded-xl gap-2 shadow-md shadow-purple-600/20"
-                          >
-                            <Zap className="w-4 h-4 text-amber-300" />
-                            <span>2. إرسال فوري عبر بوابة 4WhatsApp السحابية (بدون متصفح) ⚡</span>
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            onClick={() => launchWhatsAppDesktop(autoLinkPhone, autoLinkMessage)}
-                            className="w-full text-slate-700 border-slate-300 hover:bg-slate-50 font-bold text-xs h-9 rounded-xl gap-2"
-                          >
-                            <Laptop className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>3. فتح في تطبيق واتساب المكتبي (Desktop App)</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {/* ─────────────────────────────────────────────────────────── */}
-            {/* SUB-VIEW A: QR CODE BARCODE SCANNER (WHATSAPP WEB MULTI-DEVICE) */}
-            {/* ─────────────────────────────────────────────────────────── */}
-            {connectionMode === "qr_code" && (
-              <div className="space-y-6">
-                {/* Top Alert Banner: Legal & Safe Usage Advisory based on User Guidelines */}
-                <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 border border-emerald-800/60 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-80 h-full bg-emerald-500/5 blur-2xl pointer-events-none" />
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
-                    <div className="flex items-start gap-3.5">
-                      <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                        <ShieldCheck className="w-6 h-6 text-emerald-400" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-black text-white">
-                            الربط المباشر الآمن عبر الباركود (WhatsApp Web Multi-Device)
-                          </h4>
-                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                            درع الحظر الذكي مُفعّل 🛡️
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-3xl">
-                          يتيح لك ربط واتساب المؤسسة بهاتفك المحمول فورياً ومجاناً، مع درع أمان متقدم يطبق فواصل إنسانية ذكية
-                          (Anti-Spam Pacing) ونظام نبضات القلب (Keep-Alive Heartbeat) لحماية رقمك من التقييد أو انتهاء الجلسة.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        onClick={() => setAntiBanModalOpen(true)}
-                        className="bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/40 text-xs font-bold rounded-xl h-9 gap-1.5 shadow-xs"
-                      >
-                        <Sliders className="w-3.5 h-3.5 text-emerald-300" />
-                        <span>ضبط إعدادات درع الحظر</span>
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* SUB-VIEW NAVIGATION: LIVE STATION vs OFFICIAL CARD vs MARKET GUIDE */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200/90 shadow-xs">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setQrActiveView("desktop_portal")}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        qrActiveView === "desktop_portal"
-                          ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md font-black"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      }`}
-                    >
-                      <Laptop className="w-4 h-4 text-emerald-300" />
-                      <span>💻 تطبيق واتساب للكمبيوتر و Portal</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setQrActiveView("live_station")}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        qrActiveView === "live_station"
-                          ? "bg-emerald-600 text-white shadow-xs font-black"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      }`}
-                    >
-                      <Monitor className="w-4 h-4" />
-                      <span>🖥️ محطة واتساب ويب المباشرة (Live Station)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setQrActiveView("official_card")}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        qrActiveView === "official_card"
-                          ? "bg-emerald-600 text-white shadow-xs font-black"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      }`}
-                    >
-                      <QrCode className="w-4 h-4" />
-                      <span>📱 بطاقة مسح الباركود وحل خطأ المسح</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setQrActiveView("methods_guide")}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        qrActiveView === "methods_guide"
-                          ? "bg-emerald-600 text-white shadow-xs font-black"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      }`}
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />
-                      <span>📖 دليل ومقارنة طرق السوق (Cloud API vs QR)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setQrActiveView("api_browser_guide")}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        qrActiveView === "api_browser_guide"
-                          ? "bg-emerald-600 text-white shadow-xs font-black"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      }`}
-                    >
-                      <KeyRound className="w-4 h-4 text-amber-400" />
-                      <span>🔑 استخراج مفتاح API وتصاريح كروم</span>
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={openOfficialWhatsAppWeb}
-                      className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs font-bold rounded-xl h-8 gap-1.5 shadow-xs"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>فتح نافذة واتساب ويب المباشرة</span>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* OPTION 0: WHATSAPP DESKTOP & META PORTAL COMPREHENSIVE INTEGRATION */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {qrActiveView === "desktop_portal" && (
-                  <div className="space-y-6">
-                    {/* Header banner clarifying the phone scanner error shown in user's image */}
-                    <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950 border-2 border-emerald-500/50 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-                      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 relative z-10">
-                        <div className="flex items-start gap-4">
-                          <div className="p-3.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            <Laptop className="w-8 h-8 text-emerald-400" />
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-base font-black text-white">
-                                مركز الوصول المباشر: تطبيق واتساب للكمبيوتر (Desktop) وأجهزة Meta Portal
-                              </h3>
-                              <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
-                                بروتوكول whatsapp:// نشط ✓
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
-                              يسمح النظام للكمبيوتر بالوصول الفوري لتطبيق <strong>واتساب المكتبي (WhatsApp Desktop)</strong> وأجهزة <strong>Meta Portal</strong> الرسمية عبر بروتوكول النظام الأصلي دون أي أخطاء، مع توجيه المحادثات والإشعارات مباشرة لحساب العميل.
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Quick action buttons in header */}
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          <Button
-                            size="sm"
-                            onClick={() => launchWhatsAppDesktop("", "")}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-9 gap-2 shadow-lg"
-                          >
-                            <Laptop className="w-4 h-4 text-emerald-200" />
-                            <span>تشغيل تطبيق واتساب للكمبيوتر فوراً 🚀</span>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={openPortalWhatsApp}
-                            className="bg-slate-800/80 hover:bg-slate-800 text-slate-200 border-slate-700 font-bold text-xs rounded-xl h-9 gap-1.5"
-                          >
-                            <Monitor className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>أجهزة Meta Portal</span>
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Explanation box explaining why the phone error occurred */}
-                      <div className="mt-4 p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-600/40 text-xs text-emerald-100 flex items-start gap-3">
-                        <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                        <div className="text-[11px] leading-relaxed">
-                          <strong>توضيح رسالة الهاتف (رمز QR غير صحيح):</strong>
-                          تطبيق واتساب على الهاتف مبرمج أمنياً لقبول الرموز المشفرة الصادرة حصرياً من <strong>واتساب للكمبيوتر (Desktop App)</strong>، أو <strong>واتساب للويب (web.whatsapp.com)</strong>، أو <strong>أجهزة Portal</strong>. فتح أي منها عبر الأزرار أدناه يوفر لك الباركود الرسمي الذي يقرأه الهاتف فوراً بدون أي خطأ!
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 3 Main Action Cards */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      {/* Card 1: Native Desktop WhatsApp Launch & Setup */}
-                      <Card className="border-emerald-200 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
-                        <div>
-                          <CardHeader className="bg-emerald-50/60 border-b border-emerald-100 pb-3">
-                            <div className="flex items-center justify-between">
-                              <Badge className="bg-emerald-600 text-white font-bold text-xs">
-                                تطبيق الكمبيوتر
-                              </Badge>
-                              <span className="text-[10px] text-emerald-700 font-mono font-bold">whatsapp://</span>
-                            </div>
-                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
-                              <Laptop className="w-4 h-4 text-emerald-600" />
-                              <span>1. تطبيق واتساب للكمبيوتر (Windows / Mac)</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-600">
-                              تشغيل برنامج واتساب الرسمي المثبت على حاسوبك المكتبي
-                            </CardDescription>
-                          </CardHeader>
-
-                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
-                            <p className="text-[11px] leading-relaxed text-slate-600">
-                              يقوم النظام باستدعاء تطبيق واتساب المكتبي عبر بروتوكول <code className="font-mono text-emerald-700 font-bold">whatsapp://app</code> مباشرة، مما يتيح مزامنة تامة لرسائل السفر والمبيعات دون الحاجة للمتصفح.
-                            </p>
-
-                            <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-200 text-[11px]">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-800">بروتوكول النظام:</span>
-                                <span className="text-emerald-700 font-mono font-bold">مدعوم بالكامل ✓</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-800">المزامنة مع الهاتف:</span>
-                                <span className="text-slate-600">تلقائية ومتزامنة دائماً</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-800">معدل الإرسال:</span>
-                                <span className="text-slate-600">غير محدود وآمن 100%</span>
-                              </div>
-                            </div>
-
-                            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
-                              <strong>إذا لم يكن البرنامج مثبتاً على جهازك:</strong>
-                              <br />
-                              اضغط على زر التثبيت أدناه لفتح متجر Windows الرسمي وتثبيته في 30 ثانية مجاناً.
-                            </div>
-                          </CardContent>
-                        </div>
-
-                        <div className="p-5 pt-0 space-y-2">
-                          <Button
-                            onClick={() => launchWhatsAppDesktop("", "")}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
-                          >
-                            <Laptop className="w-4 h-4" />
-                            <span>تشغيل واتساب للكمبيوتر مباشرة الآن</span>
-                          </Button>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button
-                              variant="outline"
-                              onClick={openWhatsAppStoreInstall}
-                              className="text-xs h-8 rounded-xl font-bold border-slate-300 text-slate-700 hover:bg-slate-50"
-                            >
-                              <span>متجر Windows 🛍️</span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => window.open("https://www.whatsapp.com/download", "_blank")}
-                              className="text-xs h-8 rounded-xl font-bold border-slate-300 text-slate-700 hover:bg-slate-50"
-                            >
-                              <span>موقع التحميل الرسمي ↗</span>
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-
-                      {/* Card 2: Meta Portal Companion Mode */}
-                      <Card className="border-cyan-200 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
-                        <div>
-                          <CardHeader className="bg-cyan-50/60 border-b border-cyan-100 pb-3">
-                            <div className="flex items-center justify-between">
-                              <Badge className="bg-cyan-600 text-white font-bold text-xs">
-                                أجهزة Portal
-                              </Badge>
-                              <span className="text-[10px] text-cyan-700 font-mono font-bold">Meta Companion</span>
-                            </div>
-                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
-                              <Monitor className="w-4 h-4 text-cyan-600" />
-                              <span>2. الربط عبر أجهزة Meta Portal</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-600">
-                              إمكانية ربط واتساب عبر شاشات Portal الذكية التابعة لـ Meta
-                            </CardDescription>
-                          </CardHeader>
-
-                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
-                            <p className="text-[11px] leading-relaxed text-slate-600">
-                              أجهزة Portal (Portal Go, Portal+, Portal TV) مخصصة لمحادثات الأعمال وتدعم واتساب رسمياً كجهاز رفيق (Companion Device).
-                            </p>
-
-                            <div className="space-y-2 text-[11px] text-slate-700 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                              <span className="font-bold text-slate-900 block">خطوات الربط القانوني عبر Portal:</span>
-                              <ol className="list-decimal list-inside space-y-1.5 pr-1 text-slate-600">
-                                <li>شغّل جهاز Portal وافتح تطبيق <strong>WhatsApp</strong>.</li>
-                                <li>افتح واتساب في هاتفك &gt; <strong>الأجهزة المرتبطة</strong> &gt; <strong>ربط جهاز</strong>.</li>
-                                <li>وجه كاميرا الهاتف نحو شاشة Portal لمسح الرمز، وسيتم تفعيل الربط فوراً.</li>
-                              </ol>
-                            </div>
-
-                            <div className="p-3 bg-cyan-50 rounded-2xl border border-cyan-200 text-cyan-950 text-[11px] leading-relaxed">
-                              <strong>ميزة Portal للمكاتب:</strong>
-                              <br />
-                              تتيح للوكالة إجراء مكالمات فيديو وصوت مع العملاء ومسؤولي شركات الطيران بجودة فائقة وبشكل متزامن مع النظام.
-                            </div>
-                          </CardContent>
-                        </div>
-
-                        <div className="p-5 pt-0 space-y-2">
-                          <Button
-                            onClick={openPortalWhatsApp}
-                            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>فتح بوابة أجهزة Meta Portal الرسمية</span>
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            onClick={openOfficialWhatsAppWeb}
-                            className="w-full text-xs h-8 rounded-xl font-bold border-cyan-200 text-cyan-800 hover:bg-cyan-50"
-                          >
-                            <span>فتح واتساب ويب الرسمي كبديل للمتصفح</span>
-                          </Button>
-                        </div>
-                      </Card>
-
-                      {/* Card 3: Direct Desktop Chat Dispatcher */}
-                      <Card className="border-slate-200 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
-                        <div>
-                          <CardHeader className="bg-slate-50 border-b border-slate-200 pb-3">
-                            <div className="flex items-center justify-between">
-                              <Badge className="bg-slate-900 text-white font-bold text-xs">
-                                إرسال فوري
-                              </Badge>
-                              <span className="text-[10px] text-slate-500 font-bold">Desktop Dispatcher</span>
-                            </div>
-                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
-                              <Send className="w-4 h-4 text-emerald-600" />
-                              <span>3. الإرسال المباشر لتطبيق الكمبيوتر</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-600">
-                              فتح محادثة مجهزة بنص التذكرة أو الفاتورة داخل WhatsApp Desktop
-                            </CardDescription>
-                          </CardHeader>
-
-                          <CardContent className="p-5 space-y-3 text-xs">
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                                رقم هاتف العميل (مع رمز الدولة):
-                              </label>
-                              <Input
-                                value={desktopPhone}
-                                onChange={(e) => setDesktopPhone(e.target.value)}
-                                placeholder="966505544332"
-                                dir="ltr"
-                                className="h-8 text-xs font-mono font-bold rounded-xl"
-                              />
-                            </div>
-
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-[11px] font-bold text-slate-700">
-                                  نص الإشعار / التذكرة:
-                                </label>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setDesktopMessage(
-                                        `عزيزنا المسافر، تم تأكيد حجز تذكرتك رقم #SV-8921 عبر وكالة أومني فلاي للسفريات بنجاح ✈️🌟`
-                                      )
-                                    }
-                                    className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold hover:bg-blue-100"
-                                  >
-                                    تذكرة طيران
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setDesktopMessage(
-                                        `سعادة العميل، تم استلام دفعتكم وسند القبض رقم #REC-4102 بقيمة 1,250 ريال بنجاح. شكراً لتعاملكم مع أومني فلاي 💳`
-                                      )
-                                    }
-                                    className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold hover:bg-emerald-100"
-                                  >
-                                    سند قبض
-                                  </button>
-                                </div>
-                              </div>
-                              <Textarea
-                                rows={4}
-                                value={desktopMessage}
-                                onChange={(e) => setDesktopMessage(e.target.value)}
-                                className="text-xs leading-relaxed font-sans rounded-xl resize-none"
-                              />
-                            </div>
-
-                            <div className="p-2.5 bg-slate-50 rounded-xl border text-[10px] text-slate-500 leading-relaxed">
-                              سيقوم النظام بفتح تطبيق <strong>WhatsApp Desktop</strong> مباشرة مع العميل، وتجهيز النص دون الحاجة لكتابته يدوياً.
-                            </div>
-                          </CardContent>
-                        </div>
-
-                        <div className="p-5 pt-0 space-y-2">
-                          <Button
-                            onClick={() => launchWhatsAppDesktop(desktopPhone, desktopMessage)}
-                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
-                          >
-                            <Laptop className="w-4 h-4" />
-                            <span>فتح المحادثة في تطبيق الكمبيوتر المكتبي 🚀</span>
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            onClick={() => handleOpenDirectWhatsAppWeb(desktopPhone, desktopMessage)}
-                            className="w-full text-slate-700 border-slate-300 hover:bg-slate-50 font-bold text-xs h-8 rounded-xl gap-1.5"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>فتح في واتساب ويب (المتصفح)</span>
-                          </Button>
-                        </div>
-                      </Card>
-                    </div>
-                  </div>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* OPTION 1: IN-SYSTEM LIVE WHATSAPP WEB WORKSTATION (محطة واتساب المباشرة) */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {qrActiveView === "live_station" && (
-                  <div className="space-y-4">
-                    {/* Workstation Browser Window Frame */}
-                    <div className="w-full bg-slate-900 border-2 border-emerald-600/40 rounded-3xl overflow-hidden shadow-2xl">
-                      {/* Browser Chrome Header */}
-                      <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                        {/* Traffic light dots */}
-                        <div className="flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full bg-rose-500 inline-block" />
-                          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
-                          <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
-                          <span className="text-xs font-mono font-bold text-slate-400 mr-2">
-                            محطة واتساب ويب الرسمية المباشرة (WhatsApp Web Station)
-                          </span>
-                        </div>
-
-                        {/* URL Bar */}
-                        <div className="flex-1 max-w-xl mx-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-700/80 flex items-center justify-between text-xs text-slate-300">
-                          <div className="flex items-center gap-2">
-                            <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="font-mono text-emerald-400 font-bold select-all">
-                              https://web.whatsapp.com/
-                            </span>
-                          </div>
-                          <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
-                            اتصال مباشر مشفر
-                          </Badge>
-                        </div>
-
-                        {/* Action Buttons in Chrome Header */}
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setStationIframeKey((prev) => prev + 1);
-                              toast({ title: "جاري إعادة تحميل محطة واتساب ويب..." });
-                            }}
-                            className="text-xs h-7 gap-1 border-slate-700 text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg"
-                          >
-                            <RefreshCw className="w-3 h-3" />
-                            <span>تحديث المحطة</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            onClick={openOfficialWhatsAppWeb}
-                            className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs h-7 gap-1 rounded-lg font-bold"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            <span>فتح كنافذة كاملة</span>
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            onClick={() => verifyScanMutation.mutate({ phone_number: `+${selectedCountryCode}${inputLocalPhone.replace(/^0+/, "")}` })}
-                            disabled={verifyScanMutation.isPending}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-7 gap-1 rounded-lg font-black"
-                          >
-                            <CheckCircle className="w-3 h-3" />
-                            <span>✓ تأكيد اكتمال الربط</span>
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Station Live Viewport */}
-                      <div className="relative w-full bg-slate-950 flex flex-col items-center justify-center min-h-[520px]">
-                        {/* Live Iframe to https://web.whatsapp.com/ */}
-                        <iframe
-                          key={stationIframeKey}
-                          src="https://web.whatsapp.com/"
-                          title="Official WhatsApp Web Station"
-                          className="w-full h-[580px] border-0 rounded-b-2xl bg-white"
-                          allow="camera; microphone; clipboard-read; clipboard-write;"
-                          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
-                        />
-
-                        {/* Overlay Banner & Direct Launcher (Always visible to ensure 100% success across all browsers) */}
-                        <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-t border-slate-700 p-4 sm:p-6 text-white flex flex-col md:flex-row items-center justify-between gap-4">
-                          <div className="space-y-1.5 text-right max-w-2xl">
-                            <h4 className="text-sm font-black text-white flex items-center gap-2">
-                              <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                                <Monitor className="w-4 h-4" />
-                              </span>
-                              <span>كيفية إتمام الربط بنجاح بدون ظهور خطأ "رمز QR غير صحيح":</span>
-                            </h4>
-                            <p className="text-xs text-slate-300 leading-relaxed">
-                              1. امسح الباركود الصادر مباشرة من واتساب ويب المعروض بالأعلى عبر كاميرا هاتفك (واتساب &gt; الأجهزة المرتبطة &gt; ربط جهاز).
-                              <br />
-                              2. إذا كانت حماية المتصفح تحجب تحميل الصفحة داخل الإطار، اضغط الزر الأخضر لفتح محطة واتساب ويب الرسمية كنافذة مستقلة مدمجة فوراً.
-                              <br />
-                              3. بعد اكتمال المسح من هاتفك، اضغط على زر <strong>"تأكيد اكتمال الربط في النظام"</strong> لتفعيل إرسال الإشعارات والتذاكر آلياً!
-                            </p>
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row items-center gap-2.5 shrink-0 w-full md:w-auto">
-                            <Button
-                              onClick={openOfficialWhatsAppWeb}
-                              className="w-full sm:w-auto bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs sm:text-sm py-2.5 px-4 rounded-xl shadow-lg gap-2"
-                            >
-                              <ExternalLink className="w-4 h-4 shrink-0" />
-                              <span>فتح محطة واتساب ويب الرسمية الحية (web.whatsapp.com)</span>
-                            </Button>
-
-                            <Button
-                              onClick={() => verifyScanMutation.mutate({ phone_number: `+${selectedCountryCode}${inputLocalPhone.replace(/^0+/, "")}` })}
-                              disabled={verifyScanMutation.isPending}
-                              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm py-2.5 px-4 rounded-xl shadow-lg gap-2"
-                            >
-                              <CheckCircle className="w-4 h-4 shrink-0" />
-                              <span>✓ تأكيد اكتمال الربط في النظام</span>
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* OPTION 2: OFFICIAL CARD SETUP & QR ERROR SOLUTION (حل خطأ المسح) */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {qrActiveView === "official_card" && (
-                  <div className="space-y-6">
-                    {/* Error Solution Advisory Box */}
-                    <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 text-right space-y-2 shadow-xs">
-                      <div className="flex items-center gap-2 text-amber-900 font-black text-sm">
-                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                        <span>تنبيه مهم وحل رسالة "رمز QR غير صحيح" التي ظهرت بهاتفك:</span>
-                      </div>
-                      <p className="text-xs text-amber-800 leading-relaxed">
-                        تطبيق واتساب بهاتفك (الأجهزة المرتبطة) يرفض الباركود الثابت، ويشترط مسح الباركود الصادر مباشرة وحياً من سيرفرات Meta WhatsApp المشفرة (web.whatsapp.com) عبر محطة الويب المتزامنة.
-                        لذلك يرجى النقر على <strong>"فتح محطة واتساب ويب الرسمية"</strong> أدناه لمسح الرمز الحي، أو استخدام خاصية <strong>"تسجيل الدخول برقم الهاتف"</strong> للحصول على كود رسمي.
-                      </p>
-                      <div className="pt-2 flex flex-wrap items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={openOfficialWhatsAppWeb}
-                          className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs font-black rounded-xl h-8 gap-1.5 shadow-xs"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>فتح محطة واتساب ويب الرسمية ومسح الرمز الحي</span>
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setQrViewMethod(qrViewMethod === "qr" ? "code" : "qr")}
-                          className="text-xs h-8 border-amber-300 text-amber-900 bg-white hover:bg-amber-100/50 rounded-xl font-bold"
-                        >
-                          <Smartphone className="w-3.5 h-3.5 text-amber-700" />
-                          <span>{qrViewMethod === "qr" ? "التبديل إلى كود الربط برقم الهاتف" : "العودة إلى الباركود"}</span>
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Full-width Authentic WhatsApp Web Official Card */}
-                    <div className="w-full bg-[#faf6f0] border border-[#e8ded5] rounded-3xl p-6 sm:p-10 shadow-md relative overflow-hidden">
-                      <div className="flex flex-col-reverse lg:flex-row items-center justify-between gap-10">
-                        {/* Left Column (QR Code or Phone Code Box) */}
-                        <div className="w-full lg:w-auto flex flex-col items-center justify-center space-y-4 shrink-0">
-                          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/90 shadow-md relative flex items-center justify-center w-72 h-72 sm:w-80 sm:h-80">
-                            {qrStatus === "generating" ? (
-                              <div className="flex flex-col items-center justify-center space-y-3 text-center">
-                                <RefreshCw className="w-10 h-10 text-emerald-600 animate-spin" />
-                                <span className="text-xs font-bold text-slate-600">جاري إنشاء باركود مشفر حقيقي...</span>
-                              </div>
-                            ) : qrViewMethod === "code" ? (
-                              <div className="w-full h-full flex flex-col items-center justify-center space-y-3 text-center p-2">
-                                <div className="p-2 rounded-full bg-emerald-50 text-emerald-700">
-                                  <Smartphone className="w-6 h-6" />
-                                </div>
-                                <span className="text-xs text-slate-700 font-bold">كود الربط برقم الهاتف</span>
-                                <div className="flex items-center gap-1.5 bg-slate-900 text-emerald-400 py-2 px-4 rounded-xl font-mono text-xl font-black tracking-widest border border-emerald-500/30">
-                                  <span>{qrPairingCode}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(qrPairingCode);
-                                      toast({ title: "✓ تم نسخ كود الربط", description: qrPairingCode });
-                                    }}
-                                    className="text-slate-400 hover:text-white p-1"
-                                  >
-                                    <Copy className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                                <p className="text-[11px] text-slate-500 leading-relaxed px-2">
-                                  أدخل هذا الرمز في هاتفك بعد النقر على <strong>"الربط باستخدام رقم الهاتف"</strong> في تطبيق واتساب بهاتفك
-                                </p>
-                                <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                                  الرقم المستهدف: +{selectedCountryCode}{inputLocalPhone.replace(/^0+/, "")}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="relative w-full h-full flex items-center justify-center">
-                                {realQrDataUrl ? (
-                                  <div className="relative">
-                                    <img
-                                      src={realQrDataUrl}
-                                      alt="WhatsApp Web Multi-Device QR Code"
-                                      className="w-64 h-64 sm:w-72 sm:h-72 object-contain rounded-xl select-none"
-                                    />
-                                    {/* Center WhatsApp Logo Badge */}
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <div className="w-12 h-12 rounded-full bg-[#25D366] border-2 border-white flex items-center justify-center text-white shadow-lg">
-                                        <Phone className="w-6 h-6 fill-current" />
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center space-y-2">
-                                    <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
-                                    <span className="text-xs text-slate-500 font-bold">جاري تحميل الباركود...</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Official Web.whatsapp.com Direct Buttons */}
-                          <div className="w-full max-w-xs space-y-2">
-                            <Button
-                              onClick={openOfficialWhatsAppWeb}
-                              className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs sm:text-sm py-2.5 px-3 rounded-xl shadow-md gap-2 flex items-center justify-center transition-all"
-                            >
-                              <ExternalLink className="w-4 h-4 shrink-0" />
-                              <span>فتح محطة واتساب ويب الرسمية</span>
-                            </Button>
-
-                            <div className="flex items-center justify-between w-full gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => generateQrMutation.mutate()}
-                                disabled={generateQrMutation.isPending}
-                                className="text-xs h-8 gap-1 flex-1 border-slate-300 bg-white"
-                              >
-                                <RefreshCw className={`w-3.5 h-3.5 ${generateQrMutation.isPending ? "animate-spin" : ""}`} />
-                                <span>تحديث الرمز</span>
-                              </Button>
-
-                              {qrStatus !== "connected" ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => verifyScanMutation.mutate({ phone_number: `+${selectedCountryCode}${inputLocalPhone.replace(/^0+/, "")}` })}
-                                  disabled={verifyScanMutation.isPending}
-                                  className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs h-8 gap-1 font-bold flex-1"
-                                >
-                                  <CheckCircle className="w-3.5 h-3.5" />
-                                  <span>تأكيد الربط</span>
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => disconnectQrMutation.mutate()}
-                                  disabled={disconnectQrMutation.isPending}
-                                  className="text-xs h-8 text-rose-600 border-rose-200 hover:bg-rose-50 font-bold flex-1"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>قطع الاتصال</span>
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right Column: Instructions matching image_15cacfc3.png */}
-                        <div className="flex-1 space-y-6 text-right w-full">
-                          <div>
-                            <h2 className="text-2xl sm:text-3xl font-medium text-slate-800 tracking-tight">
-                              المسح ضوئيًا لتسجيل الدخول
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-1">
-                              قم بربط حساب واتساب بنظام أومني فلاي لإرسال إشعارات وتنبيهات العملاء والتذاكر آلياً في الخلفية
-                            </p>
-                          </div>
-
-                          {/* 3 Step Timeline with vertical connecting lines */}
-                          <div className="relative pr-2 space-y-6">
-                            {/* Vertical Line */}
-                            <div className="absolute right-[15px] top-4 bottom-4 w-[2px] bg-slate-300 pointer-events-none" />
-
-                            {/* Step 1 */}
-                            <div className="relative flex items-start gap-4">
-                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
-                                1
-                              </div>
-                              <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
-                                امسح رمز QR ضوئيًا باستخدام كاميرا هاتفك
-                              </p>
-                            </div>
-
-                            {/* Step 2 */}
-                            <div className="relative flex items-start gap-4">
-                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
-                                2
-                              </div>
-                              <div className="flex items-center gap-2 pt-1 flex-wrap">
-                                <span className="text-sm sm:text-base text-slate-800">
-                                  اضغط على الرابط لفتح واتساب
-                                </span>
-                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#25D366] text-white shadow-xs">
-                                  <Phone className="w-3.5 h-3.5 fill-current" />
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Step 3 */}
-                            <div className="relative flex items-start gap-4">
-                              <div className="w-8 h-8 rounded-full border border-slate-400 bg-[#faf6f0] flex items-center justify-center text-xs font-bold text-slate-700 z-10 shrink-0">
-                                3
-                              </div>
-                              <p className="text-sm sm:text-base text-slate-800 pt-1 leading-relaxed">
-                                امسح رمز QR ضوئيًا مره أخرى للربط بحسابك
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Phone Number Input & Country Picker for accurate linking */}
-                          <div className="bg-white/80 p-3.5 rounded-2xl border border-[#e8ded5] space-y-2">
-                            <label className="text-xs font-bold text-slate-700 block">
-                              رقم هاتف المنشأة المستخدم للربط والإرسال:
-                            </label>
-                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                              <div className="sm:col-span-5">
-                                <select
-                                  value={selectedCountryCode}
-                                  onChange={(e) => setSelectedCountryCode(e.target.value)}
-                                  className="w-full text-xs font-bold bg-white border border-slate-200 rounded-xl p-2 h-9"
-                                >
-                                  {COUNTRY_CODES.map((c) => (
-                                    <option key={c.code} value={c.code}>
-                                      {c.flag} {c.name} (+{c.code})
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="sm:col-span-7">
-                                <Input
-                                  value={inputLocalPhone}
-                                  onChange={(e) => setInputLocalPhone(e.target.value.replace(/\D/g, ""))}
-                                  placeholder="501234567"
-                                  dir="ltr"
-                                  className="text-xs font-mono font-bold bg-white h-9"
-                                />
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                              <span>الرقم المنسق دولياً:</span>
-                              <span className="font-mono font-bold text-emerald-700 dir-ltr" dir="ltr">
-                                +{selectedCountryCode} {inputLocalPhone.replace(/^0+/, "")}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Help Link */}
-                          <div className="pr-12">
-                            <a
-                              href="https://faq.whatsapp.com/1317564962415621/?locale=ar_AA"
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-xs text-[#00a884] hover:underline inline-flex items-center gap-1 font-bold"
-                            >
-                              <span>هل تحتاج إلى مساعدة؟</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </div>
-
-                          {/* Bottom Controls: Checkbox & Phone Login Link */}
-                          <div className="pt-4 border-t border-[#e8ded5] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-                            {/* Checkbox on Right (in RTL) */}
-                            <label className="flex items-center gap-2 text-slate-700 font-medium cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={keepLoggedIn}
-                                onChange={(e) => setKeepLoggedIn(e.target.checked)}
-                                className="w-4 h-4 rounded text-[#00a884] focus:ring-[#00a884] border-slate-300"
-                              />
-                              <span>الاستمرار في تسجيل الدخول على هذا المتصفح</span>
-                              <Info className="w-3.5 h-3.5 text-slate-400" />
-                            </label>
-
-                            {/* Phone Login Link on Left (in RTL) */}
-                            <button
-                              type="button"
-                              onClick={() => setQrViewMethod(qrViewMethod === "qr" ? "code" : "qr")}
-                              className="text-[#00a884] hover:underline font-bold flex items-center gap-1 text-xs"
-                            >
-                              <span>{qrViewMethod === "qr" ? "تسجيل الدخول برقم الهاتف" : "العودة إلى مسح رمز QR"}</span>
-                              <ChevronLeft className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* OPTION 3: MARKET METHODS GUIDE (المقارنة التقنية المعتمدة) */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {qrActiveView === "methods_guide" && (
-                  <div className="space-y-6">
-                    <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 text-white rounded-3xl p-6 sm:p-8 border border-slate-700 shadow-xl space-y-6">
-                      <div className="space-y-2">
-                        <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                          الدليل الفني المعتمد لأنظمة السوق
-                        </span>
-                        <h3 className="text-lg sm:text-xl font-black text-white">
-                          ما الخيارات المتاحة أمام المنشأة لربط واتساب وإرسال الإشعارات؟
-                        </h3>
-                        <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
-                          بحسب المعايير العالمية والأنظمة المستخدمة في السوق (الموضحة في الصور الإرشادية للنظام)، يوجد خياران رئيسيان:
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Option 1: Official Meta Cloud API */}
-                        <div className="bg-slate-800/80 border-2 border-emerald-500/60 rounded-2xl p-6 space-y-4 relative overflow-hidden">
-                          <div className="flex items-center justify-between">
-                            <Badge className="bg-emerald-600 text-white font-bold text-xs">
-                              رسمية 100% ومعتمدة من Meta
-                            </Badge>
-                            <span className="text-emerald-400 font-bold text-xs">الخيار الموصى به للمؤسسات 🌟</span>
-                          </div>
-
-                          <h4 className="text-base font-black text-white flex items-center gap-2">
-                            <span>1. واجهة واتساب الرسمية (Meta Cloud API)</span>
-                          </h4>
-
-                          <p className="text-xs text-slate-300 leading-relaxed">
-                            يربط المبرمج النظام بخادم واتساب عبر API، ويستطيع إرسال إشعارات آلية مثل تأكيد الحجز، وتغيير حالة الطلب، وتذكير المسافر بموعد الرحلة.
-                          </p>
-
-                          <div className="bg-emerald-950/60 border border-emerald-500/30 p-3 rounded-xl text-xs text-emerald-200 space-y-1">
-                            <span className="font-bold block text-emerald-300">خاصية Embedded Signup:</span>
-                            <p className="text-[11px] text-slate-300 leading-relaxed">
-                              إذا كنت ستربط عملاء أو فروع متعددة داخل برنامجك، يمكنك استخدام خاصية Embedded Signup لتسهيل ربط كل شركة لرقمها من داخل نظامك بدون تعقيدات برمجية.
-                            </p>
-                          </div>
-
-                          <ul className="text-xs space-y-2 text-slate-300">
-                            <li className="flex items-center gap-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span>صفر مخاطر حظر (حساب رسمي معتمد وموثق)</span>
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span>لا يتطلب بقاء الهاتف متصلاً بالإنترنت إطلاقاً</span>
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span>إرسال فوري فائق السرعة عبر سيرفرات Meta العالمية</span>
-                            </li>
-                          </ul>
-
-                          <Button
-                            onClick={() => setConnectionMode("embedded")}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs h-9 rounded-xl shadow-md gap-2"
-                          >
-                            <Globe className="w-4 h-4" />
-                            <span>الانتقال لإعداد الربط الرسمي (Meta Cloud API)</span>
-                          </Button>
-                        </div>
-
-                        {/* Option 2: WhatsApp Web Multi-Device QR */}
-                        <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 space-y-4 relative overflow-hidden">
-                          <div className="flex items-center justify-between">
-                            <Badge variant="outline" className="text-amber-400 border-amber-500/40 font-bold text-xs">
-                              مجاني وسريع (محاكاة واتساب ويب)
-                            </Badge>
-                            <span className="text-slate-400 text-xs font-bold">للمكاتب الصغيرة</span>
-                          </div>
-
-                          <h4 className="text-base font-black text-white flex items-center gap-2">
-                            <span>2. الربط عبر QR ومحطة واتساب ويب</span>
-                          </h4>
-
-                          <p className="text-xs text-slate-300 leading-relaxed">
-                            يفتح العميل واتساب على هاتفه، ثم يختار الأجهزة المرتبطة ويمسح الرمز المعروض في محطة واتساب ويب داخل النظام.
-                          </p>
-
-                          <div className="space-y-2 text-xs">
-                            <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
-                              <span className="text-emerald-400 font-bold block mb-1">المميزات:</span>
-                              <span className="text-slate-300 text-[11px]">
-                                تجربة بسيطة وسريعة لا تتطلب إعداد حساب Meta Business أو بطاقة ائتمانية.
-                              </span>
-                            </div>
-
-                            <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/60">
-                              <span className="text-amber-400 font-bold block mb-1">الاحتياطات (مُعالجة بنظامنا):</span>
-                              <span className="text-slate-300 text-[11px]">
-                                قد تنتهي الجلسة وتحتاج إعادة مسح الباركود، ولذلك أضفنا في نظامنا درع مكافحة الحظر (Anti-Ban Guard) وفواصل الإرسال الإنسانية الذكية لحماية رقمك.
-                              </span>
-                            </div>
-                          </div>
-
-                          <Button
-                            onClick={() => setQrActiveView("live_station")}
-                            className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-black text-xs h-9 rounded-xl shadow-md gap-2"
-                          >
-                            <Monitor className="w-4 h-4" />
-                            <span>استخدام محطة واتساب ويب المباشرة المدمجة</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* OPTION 4: API KEY & CHROME PERMISSIONS GUIDE (مفتاح API وتصاريح كروم) */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {qrActiveView === "api_browser_guide" && (
-                  <div className="space-y-6">
-                    {/* Top Explanation Banner */}
-                    <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 text-white shadow-xl space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                          <KeyRound className="w-6 h-6" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-black text-white flex items-center gap-2">
-                            <span>دليل استخراج مفتاح API وتصاريح متصفح جوجل كروم</span>
-                            <Badge className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold">
-                              مرجع تقني شامل
-                            </Badge>
-                          </h3>
-                          <p className="text-xs text-slate-300 mt-0.5">
-                            إليك الإجابة التقنية الشاملة حول كيفية الحصول على مفتاح API، تصاريح المتصفح المطلوبة، وتشغيل جوجل كروم داخل النظام
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      {/* Card 1: How to get Meta API Key */}
-                      <Card className="border-indigo-200/80 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
-                        <div>
-                          <CardHeader className="bg-indigo-50/50 border-b border-indigo-100 pb-3">
-                            <div className="flex items-center justify-between">
-                              <Badge className="bg-indigo-600 text-white font-bold text-xs">
-                                الطريقة الرسمية 100%
-                              </Badge>
-                              <span className="text-[10px] text-slate-500 font-bold">بدون متصفح أو هاتف</span>
-                            </div>
-                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
-                              <Globe className="w-4 h-4 text-indigo-600" />
-                              <span>1. استخراج مفتاح Meta Cloud API</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-600">
-                              مفتاح الـ API يغنيك تماماً عن فتح المتصفح أو ربط الهاتف
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
-                            <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 text-indigo-950 space-y-1">
-                              <span className="font-bold block text-xs">💡 معلومة تقنية هامة:</span>
-                              <p className="text-[11px] leading-relaxed">
-                                لا يوجد "مفتاح API لفتح المتصفح"، ولكن مفتاح Meta Cloud API هو البديل السحابي المباشر الذي يسمح للنظام بإرسال الرسائل والتذاكر فورياً عبر خوادم Meta دون الحاجة لتشغيل أي متصفح أو مسح باركود!
-                              </p>
-                            </div>
-
-                            <div className="space-y-2">
-                              <span className="font-bold text-slate-900 block text-xs">خطوات الحصول على المفتاح مجاناً:</span>
-                              <ol className="space-y-2 list-decimal list-inside text-[11px] text-slate-600 leading-relaxed pr-1">
-                                <li>
-                                  ادخل إلى موقع <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold underline">developers.facebook.com</a> وسجل الدخول بحساب Facebook.
-                                </li>
-                                <li>
-                                  اضغط <strong>"إنشاء تطبيق (Create App)"</strong> واختر نوع التطبيق: <strong>الأعمال (Business)</strong>.
-                                </li>
-                                <li>
-                                  أضف منتج <strong>WhatsApp</strong> ثم انتقل إلى <strong>API Setup</strong>.
-                                </li>
-                                <li>
-                                  انسخ القيم الثلاث المعروضة:
-                                  <ul className="list-disc list-inside pr-3 text-[10px] text-slate-500 font-mono mt-1 space-y-0.5">
-                                    <li>Access Token (مفتاح الـ API)</li>
-                                    <li>Phone Number ID (معرف رقم الهاتف)</li>
-                                    <li>WABA ID (معرف حساب الأعمال)</li>
-                                  </ul>
-                                </li>
-                              </ol>
-                            </div>
-                          </CardContent>
-                        </div>
-
-                        <div className="p-5 pt-0 space-y-2">
-                          <Button
-                            onClick={() => window.open("https://developers.facebook.com/apps/", "_blank")}
-                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>فتح موقع مطوري Meta Developers</span>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => setConnectionMode("embedded")}
-                            className="w-full text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-bold text-xs h-8"
-                          >
-                            <span>الانتقال لإعدادات الربط السحابي الرسمي</span>
-                          </Button>
-                        </div>
-                      </Card>
-
-                      {/* Card 2: Browser Permissions Manager */}
-                      <Card className="border-emerald-200/80 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
-                        <div>
-                          <CardHeader className="bg-emerald-50/50 border-b border-emerald-100 pb-3">
-                            <div className="flex items-center justify-between">
-                              <Badge className="bg-emerald-600 text-white font-bold text-xs">
-                                تصاريح كروم
-                              </Badge>
-                              <span className="text-[10px] text-slate-500 font-bold">حماية المتصفح</span>
-                            </div>
-                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
-                              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                              <span>2. تصاريح المتصفح (Browser Permissions)</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-600">
-                              الصلاحيات المطلوبة للسماح بفتح محطة واتساب ويب
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
-                            <p className="text-[11px] leading-relaxed text-slate-600">
-                              لمنع المواقع من إزعاجك، يحجب متصفح Google Chrome النوافذ المنبثقة والكاميرا تلقائياً. إليك أداة فحص وتفعيل التصاريح:
-                            </p>
-
-                            {/* Live Permission Checks */}
-                            <div className="space-y-2">
-                              {/* Popups Check */}
-                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                                <div>
-                                  <span className="font-bold text-slate-800 block text-xs">النوافذ المنبثقة (Popups):</span>
-                                  <span className="text-[10px] text-slate-500">مطلوبة لفتح محطة واتساب المستقلة</span>
-                                </div>
-                                <div className="text-left">
-                                  {popupTestStatus === "allowed" ? (
-                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">
-                                      مسموح دائماً ✓
-                                    </Badge>
-                                  ) : popupTestStatus === "blocked" ? (
-                                    <Badge className="bg-rose-100 text-rose-800 border-rose-300 font-bold text-[10px]">
-                                      محجوب في كروم ✗
-                                    </Badge>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={testBrowserPopups}
-                                      className="text-[10px] h-7 px-2 border-slate-300"
-                                    >
-                                      فحص الصلاحية
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Desktop Notifications Check */}
-                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                                <div>
-                                  <span className="font-bold text-slate-800 block text-xs">إشعارات سطح المكتب:</span>
-                                  <span className="text-[10px] text-slate-500">لتنبيهك بوصول رسائل العملاء</span>
-                                </div>
-                                <div className="text-left">
-                                  {notificationStatus === "granted" ? (
-                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">
-                                      مُفعّل ✓
-                                    </Badge>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      onClick={requestNotificationPerm}
-                                      className="text-[10px] h-7 px-2 bg-emerald-600 text-white"
-                                    >
-                                      طلب الإذن
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Clipboard Access */}
-                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                                <div>
-                                  <span className="font-bold text-slate-800 block text-xs">الوصول للحافظة (Clipboard):</span>
-                                  <span className="text-[10px] text-slate-500">لنسخ أكواد الربط وتوكن الـ API</span>
-                                </div>
-                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px]">
-                                  نشط بنقرة واحدة ✓
-                                </Badge>
-                              </div>
-                            </div>
-
-                            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
-                              <strong>كيف تسمح بالنوافذ في كروم يدوياً؟</strong>
-                              <br />
-                              اضغط على أيقونة الإعدادات أو القفل 🔒 في شريط عنوان المتصفح &gt; إعدادات الموقع &gt; النوافذ المنبثقة &gt; اختر <strong>"سماح"</strong>.
-                            </div>
-                          </CardContent>
-                        </div>
-
-                        <div className="p-5 pt-0">
-                          <Button
-                            onClick={testBrowserPopups}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>اختبار تصاريح النوافذ المنبثقة الآن</span>
-                          </Button>
-                        </div>
-                      </Card>
-
-                      {/* Card 3: Standalone Chrome App Station Mode */}
-                      <Card className="border-teal-200/80 shadow-md rounded-3xl overflow-hidden bg-white flex flex-col justify-between">
-                        <div>
-                          <CardHeader className="bg-teal-50/50 border-b border-teal-100 pb-3">
-                            <div className="flex items-center justify-between">
-                              <Badge className="bg-teal-600 text-white font-bold text-xs">
-                                نمط التطبيق
-                              </Badge>
-                              <span className="text-[10px] text-slate-500 font-bold">Chrome App Mode</span>
-                            </div>
-                            <CardTitle className="text-sm font-black text-slate-800 pt-2 flex items-center gap-2">
-                              <Laptop className="w-4 h-4 text-teal-600" />
-                              <span>3. تشغيل كروم بنمط التطبيق المستقل</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-600">
-                              فتح محطة واتساب ويب كنافذة مستقلة بدون تبويبات
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="p-5 space-y-3.5 text-xs text-slate-700">
-                            <p className="text-[11px] leading-relaxed text-slate-600">
-                              يتيح لك متصفح Google Chrome تشغيل واتساب ويب في نافذة عمل مستقلة تماماً تشبه البرامج المثبتة على الكمبيوتر (بدون شريط علامات تبويب أو أزرار متصفح):
-                            </p>
-
-                            <div className="space-y-2">
-                              <span className="font-bold text-slate-900 block text-xs">طريقة تشغيل أمر كروم في ويندوز:</span>
-                              <div className="p-2.5 bg-slate-900 text-emerald-400 rounded-xl font-mono text-[11px] border border-slate-700 flex items-center justify-between">
-                                <span className="select-all truncate">chrome.exe --app=https://web.whatsapp.com/</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText("chrome.exe --app=https://web.whatsapp.com/");
-                                    toast({ title: "✓ تم نسخ أمر التشغيل" });
-                                  }}
-                                  className="text-slate-400 hover:text-white p-1 shrink-0"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                              <span className="text-[10px] text-slate-400 block">
-                                اضغط Win + R في لوحة المفاتيح، ثم الصق الأمر واضغط Enter ليفتح واتساب ويب كنافذة مستقلة!
-                              </span>
-                            </div>
-
-                            <div className="p-3 bg-teal-50 rounded-xl border border-teal-200 text-teal-950 space-y-1">
-                              <span className="font-bold block text-xs">تثبيت WhatsApp Web كـ PWA:</span>
-                              <p className="text-[11px] leading-relaxed">
-                                يمكنك فتح <code className="font-mono text-teal-700">web.whatsapp.com</code> في كروم، ثم النقر على النقاط الثلاث &gt; "حفظ ومشاركة" &gt; <strong>"تثبيت WhatsApp Web كتطبيق"</strong> ليظهر في سطح المكتب وشريط المهام.
-                              </p>
-                            </div>
-                          </CardContent>
-                        </div>
-
-                        <div className="p-5 pt-0 space-y-2">
-                          <Button
-                            onClick={openOfficialWhatsAppWeb}
-                            className="w-full bg-[#00a884] hover:bg-[#008f6f] text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-xs"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>تشغيل محطة واتساب بنمط كروم المستقل</span>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => setQrActiveView("live_station")}
-                            className="w-full text-slate-700 border-slate-200 hover:bg-slate-50 font-bold text-xs h-8"
-                          >
-                            <span>العودة لمحطة واتساب ويب المباشرة</span>
-                          </Button>
-                        </div>
-                      </Card>
-                    </div>
-                  </div>
-                )}
-
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                {/* 2. LOWER THREE-COLUMN GRID: DIAGNOSTICS, ANTI-BAN & DIRECT SEND */}
-                {/* ══════════════════════════════════════════════════════════════════ */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {/* Card 1: Anti-Ban Protection Shield */}
-                  <Card className="border-emerald-200 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40">
-                    <CardHeader className="border-b border-emerald-100/80 pb-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
-                            <ShieldAlert className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-sm font-black text-slate-800">
-                              درع الحماية ومكافحة الحظر
-                            </CardTitle>
-                            <CardDescription className="text-xs text-slate-500">
-                              حماية رقم الهاتف من التقييد أو الحظر
-                            </CardDescription>
-                          </div>
-                        </div>
-                        <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
-                          نشط 100%
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-5 space-y-4">
-                      <div className="space-y-2.5 text-xs">
-                        <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200">
-                          <span className="text-slate-600 font-medium">فاصل الإرسال الإنساني:</span>
-                          <span className="font-bold text-slate-800 font-mono">{antiBanPacing} ثوانٍ (يمنع اكتشاف الروبوت)</span>
-                        </div>
-                        <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200">
-                          <span className="text-slate-600 font-medium">الحصة اليومية الآمنة:</span>
-                          <span className="font-bold text-emerald-700 font-mono">{qrSessionData?.daily_sent_count || 42} / {antiBanDailyLimit} رسالة</span>
-                        </div>
-                        <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200">
-                          <span className="text-slate-600 font-medium">نبضات القلب (Keep-Alive):</span>
-                          <span className="font-bold text-teal-700">مُفعّل كل 30 ثانية 💓</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5 bg-white p-3 rounded-2xl border border-slate-200">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-700">معدل الحصة اليومية:</span>
-                          <span className="font-mono font-bold text-emerald-700">
-                            {Math.round(((qrSessionData?.daily_sent_count || 42) / antiBanDailyLimit) * 100)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div
-                            className="bg-emerald-500 h-full rounded-full transition-all"
-                            style={{ width: `${Math.min(100, Math.round(((qrSessionData?.daily_sent_count || 42) / antiBanDailyLimit) * 100))}%` }}
-                          />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Card 2: Connected Device Diagnostics */}
-                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-white">
-                    <CardHeader className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 pb-3">
-                      <CardTitle className="text-sm font-black flex items-center justify-between text-slate-800">
-                        <span className="flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-emerald-600" />
-                          <span>بيانات جلسة الهاتف المتصلة</span>
-                        </span>
-                        <Badge className="bg-emerald-600 text-white font-bold text-[10px]">
-                          Multi-Device
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-5 space-y-3 text-xs">
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">رقم الهاتف المتصل:</span>
-                        <span className="font-mono font-bold text-slate-900 dir-ltr" dir="ltr">
-                          +{selectedCountryCode} {inputLocalPhone.replace(/^0+/, "")}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">نوع الجلسة:</span>
-                        <span className="font-bold text-slate-800">WhatsApp Web Multi-Device</span>
-                      </div>
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">سرعة الاستجابة (Latency):</span>
-                        <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          24 ms ⚡
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
-                        <span className="text-slate-500 font-medium">التشفير:</span>
-                        <span className="font-bold text-slate-700 flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>End-to-End Encrypted</span>
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between py-1.5">
-                        <span className="text-slate-500 font-medium">حالة الجلسة:</span>
-                        <Badge
-                          variant="outline"
-                          className={`text-[11px] font-bold ${
-                            qrStatus === "connected"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                              : "bg-amber-50 text-amber-700 border-amber-300"
-                          }`}
-                        >
-                          {qrStatus === "connected" ? "متصل ونشط 🟢" : "بانتظار المسح 🟡"}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Card 3: Instant Live Test Message Dispatch */}
-                  <Card className="border-slate-200/80 shadow-md rounded-3xl overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5 flex flex-col justify-between">
-                    <div className="space-y-3.5">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
-                          <Send className="w-4 h-4" />
-                          <span>اختبار إرسال فوري عبر الجلسة</span>
-                        </h4>
-                        <span className="text-[10px] text-slate-400">إرسال في الخلفية</span>
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        أدخل رقم هاتف لتجربة إرسال رسالة اختبارية للتأكد من وصول الإشعارات والتذاكر في الخلفية.
-                      </p>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[11px] text-slate-300 font-bold block">رقم هاتف المستلم التجريبي:</label>
-                        <Input
-                          value={qrTestPhone}
-                          onChange={(e) => setQrTestPhone(e.target.value)}
-                          dir="ltr"
-                          placeholder="966500000000"
-                          className="text-xs font-mono font-bold bg-slate-900 border-slate-700 text-white placeholder:text-slate-500 h-9"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 pt-4">
-                      <Button
-                        disabled={testQrMessageMutation.isPending}
-                        onClick={() => testQrMessageMutation.mutate({ recipient_phone: qrTestPhone })}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 rounded-xl h-9 shadow-md"
-                      >
-                        <Send className={`w-3.5 h-3.5 ${testQrMessageMutation.isPending ? "animate-spin" : ""}`} />
-                        <span>إرسال رسالة اختبار عبر النظام 🚀</span>
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => handleOpenDirectWhatsAppWeb(qrTestPhone, "مرحباً، هذه رسالة تجربة من نظام أومني فلاي لإدارة السفريات والعمليات ✈️")}
-                        className="w-full text-xs text-emerald-300 border-emerald-500/40 hover:bg-emerald-950/50 font-bold h-8 gap-1.5"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>فتح محادثة مباشرة في واتساب ويب</span>
-                      </Button>
-                    </div>
-                  </Card>
-                </div>
-
-                {/* Anti-Ban Settings Modal */}
-                <Dialog open={antiBanModalOpen} onOpenChange={setAntiBanModalOpen}>
-                  <DialogContent className="max-w-md rounded-3xl p-6 text-right" dir="rtl">
-                    <DialogHeader>
-                      <DialogTitle className="text-base font-black flex items-center gap-2 text-slate-800">
-                        <ShieldAlert className="w-5 h-5 text-emerald-600" />
-                        <span>إعدادات درع الحماية ومكافحة الحظر (Anti-Ban Guard)</span>
-                      </DialogTitle>
-                      <DialogDescription className="text-xs text-slate-500">
-                        قم بضبط القواعد الاحترازية لحماية رقم واتساب المرتبط بالباركود من تقييد خوارزميات Meta
-                      </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-3 text-xs">
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="font-bold text-slate-700">فاصل الإرسال البشري الذكي (بالثواني):</label>
-                          <span className="font-mono font-bold text-emerald-700">{antiBanPacing} ثوانٍ</span>
-                        </div>
-                        <Input
-                          type="number"
-                          min={2}
-                          max={15}
-                          value={antiBanPacing}
-                          onChange={(e) => setAntiBanPacing(Number(e.target.value))}
-                          className="text-xs font-mono font-bold"
-                        />
-                        <span className="text-[10px] text-slate-400 block">
-                          النطاق الموصى به: 3 إلى 6 ثوانٍ لمحاكاة سلوك الإنسان الطبيعي
-                        </span>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="font-bold text-slate-700">الحد الأقصى للرسائل اليومية عبر الباركود:</label>
-                          <span className="font-mono font-bold text-blue-700">{antiBanDailyLimit} رسالة / يوم</span>
-                        </div>
-                        <Input
-                          type="number"
-                          min={50}
-                          max={1000}
-                          value={antiBanDailyLimit}
-                          onChange={(e) => setAntiBanDailyLimit(Number(e.target.value))}
-                          className="text-xs font-mono font-bold"
-                        />
-                        <span className="text-[10px] text-slate-400 block">
-                          نوصي بـ 300 رسالة يومياً كحد أقصى لحسابات الواتساب العادية لحمايتها من الحظر
-                        </span>
-                      </div>
-
-                      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800">نبضات القلب المستمرة (Keep-Alive):</span>
-                          <input
-                            type="checkbox"
-                            checked={autoReconnectEnabled}
-                            onChange={(e) => setAutoReconnectEnabled(e.target.checked)}
-                            className="w-4 h-4 accent-emerald-600 rounded"
-                          />
-                        </div>
-                        <span className="text-[11px] text-slate-500 block">
-                          إرسال نبضات فحص كل 30 ثانية لمنع تعليق الجلسة أو نوم الهاتف عند قفل الشاشة
-                        </span>
-                      </div>
-                    </div>
-
-                    <DialogFooter className="gap-2 sm:gap-0">
-                      <Button
-                        variant="outline"
-                        onClick={() => setAntiBanModalOpen(false)}
-                        className="text-xs font-bold rounded-xl"
-                      >
-                        إلغاء
-                      </Button>
-                      <Button
-                        disabled={saveAntiBanSettingsMutation.isPending}
-                        onClick={() =>
-                          saveAntiBanSettingsMutation.mutate({
-                            pacing_delay_sec: antiBanPacing,
-                            daily_limit: antiBanDailyLimit,
-                            auto_reconnect: autoReconnectEnabled ? 1 : 0,
-                            anti_ban_mode: 1
-                          })
-                        }
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl"
-                      >
-                        <span>حفظ الإعدادات</span>
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            )}
-
-            {/* ─────────────────────────────────────────────────────────── */}
-            {/* SUB-VIEW B: OFFICIAL META CLOUD API & EMBEDDED SIGNUP WIZARD */}
-            {/* ─────────────────────────────────────────────────────────── */}
-            {connectionMode === "embedded" && (
-              <div className="space-y-6">
-                {/* 4-Step Embedded Signup Progression Stepper */}
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm">
-                  <h4 className="text-xs font-black text-slate-700 mb-3 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-blue-600" />
-                    <span>مراحل الربط السحابي الرسمي عبر Meta Embedded Signup (بدون مغادرة النظام):</span>
-                  </h4>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                    {[
-                      { step: 1, title: "1. بيانات المؤسسة", desc: "الاسم والرقم والبريد", active: embeddedStep === 1, done: embeddedStep > 1 },
-                      { step: 2, title: "2. الدخول والتفويض", desc: "ربط حساب Meta والأعمال", active: embeddedStep === 2, done: embeddedStep > 2 },
-                      { step: 3, title: "3. الدفع وشحن الرصيد", desc: "سداد الاشتراك أو الرصيد", active: embeddedStep === 3, done: embeddedStep > 3 },
-                      { step: 4, title: "4. التشغيل والتحقق", desc: "تفعيل الإرسال السحابي", active: embeddedStep === 4, done: embeddedStep >= 4 }
-                    ].map((st) => (
-                      <button
-                        key={`travelnotificationshub-embedded-step-${st.step}`}
-                        type="button"
-                        onClick={() => setEmbeddedStep(st.step as any)}
-                        className={`p-3 rounded-2xl border text-right transition-all flex items-start gap-2.5 ${
-                          st.active
-                            ? "border-blue-500 bg-blue-50/50 shadow-xs"
-                            : st.done
-                            ? "border-emerald-200 bg-emerald-50/30 text-emerald-800"
-                            : "border-slate-200 bg-slate-50/50 text-slate-500 hover:bg-slate-100/60"
-                        }`}
-                      >
-                        <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                            st.active
-                              ? "bg-blue-600 text-white"
-                              : st.done
-                              ? "bg-emerald-600 text-white"
-                              : "bg-slate-200 text-slate-600"
-                          }`}
-                        >
-                          {st.done ? "✓" : st.step}
-                        </div>
-                        <div>
-                          <span className={`text-xs font-bold block ${st.active ? "text-blue-900" : "text-slate-800"}`}>
-                            {st.title}
-                          </span>
-                          <span className="text-[10px] text-slate-500">{st.desc}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Left Column: Credentials Form */}
-                  <div className="lg:col-span-2 space-y-6">
-                    <Card className="border-slate-200 shadow-sm rounded-3xl overflow-hidden">
-                      <CardHeader className="border-b bg-slate-50/50 pb-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                          <div>
-                            <CardTitle className="text-base font-bold flex items-center gap-2 text-slate-800">
-                              <KeyRound className="w-5 h-5 text-emerald-600" />
-                              <span>معرفات ومفاتيح الربط الرسمي (Meta Developer Console)</span>
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              قم بإدخال بيانات تطبيق الواتساب المعتمد من منصة Meta لتنشيط الإرسال السحابي المشفر
-                            </CardDescription>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setSmartImportModalOpen(true)}
-                              className="text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-bold"
-                            >
-                              <Zap className="w-3.5 h-3.5 text-amber-500" />
-                              <span>استيراد ذكي</span>
-                            </Button>
-
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => testGatewayMutation.mutate(metaForm.access_token)}
-                              disabled={testGatewayMutation.isPending}
-                              className="text-xs gap-1.5 font-bold border-blue-300 text-blue-700 hover:bg-blue-50"
-                            >
-                              <RefreshCw className={`w-3.5 h-3.5 ${testGatewayMutation.isPending ? "animate-spin" : ""}`} />
-                              <span>فحص الاتصال الحي</span>
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-
-                      <CardContent className="p-6 space-y-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">
-                              اسم النشاط التجاري المعتمد (Business Name)
-                            </label>
-                            <Input
-                              value={metaForm.business_name}
-                              onChange={(e) => setMetaForm({ ...metaForm, business_name: e.target.value })}
-                              placeholder={agencyName}
-                              className="text-xs"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">
-                              رقم الهاتف الرسمي المعروض (Display Phone Number)
-                            </label>
-                            <Input
-                              value={metaForm.display_phone_number}
-                              onChange={(e) => setMetaForm({ ...metaForm, display_phone_number: e.target.value })}
-                              placeholder="+966 50 554 4332"
-                              dir="ltr"
-                              className="text-xs font-mono font-bold"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-xs font-bold text-slate-700">معرف رقم الهاتف (Phone Number ID)</label>
-                              <span className="text-[10px] text-slate-400">من صفحة API Setup</span>
-                            </div>
-                            <Input
-                              value={metaForm.phone_number_id}
-                              onChange={(e) => setMetaForm({ ...metaForm, phone_number_id: e.target.value })}
-                              placeholder="PHONE-105544332211000"
-                              dir="ltr"
-                              className="text-xs font-mono"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-xs font-bold text-slate-700">معرف حساب الأعمال (WABA ID)</label>
-                              <span className="text-[10px] text-slate-400">WhatsApp Business Account ID</span>
-                            </div>
-                            <Input
-                              value={metaForm.waba_id}
-                              onChange={(e) => setMetaForm({ ...metaForm, waba_id: e.target.value })}
-                              placeholder="WABA-109283746501928"
-                              dir="ltr"
-                              className="text-xs font-mono"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-xs font-bold text-slate-700">معرف التطبيق في Meta (App ID)</label>
-                              <span className="text-[10px] text-slate-400">App Dashboard</span>
-                            </div>
-                            <Input
-                              value={metaForm.app_id}
-                              onChange={(e) => setMetaForm({ ...metaForm, app_id: e.target.value })}
-                              placeholder="META-APP-884920193847"
-                              dir="ltr"
-                              className="text-xs font-mono"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-xs font-bold text-slate-700">رمز التحقق للويبهوك (Webhook Verify Token)</label>
-                              <span className="text-[10px] text-slate-400">Webhook Verification</span>
-                            </div>
-                            <Input
-                              value={metaForm.webhook_verify_token}
-                              onChange={(e) => setMetaForm({ ...metaForm, webhook_verify_token: e.target.value })}
-                              placeholder="omnifly_meta_webhook_2026"
-                              dir="ltr"
-                              className="text-xs font-mono"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-xs font-bold text-slate-700">
-                              رمز الوصول الدائم (Permanent System User Access Token)
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => setShowToken(!showToken)}
-                              className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"
-                            >
-                              {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              {showToken ? "إخفاء الرمز" : "إظهار الرمز"}
-                            </button>
-                          </div>
-                          <Input
-                            type={showToken ? "text" : "password"}
-                            value={metaForm.access_token}
-                            onChange={(e) => setMetaForm({ ...metaForm, access_token: e.target.value })}
-                            placeholder="EAAG..."
-                            dir="ltr"
-                            className="text-xs font-mono"
-                          />
-                        </div>
-
-                        <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setMetaForm({
-                                business_name: agencyName,
-                                phone_number: "966505544332",
-                                display_phone_number: "+966 50 554 4332",
-                                email: "info@omnifly-travel.com",
-                                country: "المملكة العربية السعودية (+966)",
-                                waba_id: "WABA-109283746501928",
-                                phone_number_id: "PHONE-105544332211000",
-                                app_id: "META-APP-884920193847",
-                                access_token: "EAAG_OMNIFLY_META_CLOUD_API_TOKEN_2026",
-                                webhook_verify_token: "omnifly_meta_webhook_2026",
-                                pin_code: "123456",
-                                tier: "10,000 Messages/Day",
-                                quality_rating: "GREEN"
-                              });
-                              toast({ title: "تمت التعبئة بالبيانات القياسية المعتمدة" });
-                            }}
-                            className="text-xs"
-                          >
-                            إعادة تعيين البيانات القياسية
-                          </Button>
-
-                          <Button
-                            onClick={() => saveMetaMutation.mutate(metaForm)}
-                            disabled={saveMetaMutation.isPending}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1.5 shadow-md px-6"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            {saveMetaMutation.isPending ? "جاري حفظ الإعدادات..." : "حفظ واعتماد بيانات الربط السحابي 💾"}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Right Column: Connection Status & 2FA PIN */}
-                  <div className="space-y-6">
-                    <Card className="border-slate-200 rounded-3xl overflow-hidden">
-                      <CardHeader className="border-b bg-emerald-50/40 pb-3">
-                        <CardTitle className="text-sm font-bold flex items-center justify-between">
-                          <span className="flex items-center gap-1.5 text-emerald-800">
-                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                            حالة التوثيق في خوادم Meta
-                          </span>
-                          <span className="text-[11px] font-bold text-emerald-700">موثق ومعتمد</span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-4 space-y-3 text-xs">
-                        <div className="flex items-center justify-between py-1 border-b border-emerald-100/60">
-                          <span className="text-slate-600">تقييم الجودة (Quality):</span>
-                          <span className="font-bold text-emerald-700">GREEN (ممتازة)</span>
-                        </div>
-
-                        <div className="flex items-center justify-between py-1 border-b border-emerald-100/60">
-                          <span className="text-slate-600">حد الرسائل اليومي:</span>
-                          <span className="font-mono font-bold text-slate-800">10,000 Messages/Day</span>
-                        </div>
-
-                        <div className="flex items-center justify-between py-1 border-b border-emerald-100/60">
-                          <span className="text-slate-600">رصيد المحادثات المتوفر:</span>
-                          <span className="font-mono font-bold text-amber-600">
-                            {billingData?.balance ? Number(billingData.balance).toLocaleString() : "5,000"} محادثة
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between py-1">
-                          <span className="text-slate-600">إصدار واجهة Meta:</span>
-                          <span className="font-mono font-bold text-slate-800">Graph API v21.0</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* 2FA PIN Registration Card */}
-                    <Card className="border-slate-200 rounded-3xl overflow-hidden">
-                      <CardHeader className="pb-3 bg-slate-50/50">
-                        <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-800">
-                          <Smartphone className="w-4 h-4 text-emerald-600" />
-                          تأكيد رقم الهاتف ورمز الـ PIN المكون من 6 أرقام
-                        </CardTitle>
-                        <CardDescription className="text-xs">
-                          التحقق النهائي برمز الحماية الثنائي 2FA لتمكين إرسال الرسائل من الرقم الرسمي
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-4 space-y-3">
-                        <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">رمز التحقق الثنائي (6-Digit PIN)</label>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type={showPin ? "text" : "password"}
-                              maxLength={6}
-                              value={pinInput}
-                              onChange={(e) => setPinInput(e.target.value)}
-                              placeholder="123456"
-                              dir="ltr"
-                              className="font-mono text-center tracking-widest text-base font-black w-36"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPin(!showPin)}
-                              className="text-xs text-slate-500 hover:text-slate-800"
-                            >
-                              {showPin ? "إخفاء" : "إظهار"}
-                            </button>
-                          </div>
-                        </div>
-
-                        <Button
-                          onClick={() => verifyPinMutation.mutate(pinInput)}
-                          disabled={verifyPinMutation.isPending}
-                          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs gap-1.5"
-                        >
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          {verifyPinMutation.isPending ? "جاري التحقق من خوادم Meta..." : "تأكيد تسجيل الرقم في Meta الآن 🚀"}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <WhatsAppGatewayTab
+            fourWaForm={fourWaForm}
+            setFourWaForm={setFourWaForm}
+            fourWaStatus={fourWaStatus}
+            fourWaData={fourWaData}
+            fourWaPhone={fourWaPhone}
+            fourWaQrDataUrl={fourWaQrDataUrl}
+            showFourWaPassword={showFourWaPassword}
+            setShowFourWaPassword={setShowFourWaPassword}
+            fourWaLoginMutation={fourWaLoginMutation}
+            fourWaCheckStatusMutation={fourWaCheckStatusMutation}
+            fourWaGenerateQrMutation={fourWaGenerateQrMutation}
+            fourWaConfirmScanMutation={fourWaConfirmScanMutation}
+            fourWaDisconnectMutation={fourWaDisconnectMutation}
+            fourWaSendMessageMutation={fourWaSendMessageMutation}
+            fourWaQuickTestPhone={fourWaQuickTestPhone}
+            setFourWaQuickTestPhone={setFourWaQuickTestPhone}
+            fourWaTestMessage={fourWaTestMessage}
+            setFourWaTestMessage={setFourWaTestMessage}
+            fourWaAttachment={fourWaAttachment}
+            setFourWaAttachment={setFourWaAttachment}
+            handleFourWaFileSelect={handleFourWaFileSelect}
+            openOfficialWhatsAppWeb={openOfficialWhatsAppWeb}
+            handleOpenDirectWhatsAppWeb={handleOpenDirectWhatsAppWeb}
+          />
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════════════ */}
-        {/* TAB 2: COMPREHENSIVE AUTOMATIONS ENGINE FOR ALL ERP DEPARTMENTS */}
-        {/* ══════════════════════════════════════════════════════════════════════════ */}
         {activeTab === "automations" && (
           <div className="space-y-6">
             {/* Top Engine Banner */}
@@ -3959,9 +1459,10 @@ ${agencyName}`
                     </CardHeader>
 
                     <CardContent className="p-4 space-y-3 text-xs">
-                      {/* Message Preview Box */}
                       <div className="bg-slate-50 border rounded-xl p-3 text-slate-700 font-sans text-[11px] leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
-                        {rule.custom_message || rule.effective_message || "لم يتم تحديد نص رسالة"}
+                        {(rule.custom_message || rule.effective_message || "لم يتم تحديد نص رسالة")
+                          .replace(/\{agency_name\}/g, agencyName)
+                          .replace(/\{currency\}/g, currency)}
                       </div>
 
                       {/* Action buttons: Edit Message & Test Send */}
@@ -4731,7 +2232,7 @@ curl -i -X POST "https://graph.facebook.com/v21.0/105544332211000/messages" \\
                             .replace(/\{agency_name\}/g, agencyName)
                             .replace(/\{invoice_no\}/g, "INV-2026-1049")
                             .replace(/\{amount\}/g, "1,850")
-                            .replace(/\{currency\}/g, "ريال")
+                            .replace(/\{currency\}/g, currency)
                             .replace(/\{pnr\}/g, "6X9ZKL")
                             .replace(/\{flight_no\}/g, "SV 112")
                             .replace(/\{departure_date\}/g, "15 نوفمبر 2026")
