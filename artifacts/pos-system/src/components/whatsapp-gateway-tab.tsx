@@ -38,7 +38,7 @@ import {
   ChevronDown,
   ChevronUp
 } from "lucide-react";
-import { COUNTRY_CODES } from "../pages/travel-notifications-hub";
+import { COUNTRY_CODES } from "../constants/country-codes";
 
 export interface WhatsAppGatewayTabProps {
   fourWaForm: {
@@ -1173,7 +1173,7 @@ export function WhatsAppGatewayTab({
                         onChange={(e) => setFourWaForm((prev: any) => ({ ...prev, country_code: e.target.value }))}
                         className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white w-28 shrink-0"
                       >
-                        {COUNTRY_CODES.map((c) => (
+                        {(COUNTRY_CODES || []).map((c) => (
                           <option key={c.code} value={c.code}>
                             +{c.code} ({c.name})
                           </option>
@@ -1469,7 +1469,7 @@ export function WhatsAppGatewayTab({
                       onChange={(e) => setFourWaForm((prev: any) => ({ ...prev, country_code: e.target.value }))}
                       className="h-10 px-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white w-24 shrink-0"
                     >
-                      {COUNTRY_CODES.map((c) => (
+                      {(COUNTRY_CODES || []).map((c) => (
                         <option key={c.code} value={c.code}>
                           +{c.code}
                         </option>

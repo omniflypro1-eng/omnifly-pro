@@ -3099,7 +3099,7 @@ router.post("/travel/notifications/meta-verify-pin", (req: Request, res: Respons
 });
 
 // Meta Billing & Balance Data
-router.get("/travel/notifications/meta-billing", (_req: Request, res: Response) => {
+router.get(["/travel/notifications/meta-billing", "/travel/notifications/meta-billing/history"], (_req: Request, res: Response) => {
   try {
     const signup = db.prepare("SELECT conversation_balance, tier, quality_rating, subscription_status, subscription_plan FROM travel_meta_embedded_signup WHERE id = 1").get() as any;
     const requests = db.prepare("SELECT * FROM travel_meta_billing_requests ORDER BY id DESC").all();
@@ -3586,7 +3586,7 @@ router.post("/travel/notifications/automations/:id/toggle", (req: Request, res: 
 // ─── AUTOMATIC BACKGROUND SCHEDULER ENDPOINTS ───
 
 // 1. Get Auto-Scheduler Status & Live Stats
-router.get("/travel/notifications/auto-scheduler-status", (_req: Request, res: Response) => {
+router.get(["/travel/notifications/auto-scheduler-status", "/travel/notifications/scheduler-status"], (_req: Request, res: Response) => {
   try {
     let sched = db.prepare("SELECT * FROM travel_whatsapp_scheduler_status WHERE id = 1").get() as any;
     if (!sched) {

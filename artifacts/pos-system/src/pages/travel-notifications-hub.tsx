@@ -81,6 +81,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
+import { COUNTRY_CODES } from "@/constants/country-codes";
+export { COUNTRY_CODES };
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? "";
@@ -133,20 +135,6 @@ const DEPARTMENTS: Record<string, { label: string; icon: any; color: string; bad
     badgeClass: "bg-rose-50 text-rose-700 border-rose-200"
   }
 };
-
-export const COUNTRY_CODES = [
-  { code: "967", name: "اليمن (YE)", flag: "🇾🇪", placeholder: "771234567" },
-  { code: "966", name: "المملكة العربية السعودية (SA)", flag: "🇸🇦", placeholder: "501234567" },
-  { code: "20", name: "مصر (EG)", flag: "🇪🇬", placeholder: "1012345678" },
-  { code: "971", name: "الإمارات (AE)", flag: "🇦🇪", placeholder: "501234567" },
-  { code: "965", name: "الكويت (KW)", flag: "🇰🇼", placeholder: "50123456" },
-  { code: "968", name: "عُمان (OM)", flag: "🇴🇲", placeholder: "91234567" },
-  { code: "974", name: "قطر (QA)", flag: "🇶🇦", placeholder: "50123456" },
-  { code: "973", name: "البحرين (BH)", flag: "🇧🇭", placeholder: "39123456" },
-  { code: "962", name: "الأردن (JO)", flag: "🇯🇴", placeholder: "791234567" },
-  { code: "964", name: "العراق (IQ)", flag: "🇮🇶", placeholder: "7701234567" },
-  { code: "249", name: "السودان (SD)", flag: "🇸🇩", placeholder: "912345678" },
-];
 
 export default function TravelNotificationsHubPage() {
   const { toast } = useToast();
@@ -244,7 +232,13 @@ export default function TravelNotificationsHubPage() {
   const [qrActiveView, setQrActiveView] = useState<"desktop_portal" | "live_station" | "official_card" | "methods_guide" | "api_browser_guide">("desktop_portal");
   const [stationIframeKey, setStationIframeKey] = useState(1);
   const [popupTestStatus, setPopupTestStatus] = useState<"not_tested" | "allowed" | "blocked">("not_tested");
-  const [notificationStatus, setNotificationStatus] = useState<string>(typeof Notification !== "undefined" ? Notification.permission : "default");
+  const [notificationStatus, setNotificationStatus] = useState<string>(() => {
+    try {
+      return typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default";
+    } catch {
+      return "default";
+    }
+  });
   const [webDirectPhone, setWebDirectPhone] = useState("");
   const [webDirectText, setWebDirectText] = useState(`مرحباً بك، هذه رسالة تأكيد الحجز وإشعار المعاملة من ${agencyName} ✈️`);
 
@@ -307,7 +301,19 @@ ${sigLines}`
       ? `whatsapp://send?phone=${cleanPhone}&text=${encodedText}`
       : `whatsapp://app`;
 
-    window.location.href = desktopProtocolUrl;
+    try {
+      const a = document.createElement("a");
+      a.href = desktopProtocolUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      try {
+        window.open(desktopProtocolUrl, "_blank");
+      } catch {}
+    }
     setDesktopLaunchStatus("launched");
 
     toast({
@@ -320,13 +326,12 @@ ${sigLines}`
 
   // Direct Windows Store / Web Download for WhatsApp Desktop
   const openWhatsAppStoreInstall = () => {
-    window.location.href = "ms-windows-store://pdp/?productid=9NKSQGP7F2NH";
-    setTimeout(() => {
+    try {
       window.open("https://www.whatsapp.com/download", "_blank");
-    }, 1200);
+    } catch {}
     toast({
-      title: "🛍️ جاري فتح متجر Microsoft Store لتثبيت WhatsApp Desktop",
-      description: "يمكنك تثبيت تطبيق واتساب للكمبيوتر بضغطة واحدة من المتجر الرسمي."
+      title: "🛍️ جاري فتح صفحة تثبيت WhatsApp Desktop",
+      description: "يمكنك تثبيت تطبيق واتساب للكمبيوتر بضغطة واحدة من الموقع الرسمي."
     });
   };
 
@@ -494,61 +499,59 @@ ${agencyName}`
   // Queries
   const { data: qrSessionData, isLoading: qrLoading, refetch: refetchQrSession } = useQuery<any>({
     queryKey: ["travel-qr-session"],
-    queryFn: async () => {
-      const res = await fetchWithAuth<any>("/api/travel/whatsapp/qr-session");
-      if (res?.session) {
-        setQrPhone(res.session.display_phone_number || res.session.phone_number || agencyPhone || "");
-        setQrPairingCode(res.session.pairing_code || "OF99-TR72");
-        setQrStatus(res.session.status as any || "connected");
-        setAntiBanPacing(res.session.pacing_delay_sec || 4);
-        setAntiBanDailyLimit(res.session.daily_limit || 300);
-        setAntiBanEnabled(res.session.anti_ban_mode === 1);
-        setAutoReconnectEnabled(res.session.auto_reconnect === 1);
-      }
-      return res?.session;
-    }
+    queryFn: () => fetchWithAuth<any>("/api/travel/whatsapp/qr-session").then(res => res?.session ?? null)
   });
+
+  useEffect(() => {
+    if (qrSessionData) {
+      setQrPhone(qrSessionData.display_phone_number || qrSessionData.phone_number || agencyPhone || "");
+      setQrPairingCode(qrSessionData.pairing_code || "OF99-TR72");
+      setQrStatus(qrSessionData.status as any || "connected");
+      setAntiBanPacing(qrSessionData.pacing_delay_sec || 4);
+      setAntiBanDailyLimit(qrSessionData.daily_limit || 300);
+      setAntiBanEnabled(qrSessionData.anti_ban_mode === 1);
+      setAutoReconnectEnabled(qrSessionData.auto_reconnect === 1);
+    }
+  }, [qrSessionData, agencyPhone]);
 
   // Generate real camera-scannable QR code whenever qrSessionData updates
   useEffect(() => {
     const rawQrString = qrSessionData?.qr_data || "2@0gJ3kK9XOmniflyWAAuthToken_MultiDeviceSecureNoiseHandshake";
-    QRCode.toDataURL(rawQrString, {
-      width: 280,
-      margin: 1,
-      errorCorrectionLevel: "H",
-      color: {
-        dark: "#111b21",
-        light: "#ffffff",
-      },
-    })
-      .then((dataUrl) => {
-        setRealQrDataUrl(dataUrl);
-      })
-      .catch((err) => {
-        console.error("Error generating real QR Code:", err);
-      });
+    try {
+      const toDataUrl = (QRCode as any)?.toDataURL || (QRCode as any)?.default?.toDataURL;
+      if (typeof toDataUrl === "function") {
+        toDataUrl(rawQrString, {
+          width: 280,
+          margin: 1,
+          errorCorrectionLevel: "H",
+          color: { dark: "#111b21", light: "#ffffff" },
+        })
+          .then((dataUrl: string) => setRealQrDataUrl(dataUrl))
+          .catch(() => {});
+      }
+    } catch {}
   }, [qrSessionData?.qr_data]);
 
   // ─── 4WHATSAPP ENTERPRISE STATUS QUERY & QR CODE GENERATOR ───
   const { data: fourWaData, isLoading: fourWaLoading, refetch: refetchFourWa } = useQuery<any>({
     queryKey: ["travel-4whatsapp-status"],
-    queryFn: async () => {
-      const res = await fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/status");
-      if (res?.config) {
-        setFourWaStatus(res.config.session_status || "pending_login");
-        setFourWaPhone(res.config.display_phone_number || "");
-        setFourWaPairingCode(res.config.pairing_code || "");
-        setFourWaForm((prev) => ({
-          ...prev,
-          company_code: res.config.company_code || prev.company_code,
-          username: res.config.username || prev.username,
-          phone_number: res.config.phone_number?.replace(new RegExp(`^${res.config.country_code || '967'}`), '') || prev.phone_number,
-          country_code: res.config.country_code || "967"
-        }));
-      }
-      return res?.config;
-    }
+    queryFn: () => fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/status").then(res => res?.config ?? null)
   });
+
+  useEffect(() => {
+    if (fourWaData) {
+      setFourWaStatus(fourWaData.session_status || "pending_login");
+      setFourWaPhone(fourWaData.display_phone_number || "");
+      setFourWaPairingCode(fourWaData.pairing_code || "");
+      setFourWaForm((prev) => ({
+        ...prev,
+        company_code: fourWaData.company_code || prev.company_code,
+        username: fourWaData.username || prev.username,
+        phone_number: fourWaData.phone_number?.replace(new RegExp(`^${fourWaData.country_code || '967'}`), '') || prev.phone_number,
+        country_code: fourWaData.country_code || "967"
+      }));
+    }
+  }, [fourWaData]);
 
   // Generate real camera-scannable QR code for 4WhatsApp
   useEffect(() => {
@@ -564,21 +567,19 @@ ${agencyName}`
     const fallbackNoiseQr = `2@${defaultRef},${defaultPubKey},${defaultClientId}`;
 
     const rawQr = fourWaData.qr_data.length > 10 ? fourWaData.qr_data : fallbackNoiseQr;
-    QRCode.toDataURL(rawQr, {
-      width: 320,
-      margin: 1,
-      errorCorrectionLevel: "H",
-      color: {
-        dark: "#111b21",
-        light: "#ffffff",
-      },
-    })
-      .then((dataUrl) => {
-        setFourWaQrDataUrl(dataUrl);
-      })
-      .catch((err) => {
-        console.error("Error generating 4WhatsApp QR Code:", err);
-      });
+    try {
+      const toDataUrl = (QRCode as any)?.toDataURL || (QRCode as any)?.default?.toDataURL;
+      if (typeof toDataUrl === "function") {
+        toDataUrl(rawQr, {
+          width: 320,
+          margin: 1,
+          errorCorrectionLevel: "H",
+          color: { dark: "#111b21", light: "#ffffff" },
+        })
+          .then((dataUrl: string) => setFourWaQrDataUrl(dataUrl))
+          .catch(() => {});
+      }
+    } catch {}
   }, [fourWaData?.qr_data]);
 
   // 4WhatsApp 60-Second Auto Refresh Timer
@@ -600,26 +601,28 @@ ${agencyName}`
 
   const { data: metaConfig, isLoading: metaLoading, refetch: refetchMeta } = useQuery<any>({
     queryKey: ["meta-cloud-config"],
-    queryFn: async () => {
-      const data = await fetchWithAuth<any>("/api/travel/notifications/meta-config");
-      setMetaForm({
-        business_name: data.business_name || agencyName,
-        phone_number: data.phone_number || agencyPhone || "",
-        display_phone_number: data.display_phone_number || agencyPhone || "",
-        email: data.email || "",
-        country: data.country || "اليمن (+967)",
-        waba_id: data.waba_id || "",
-        phone_number_id: data.phone_number_id || "",
-        app_id: data.app_id || "",
-        access_token: data.access_token || "",
-        webhook_verify_token: data.webhook_verify_token || "",
-        pin_code: data.pin_code || "",
-        tier: data.tier || "10,000 Messages/Day",
-        quality_rating: data.quality_rating || "GREEN"
-      });
-      return data;
-    }
+    queryFn: () => fetchWithAuth<any>("/api/travel/notifications/meta-config")
   });
+
+  useEffect(() => {
+    if (metaConfig) {
+      setMetaForm({
+        business_name: metaConfig.business_name || agencyName,
+        phone_number: metaConfig.phone_number || agencyPhone || "",
+        display_phone_number: metaConfig.display_phone_number || agencyPhone || "",
+        email: metaConfig.email || "",
+        country: metaConfig.country || "اليمن (+967)",
+        waba_id: metaConfig.waba_id || "",
+        phone_number_id: metaConfig.phone_number_id || "",
+        app_id: metaConfig.app_id || "",
+        access_token: metaConfig.access_token || "",
+        webhook_verify_token: metaConfig.webhook_verify_token || "",
+        pin_code: metaConfig.pin_code || "",
+        tier: metaConfig.tier || "10,000 Messages/Day",
+        quality_rating: metaConfig.quality_rating || "GREEN"
+      });
+    }
+  }, [metaConfig, agencyName, agencyPhone]);
 
   const { data: billingData, isLoading: billingLoading, refetch: refetchBilling } = useQuery<any>({
     queryKey: ["meta-billing-data"],
