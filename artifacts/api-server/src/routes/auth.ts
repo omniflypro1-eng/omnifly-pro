@@ -352,10 +352,11 @@ router.post("/auth/login", async (req, res) => {
 
     // 1. Try Online Cloud Verification first (if cloud URL configured & not forced offline)
     if (effectiveCloudUrl && !force_offline) {
+      let cloudRes: Response | null = null;
+      let cloudJson: any = null;
       try {
         const ctrl = new AbortController();
         const tm = setTimeout(() => ctrl.abort(), 8000);
-        let cloudRes: Response;
         try {
           cloudRes = await fetch(`${effectiveCloudUrl}/api/cloud/auth/desktop-login`, {
             method: "POST",
@@ -374,8 +375,13 @@ router.post("/auth/login", async (req, res) => {
         } finally {
           clearTimeout(tm);
         }
+        cloudJson = await cloudRes.json().catch(() => ({}));
+      } catch (netErr: any) {
+        logger.warn({ err: netErr?.message }, "Cloud unreachable during local login, using offline verification");
+        cloudRes = null;
+      }
 
-        const cloudJson = await cloudRes.json().catch(() => ({}));
+      if (cloudRes) {
         if (!cloudRes.ok) {
           // Persist expired/suspended revocation locally too so offline cache stays authoritative
           if (cloudJson?.code === "license_expired" || cloudJson?.code === "license_suspended") {
@@ -412,15 +418,34 @@ router.post("/auth/login", async (req, res) => {
 
         let bootstrappedNow = false;
         if (!cfg.is_bootstrapped || Number(cfg.tenant_id) !== cloudTenantId) {
-          // Download FULL Cloud Tenant Snapshot before entering system (NO blank org!)
-          const bootRes = await fetch(`${effectiveCloudUrl}/api/cloud/sync/bootstrap`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-sync-token": cloudJson.deviceSyncToken,
-            },
-          });
-          const bootJson = await bootRes.json().catch(() => ({}));
+          let bootRes: Response;
+          let bootJson: any = {};
+          try {
+            const bootCtrl = new AbortController();
+            const bootTm = setTimeout(() => bootCtrl.abort(), 20000);
+            try {
+              bootRes = await fetch(`${effectiveCloudUrl}/api/cloud/sync/bootstrap`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-sync-token": cloudJson.deviceSyncToken,
+                },
+                signal: bootCtrl.signal,
+              });
+            } finally {
+              clearTimeout(bootTm);
+            }
+            bootJson = await bootRes.json().catch(() => ({}));
+          } catch (bootNetErr: any) {
+            logger.warn({ err: bootNetErr?.message }, "Cloud unreachable while downloading bootstrap snapshot");
+            res.status(503).json({
+              error: "cloud_connection_required",
+              code: "cloud_connection_required",
+              message: "تعذر تنزيل بيانات المؤسسة الأولية من الخادم السحابي.",
+            });
+            return;
+          }
+
           if (!bootRes.ok) {
             res.status(bootRes.status).json({
               error: bootJson.code || "bootstrap_failed",
@@ -429,15 +454,25 @@ router.post("/auth/login", async (req, res) => {
             return;
           }
 
-          applyBootstrapSnapshotLocally({
-            snapshot: bootJson,
-            cloudUrl: effectiveCloudUrl,
-            deviceSyncToken: cloudJson.deviceSyncToken,
-            licenseSnapshot: cloudJson.licenseSnapshot,
-            tenant: cloudTenant,
-            user: cloudJson.user,
-          });
-          bootstrappedNow = true;
+          try {
+            applyBootstrapSnapshotLocally({
+              snapshot: bootJson,
+              cloudUrl: effectiveCloudUrl,
+              deviceSyncToken: cloudJson.deviceSyncToken,
+              licenseSnapshot: cloudJson.licenseSnapshot,
+              tenant: cloudTenant,
+              user: cloudJson.user,
+            });
+            bootstrappedNow = true;
+          } catch (applyErr: any) {
+            logger.error({ err: applyErr?.message, stack: applyErr?.stack }, "Failed applying bootstrap snapshot locally");
+            res.status(500).json({
+              error: "bootstrap_apply_failed",
+              code: "bootstrap_apply_failed",
+              message: applyErr?.message || "فشل تطبيق بيانات المؤسسة في قاعدة البيانات المحلية",
+            });
+            return;
+          }
         } else {
           // Already bootstrapped for the same tenant: update tokens & trigger delta sync
           masterDb
@@ -488,9 +523,6 @@ router.post("/auth/login", async (req, res) => {
           syncStatus: getLocalSyncStatusSummary(),
         });
         return;
-      } catch (netErr: any) {
-        // Network failure -> fall back to encrypted offline validation
-        logger.warn({ err: netErr?.message }, "Cloud unreachable during local login, using offline verification");
       }
     }
 

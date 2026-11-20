@@ -6429,10 +6429,15 @@ export function fixTravelForeignKeys() {
 
 initSchema();
 runMigrations();
-seedData();
+const skipDemoSeedOnStartup = process.env.OMNIFLY_MODE === "local" || process.env.OMNIFLY_NO_SEED === "1";
+if (!skipDemoSeedOnStartup) {
+  seedData();
+}
 ensureDefaultAccountingChart();
 syncSupplierAccounts();
-ensureUmrahPilgrimsData();
+if (!skipDemoSeedOnStartup) {
+  ensureUmrahPilgrimsData();
+}
 ensureTravelHotelsColumns();
 ensureTravelBusBookingsColumns();
 ensureTravelVisasColumns();
@@ -6903,14 +6908,16 @@ export function seedWorkReportsAndPDFData(): void {
 }
 
 // Automatically trigger seeding on backend start with a delay to not block server startup
-seedTimer = setTimeout(() => {
-  if (isDbClosed) return;
-  try {
-    seedWorkReportsAndPDFData();
-  } catch (e) {
-    if (!isDbClosed) {
-      console.error("Auto seed execution error:", e);
+if (!skipDemoSeedOnStartup) {
+  seedTimer = setTimeout(() => {
+    if (isDbClosed) return;
+    try {
+      seedWorkReportsAndPDFData();
+    } catch (e) {
+      if (!isDbClosed) {
+        console.error("Auto seed execution error:", e);
+      }
     }
-  }
-}, 2000);
+  }, 2000);
+}
 

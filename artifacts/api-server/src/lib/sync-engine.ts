@@ -1181,7 +1181,6 @@ export function applyBootstrapSnapshotLocally(params: {
   createSafeDatabaseBackup("pre-bootstrap", getActiveDatabasePath());
 
   const execHydration = masterDb.transaction(() => {
-    masterDb.pragma("foreign_keys = OFF");
     masterDb.prepare("UPDATE sync_internal_guard SET suppress = 1 WHERE id = 1").run();
 
     try {
@@ -1226,7 +1225,7 @@ export function applyBootstrapSnapshotLocally(params: {
             `INSERT OR IGNORE INTO sync_file_queue (tenant_id, file_uuid, relative_path, checksum_sha256, file_size, direction, status)
              VALUES (?, ?, ?, ?, ?, 'download', 'pending')`
           )
-          .run(tenantId, f.fileUuid, f.relativePath, f.checksumSha256, f.fileSize);
+          .run(tenantId, f.fileUuid, f.relativePath, f.checksumSha256 || "", Number(f.fileSize || 0));
       }
 
       const encSyncToken = encryptHybridSecret(deviceSyncToken);
@@ -1280,11 +1279,15 @@ export function applyBootstrapSnapshotLocally(params: {
         );
     } finally {
       masterDb.prepare("UPDATE sync_internal_guard SET suppress = 0 WHERE id = 1").run();
-      masterDb.pragma("foreign_keys = ON");
     }
   });
 
-  execHydration();
+  masterDb.pragma("foreign_keys = OFF");
+  try {
+    execHydration();
+  } finally {
+    masterDb.pragma("foreign_keys = ON");
+  }
 
   // Persist installation binding metadata outside session storage too
   persistInstallationFileMetadata(getDbDir(), {
@@ -1711,7 +1714,6 @@ export async function runBidirectionalSync(reason: "manual" | "auto" = "manual")
         const changes = pullJson.changes || [];
         if (changes.length > 0) {
           const applyTx = masterDb.transaction(() => {
-            masterDb.pragma("foreign_keys = OFF");
             masterDb.prepare("UPDATE sync_internal_guard SET suppress = 1 WHERE id = 1").run();
             try {
               for (const ch of changes) {
@@ -1747,10 +1749,14 @@ export async function runBidirectionalSync(reason: "manual" | "auto" = "manual")
               }
             } finally {
               masterDb.prepare("UPDATE sync_internal_guard SET suppress = 0 WHERE id = 1").run();
-              masterDb.pragma("foreign_keys = ON");
             }
           });
-          applyTx();
+          masterDb.pragma("foreign_keys = OFF");
+          try {
+            applyTx();
+          } finally {
+            masterDb.pragma("foreign_keys = ON");
+          }
         }
 
         if (pullJson.cloudMaxSeq && pullJson.cloudMaxSeq > sinceSeq && changes.length === 0) {
