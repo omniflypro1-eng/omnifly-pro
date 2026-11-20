@@ -30,7 +30,7 @@
     "bank_account_name": "أكوان للسفريات والسياحة",
     "promo_code": "AKWAN2026",
     "promo_discount_percent": 10,
-    "updated_at": "2026-11-20 01:32:41",
+    "updated_at": "2026-11-20 01:38:14",
     "topbar_text": "أكوان للسفريات والسياحة • Akwan Travel & Tourism",
     "social_handle": "@AkwanTravel",
     "facebook_url": "https://facebook.com/Akwan",
@@ -63,9 +63,9 @@
     "secondary_phone": "",
     "currency": "SAR",
     "tenant_id": 2,
-    "sync_uuid": "92c4d9f0-8e0d-44f6-d1b7-28f2a3676dbc",
+    "sync_uuid": "61e1de25-7479-45b1-32be-b73b6870012a",
     "record_version": 1,
-    "sync_updated_at": "2026-11-20T01:32:41.906Z"
+    "sync_updated_at": "2026-11-20T01:38:14.814Z"
   },
   "services": [],
   "ndcOffers": [
@@ -89,7 +89,7 @@
       "meal_options": "وجبة ساخنة + قهوة سعودية مجانية",
       "ancillaries_json": "[{\"id\":\"ANC-SEAT-1\",\"name\":\"مقعد بمساحة إضافية للأرجل (Extra Legroom Row 12)\",\"price\":75,\"currency\":\"SAR\",\"selected\":true},{\"id\":\"ANC-BAG-1\",\"name\":\"حقيبة إضافية 23 كجم\",\"price\":120,\"currency\":\"SAR\",\"selected\":false},{\"id\":\"ANC-LOUNGE-1\",\"name\":\"دخول صالة الفرسان Alfursan Lounge\",\"price\":150,\"currency\":\"SAR\",\"selected\":true}]",
       "status": "available",
-      "created_at": "2026-11-20 01:32:41"
+      "created_at": "2026-11-20 01:38:14"
     },
     {
       "id": 2,
@@ -111,7 +111,7 @@
       "meal_options": "وجبات عالمية فاخرة + شيف خاص",
       "ancillaries_json": "[{\"id\":\"ANC-SEAT-2\",\"name\":\"مقعد سرير منبسط كامل (Lie-flat Bed Aisle 4A)\",\"price\":0,\"currency\":\"SAR\",\"selected\":true},{\"id\":\"ANC-CHAUFFEUR\",\"name\":\"خدمة سيارة بسائق خاص مجانية من المطار\",\"price\":0,\"currency\":\"SAR\",\"selected\":true},{\"id\":\"ANC-WIFI\",\"name\":\"باقة إنترنت غير محدود على متن الطائرة\",\"price\":65,\"currency\":\"SAR\",\"selected\":true}]",
       "status": "available",
-      "created_at": "2026-11-20 01:32:41"
+      "created_at": "2026-11-20 01:38:14"
     },
     {
       "id": 3,
@@ -133,8 +133,8 @@
       "meal_options": "وجبات شرقية وغربية طازجة",
       "ancillaries_json": "[{\"id\":\"ANC-FASTTRACK\",\"name\":\"المسار السريع للجوازات والتفتيش (Fast Track)\",\"price\":90,\"currency\":\"SAR\",\"selected\":true},{\"id\":\"ANC-BAG-2\",\"name\":\"وزن إضافي 10 كجم\",\"price\":110,\"currency\":\"SAR\",\"selected\":false}]",
       "status": "available",
-      "created_at": "2026-11-20 01:32:41"
+      "created_at": "2026-11-20 01:38:14"
     }
   ],
-  "last_sync": "2026-11-20T01:32:45.276Z"
+  "last_sync": "2026-11-20T01:38:18.520Z"
 }

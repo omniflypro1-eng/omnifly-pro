@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   db,
   masterDb,
+  getTenantDb,
   verifyPassword,
   hashPassword,
   createSession,
@@ -302,7 +303,19 @@ export function getAuthUser(req: any) {
             .prepare("SELECT id, username, name, role, active, can_discount, COALESCE(tenant_id, 1) as tenant_id FROM users WHERE id=?")
             .get(sInfo.userId) as any;
           if (user && user.active) {
-            return { ...user, tenant_id: sInfo.tenantId || user.tenant_id || 1 };
+            const effectiveTenantId = Number(sInfo.tenantId || user.tenant_id || 1);
+            if (effectiveTenantId > 1 && !isLocalDesktopMode()) {
+              try {
+                const tDb = getTenantDb(effectiveTenantId);
+                const tUser = tDb
+                  .prepare("SELECT id, username, name, role, active, can_discount FROM users WHERE LOWER(TRIM(username))=LOWER(TRIM(?))")
+                  .get(user.username) as any;
+                if (tUser) {
+                  return { ...tUser, tenant_id: effectiveTenantId, master_user_id: user.id };
+                }
+              } catch {}
+            }
+            return { ...user, tenant_id: effectiveTenantId };
           }
         }
       }
@@ -672,7 +685,7 @@ router.post("/auth/logout", (req, res) => {
     const token = auth.slice(7);
     const userId = getSessionUser(token);
     if (userId) {
-      const user = db.prepare("SELECT name FROM users WHERE id=?").get(userId) as any;
+      const user = masterDb.prepare("SELECT name FROM users WHERE id=?").get(userId) as any;
       if (user) {
         try {
           db.prepare(`
@@ -714,9 +727,9 @@ router.post("/auth/change-password", (req, res) => {
         return res.status(404).json({ error: `اسم المستخدم (${cleanUsername}) غير موجود بالنظام` });
       }
     } else {
-      const user = getAuthUser(req);
+      const user = getAuthUser(req) as any;
       if (user?.id) {
-        fullUser = masterDb.prepare("SELECT * FROM users WHERE id=?").get(user.id) as any;
+        fullUser = masterDb.prepare("SELECT * FROM users WHERE id=?").get(user.master_user_id || user.id) as any;
       }
     }
 
