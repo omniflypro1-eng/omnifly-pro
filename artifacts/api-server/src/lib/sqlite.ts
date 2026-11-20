@@ -1874,6 +1874,7 @@ function runMigrations() {
   try { db.exec("ALTER TABLE travel_bookings ADD COLUMN customer_statement TEXT"); } catch {}
   try { db.exec("ALTER TABLE travel_bookings ADD COLUMN supplier_statement TEXT"); } catch {}
   try { db.exec("ALTER TABLE travel_bookings ADD COLUMN supplier_payment_method TEXT DEFAULT 'credit'"); } catch {}
+  try { db.exec("ALTER TABLE travel_bookings ADD COLUMN flight_status TEXT DEFAULT 'مؤكدة'"); } catch {}
 
   // travel_passengers
   try { db.exec("ALTER TABLE travel_passengers ADD COLUMN full_name_ar TEXT"); } catch {}

@@ -493,11 +493,20 @@ async function resolveLogoImage(logoUrl?: string) {
     const candidates = [
       path.resolve(process.cwd(), "public", cleanRel),
       path.resolve(process.cwd(), cleanRel),
-      path.resolve(process.cwd(), "public/omnisystem-logo.png"),
     ];
     for (const p of candidates) {
       if (fs.existsSync(p) && fs.statSync(p).isFile()) {
-        return await loadImage(fs.readFileSync(p));
+        const buf = fs.readFileSync(p);
+        if (buf.length > 20) {
+          const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+          const isJpg = buf[0] === 0xff && buf[1] === 0xd8;
+          const isGif = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46;
+          const isWebp = buf.subarray(0, 4).toString("ascii") === "RIFF" && buf.subarray(8, 12).toString("ascii") === "WEBP";
+          const isSvg = buf.subarray(0, 200).toString("utf8").toLowerCase().includes("<svg");
+          if (isPng || isJpg || isGif || isWebp || isSvg) {
+            return await loadImage(buf);
+          }
+        }
       }
     }
   } catch (err) {
@@ -1099,6 +1108,704 @@ export async function renderTravelPdfDocument(spec: TravelPdfSpec): Promise<{
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HORIZONTAL BOARDING-PASS & VOUCHER RENDERER (Flight / Bus / Hotel)
+// Modeled cleanly after Omni_flyPro_Boarding_Pass_990b2325.png with live Agency Settings
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface BoardingPassSpec {
+  kind: "flight" | "bus" | "hotel";
+  fileName: string;
+  stubHeaderEn: string;
+  stubHeaderAr: string;
+  sloganAr: string;
+  sloganEn: string;
+  holderLabelAr: string;
+  holderLabelEn: string;
+  holderName: string;
+  secondaryHolder?: string;
+  statusLabel: string;
+  statusTone: "success" | "warning" | "danger" | "info";
+  leftLabel: string;
+  leftCode: string;
+  leftSub: string;
+  rightLabel: string;
+  rightCode: string;
+  rightSub: string;
+  middleTag: string;
+  specs: Array<{
+    icon: PdfFieldItem["icon"];
+    label: string;
+    value: string;
+    isLtr?: boolean;
+  }>;
+  extraDetails: Array<{ label: string; value: string }>;
+  wishAr: string;
+  wishEn: string;
+  barcodeSeed: string;
+  docRef: string;
+  qrPayload: string;
+  stubItems: Array<{
+    icon: PdfFieldItem["icon"];
+    label: string;
+    value: string;
+    isLtr?: boolean;
+  }>;
+  footerCreditText: string;
+}
+
+function fmtAirportCodePdf(city: string, explicitCode?: string): { code: string; name: string } {
+  if (explicitCode && explicitCode.trim()) {
+    return { code: explicitCode.trim().toUpperCase().slice(0, 4), name: city || explicitCode };
+  }
+  const paren = (city || "").match(/\(([A-Za-z]{3,4})\)/);
+  if (paren) {
+    return { code: paren[1].toUpperCase(), name: city.replace(/\([A-Za-z]{3,4}\)/, "").trim() || paren[1] };
+  }
+  const clean = (city || "---").trim();
+  const known: Record<string, string> = {
+    "عدن": "ADE",
+    "الرياض": "RUH",
+    "جدة": "JED",
+    "مكة": "MKX",
+    "مكة المكرمة": "MKX",
+    "المدينة": "MED",
+    "المدينة المنورة": "MED",
+    "الدمام": "DMM",
+    "صنعاء": "SAH",
+    "سيئون": "GXF",
+    "المكلا": "RIY",
+    "القاهرة": "CAI",
+    "دبي": "DXB",
+    "أبوظبي": "AUH",
+    "الدوحة": "DOH",
+    "الكويت": "KWI",
+    "مسقط": "MCT",
+    "عمان": "AMM",
+    "إسطنبول": "IST",
+  };
+  for (const [k, v] of Object.entries(known)) {
+    if (clean.includes(k)) return { code: v, name: clean };
+  }
+  const letters = clean.replace(/[^A-Za-z]/g, "").toUpperCase();
+  if (letters.length >= 3) return { code: letters.slice(0, 3), name: clean };
+  return { code: clean.slice(0, 10), name: clean };
+}
+
+function drawWorldDotsWatermark(ctx: SKRSContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.fillStyle = "rgba(29, 101, 184, 0.10)";
+  const clusters = [
+    { x: cx - 230, y: cy - 35, rx: 120, ry: 75 },
+    { x: cx + 25, y: cy - 10, rx: 210, ry: 110 },
+    { x: cx + 290, y: cy + 20, rx: 115, ry: 75 },
+  ];
+  for (const cl of clusters) {
+    for (let dy = -cl.ry; dy <= cl.ry; dy += 13) {
+      for (let dx = -cl.rx; dx <= cl.rx; dx += 13) {
+        const norm = (dx * dx) / (cl.rx * cl.rx) + (dy * dy) / (cl.ry * cl.ry);
+        if (norm <= 1.0 && Math.abs(Math.sin(dx * 0.14 + dy * 0.19)) > 0.25) {
+          ctx.beginPath();
+          ctx.arc(cl.x + dx, cl.y + dy, 2.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawHorizontalSkyline(ctx: SKRSContext2D, rightX: number, baseY: number) {
+  ctx.save();
+  ctx.fillStyle = "rgba(16, 78, 150, 0.17)";
+  const startX = rightX - 310;
+  const cols: Array<[number, number, number]> = [
+    [10, 42, 16],
+    [30, 68, 14],
+    [48, 48, 22],
+    [74, 86, 15],
+    [94, 44, 24],
+    [122, 96, 18],
+    [146, 56, 20],
+    [172, 80, 16],
+    [194, 104, 22],
+    [222, 62, 18],
+    [245, 88, 16],
+    [266, 52, 22],
+    [292, 36, 14],
+  ];
+  for (const [ox, bh, bw] of cols) {
+    ctx.fillRect(startX + ox, baseY - bh, bw, bh);
+  }
+  // Tower spire & dome details
+  ctx.fillRect(startX + 129, baseY - 118, 4, 22);
+  ctx.beginPath();
+  ctx.arc(startX + 205, baseY - 104, 11, Math.PI, 0);
+  ctx.fill();
+  ctx.fillRect(startX + 204, baseY - 122, 2, 12);
+  ctx.restore();
+}
+
+function draw1DBarcode(ctx: SKRSContext2D, seedText: string, x: number, y: number, w: number, h: number) {
+  ctx.save();
+  const clean = (seedText || "OMNIFLY-PRO").toUpperCase();
+  let hash = 2166136261;
+  for (let i = 0; i < clean.length; i++) {
+    hash ^= clean.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  ctx.fillStyle = "#0A254D";
+  let curX = x;
+  let step = 0;
+  while (curX < x + w - 4) {
+    hash = Math.imul(hash ^ (step + 17), 16777619) >>> 0;
+    const barW = ((hash % 3) + 1) * 2.1;
+    const gapW = (((hash >> 4) % 3) + 1) * 2.0;
+    if (curX + barW <= x + w) {
+      ctx.fillRect(curX, y, barW, h);
+    }
+    curX += barW + gapW;
+    step++;
+  }
+  ctx.restore();
+}
+
+export async function renderBoardingPassPdfDocument(spec: BoardingPassSpec): Promise<{
+  fileUrl: string;
+  fileName: string;
+  filePath: string;
+}> {
+  ensureArabicFontsRegistered();
+
+  const agency: SystemAgencyProfile = getSystemAgencyProfile();
+  const W = 1684;
+  const H = 1190;
+
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+
+  // 1. Clean Light Outer Backdrop
+  const outerBg = ctx.createLinearGradient(0, 0, 0, H);
+  outerBg.addColorStop(0, "#F8FBFF");
+  outerBg.addColorStop(1, "#EDF4FC");
+  ctx.fillStyle = outerBg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Card Container Geometry (matches Omni_flyPro_Boarding_Pass_990b2325.png landscape ratio)
+  const cardX = 52;
+  const cardY = 44;
+  const cardW = 1580;
+  const cardH = 986;
+  const mainW = 1136;
+  const tearX = cardX + mainW; // 1188
+  const stubX = tearX;
+  const stubW = cardW - mainW; // 444
+
+  // Outer Card Shadow & Rounded Clip
+  ctx.save();
+  ctx.shadowColor = "rgba(8, 52, 112, 0.15)";
+  ctx.shadowBlur = 32;
+  ctx.shadowOffsetY = 10;
+  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, 30);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = "#C5D8EE";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  ctx.restore();
+
+  // Clip interior of Boarding Pass Card
+  ctx.save();
+  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, 30);
+  ctx.clip();
+
+  // 2. Main Panel Sky Atmospheric Gradient
+  const mainGrad = ctx.createLinearGradient(cardX, cardY, tearX, cardY + cardH);
+  mainGrad.addColorStop(0, "#FFFFFF");
+  mainGrad.addColorStop(0.45, "#F2F8FF");
+  mainGrad.addColorStop(1, "#D6EAFC");
+  ctx.fillStyle = mainGrad;
+  ctx.fillRect(cardX, cardY, mainW, cardH);
+
+  // Stub clean white base
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(stubX, cardY, stubW, cardH);
+
+  // Subtle dotted World Map + Skyline Watermarks in Main Panel
+  drawWorldDotsWatermark(ctx, cardX + mainW * 0.56, cardY + 420);
+  drawHorizontalSkyline(ctx, tearX - 24, cardY + cardH - 36);
+
+  // 3. Top Header Bar (y: cardY .. cardY + 148)
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(cardX, cardY, mainW, 148);
+  ctx.strokeStyle = "#D8E6F5";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cardX, cardY + 148);
+  ctx.lineTo(tearX, cardY + 148);
+  ctx.stroke();
+
+  // Agency Logo + Dynamic Name/Address/Phones on Left Side of Main Header (replaces Omni System Pro)
+  const logoImg = await resolveLogoImage(agency.logoUrl);
+  const logoBoxX = cardX + 34;
+  const logoBoxY = cardY + 24;
+  if (logoImg) {
+    ctx.save();
+    drawRoundedRect(ctx, logoBoxX, logoBoxY, 100, 100, 18);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fill();
+    ctx.strokeStyle = "#D3E2F4";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    drawRoundedRect(ctx, logoBoxX + 6, logoBoxY + 6, 88, 88, 14);
+    ctx.clip();
+    const scale = Math.min(82 / logoImg.width, 82 / logoImg.height);
+    const dw = logoImg.width * scale;
+    const dh = logoImg.height * scale;
+    ctx.drawImage(logoImg, logoBoxX + 50 - dw / 2, logoBoxY + 50 - dh / 2, dw, dh);
+    ctx.restore();
+  } else {
+    ctx.save();
+    drawRoundedRect(ctx, logoBoxX, logoBoxY, 100, 100, 20);
+    const embGrad = ctx.createLinearGradient(logoBoxX, logoBoxY, logoBoxX + 100, logoBoxY + 100);
+    embGrad.addColorStop(0, "#083470");
+    embGrad.addColorStop(1, "#1261B8");
+    ctx.fillStyle = embGrad;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(logoBoxX + 50, logoBoxY + 50, 34, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawVectorIcon(ctx, spec.kind === "flight" ? "plane" : spec.kind === "bus" ? "bus" : "hotel", logoBoxX + 50, logoBoxY + 50, "#F59E0B");
+    ctx.restore();
+  }
+
+  // Vertical divider + Agency Business Name & Contact
+  const brandTextX = logoBoxX + 118;
+  const brandMaxW = 470;
+  ctx.fillStyle = "#083470";
+  drawFittedText(ctx, agency.businessName, brandTextX, cardY + 68, brandMaxW, 30, 18, true, "left", "rtl");
+
+  const subLineParts: string[] = [];
+  if (agency.address) subLineParts.push(agency.address);
+  if (agency.allPhones.length > 0) subLineParts.push(agency.allPhones.map((p) => wrapLtrIsolate(p)).join(" | "));
+  const subLineText = subLineParts.join(" · ") || "نظام إدارة السفريات والسياحة";
+  ctx.fillStyle = "#475569";
+  drawFittedText(ctx, subLineText, brandTextX, cardY + 108, brandMaxW, 17, 12, false, "left", "rtl");
+
+  // Top-Right Navy + Amber Curved Slogan Ribbon in Main Panel
+  ctx.save();
+  // Amber accent edge curve
+  ctx.beginPath();
+  ctx.moveTo(cardX + 635, cardY);
+  ctx.lineTo(tearX, cardY);
+  ctx.lineTo(tearX, cardY + 148);
+  ctx.lineTo(cardX + 715, cardY + 148);
+  ctx.quadraticCurveTo(cardX + 665, cardY + 95, cardX + 635, cardY);
+  ctx.closePath();
+  ctx.fillStyle = "#F59E0B";
+  ctx.fill();
+
+  // Deep Navy overlay curve
+  const hdrGrad = ctx.createLinearGradient(cardX + 650, cardY, tearX, cardY + 140);
+  hdrGrad.addColorStop(0, "#083470");
+  hdrGrad.addColorStop(1, "#1258AC");
+  ctx.beginPath();
+  ctx.moveTo(cardX + 648, cardY);
+  ctx.lineTo(tearX, cardY);
+  ctx.lineTo(tearX, cardY + 138);
+  ctx.lineTo(cardX + 725, cardY + 138);
+  ctx.quadraticCurveTo(cardX + 675, cardY + 88, cardX + 648, cardY);
+  ctx.closePath();
+  ctx.fillStyle = hdrGrad;
+  ctx.fill();
+
+  ctx.fillStyle = "#FFFFFF";
+  drawFittedText(ctx, spec.sloganAr, cardX + 935, cardY + 62, 410, 28, 18, true, "center", "rtl");
+  ctx.fillStyle = "#FDE68A";
+  drawFittedText(ctx, spec.sloganEn, cardX + 935, cardY + 104, 410, 19, 13, false, "center", "ltr");
+  ctx.restore();
+
+  // Stub Header Bar (Top-Right of Card)
+  ctx.save();
+  const stubHdrGrad = ctx.createLinearGradient(stubX, cardY, stubX + stubW, cardY + 148);
+  stubHdrGrad.addColorStop(0, "#083470");
+  stubHdrGrad.addColorStop(1, "#0F54A6");
+  ctx.fillStyle = stubHdrGrad;
+  ctx.fillRect(stubX, cardY, stubW, 138);
+  ctx.fillStyle = "#F59E0B";
+  ctx.fillRect(stubX, cardY + 138, stubW, 10);
+
+  // Stub icon badge
+  drawRoundedRect(ctx, stubX + 34, cardY + 34, 72, 72, 16);
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fill();
+  drawVectorIcon(ctx, spec.kind === "flight" ? "plane" : spec.kind === "bus" ? "bus" : "hotel", stubX + 70, cardY + 70, "#FFFFFF");
+
+  ctx.fillStyle = "#FFFFFF";
+  drawFittedText(ctx, spec.stubHeaderEn, stubX + 124, cardY + 66, stubW - 144, 24, 15, true, "left", "ltr");
+  ctx.fillStyle = "#FDE68A";
+  drawFittedText(ctx, spec.stubHeaderAr, stubX + stubW - 26, cardY + 104, stubW - 144, 19, 13, true, "right", "rtl");
+  ctx.restore();
+
+  // 4. Main Body Row 1: Holder Name + Flight/Booking Status Pill (y: 215..305)
+  const bodyL = cardX + 38;
+  const bodyR = tearX - 38;
+  const bodyW = bodyR - bodyL;
+
+  // User icon box
+  ctx.save();
+  drawRoundedRect(ctx, bodyR - 64, cardY + 178, 64, 64, 14);
+  ctx.fillStyle = "#E6F0FB";
+  ctx.fill();
+  ctx.strokeStyle = "#BBD5F2";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  drawVectorIcon(ctx, "user", bodyR - 32, cardY + 210, "#083470");
+
+  ctx.fillStyle = "#475569";
+  drawFittedText(ctx, `${spec.holderLabelAr}  |  ${spec.holderLabelEn}`, bodyR - 80, cardY + 198, 620, 17, 13, true, "right", "rtl");
+  ctx.fillStyle = "#08264D";
+  drawFittedText(ctx, spec.holderName, bodyR - 80, cardY + 236, 620, 29, 18, true, "right", "rtl");
+  if (spec.secondaryHolder) {
+    ctx.fillStyle = "#334155";
+    drawFittedText(ctx, spec.secondaryHolder, bodyR - 80, cardY + 266, 620, 15, 12, false, "right", "rtl");
+  }
+
+  // Status Pill on Left of Row 1
+  const statusPalette = {
+    success: { bg: "#DCFCE7", text: "#166534", border: "#86EFAC" },
+    warning: { bg: "#FEF3C7", text: "#92400E", border: "#FCD34D" },
+    danger: { bg: "#FEE2E2", text: "#991B1B", border: "#FCA5A5" },
+    info: { bg: "#E0F2FE", text: "#075985", border: "#7DD3FC" },
+  }[spec.statusTone];
+
+  drawRoundedRect(ctx, bodyL, cardY + 186, 295, 52, 26);
+  ctx.fillStyle = statusPalette.bg;
+  ctx.fill();
+  ctx.strokeStyle = statusPalette.border;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  ctx.fillStyle = statusPalette.text;
+  drawFittedText(ctx, spec.statusLabel, bodyL + 147, cardY + 219, 265, 18, 13, true, "center", "rtl");
+  ctx.restore();
+
+  // 5. Row 2: Route / Stay Showcase Box (y: cardY + 288 .. cardY + 462)
+  const routeY = cardY + 286;
+  const routeH = 166;
+  ctx.save();
+  drawRoundedRect(ctx, bodyL, routeY, bodyW, routeH, 20);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.fill();
+  ctx.strokeStyle = "#C9DCF2";
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // Left Terminal (From / Check-In)
+  drawVectorIcon(ctx, "map", bodyL + 36, routeY + 34, "#0F54A6");
+  ctx.fillStyle = "#0F54A6";
+  drawFittedText(ctx, spec.leftLabel, bodyL + 60, routeY + 40, 290, 16, 12, true, "left", "rtl");
+  ctx.fillStyle = "#08264D";
+  drawFittedText(ctx, spec.leftCode, bodyL + 34, routeY + 100, 320, 44, 24, true, "left", "ltr");
+  ctx.fillStyle = "#475569";
+  drawFittedText(ctx, spec.leftSub, bodyL + 34, routeY + 140, 320, 20, 13, true, "left", "rtl");
+
+  // Right Terminal (To / Check-Out)
+  drawVectorIcon(ctx, "map", bodyR - 36, routeY + 34, "#0F54A6");
+  ctx.fillStyle = "#0F54A6";
+  drawFittedText(ctx, spec.rightLabel, bodyR - 60, routeY + 40, 290, 16, 12, true, "right", "rtl");
+  ctx.fillStyle = "#08264D";
+  drawFittedText(ctx, spec.rightCode, bodyR - 34, routeY + 100, 320, 44, 24, true, "right", "ltr");
+  ctx.fillStyle = "#475569";
+  drawFittedText(ctx, spec.rightSub, bodyR - 34, routeY + 140, 320, 20, 13, true, "right", "rtl");
+
+  // Center Dashed Route Connector + Middle Pill + Hero Icon
+  const midX = bodyL + bodyW / 2;
+  drawRoundedRect(ctx, midX - 135, routeY + 24, 270, 36, 18);
+  ctx.fillStyle = "#E8F2FC";
+  ctx.fill();
+  ctx.strokeStyle = "#BFD7F2";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = "#083470";
+  drawFittedText(ctx, spec.middleTag, midX, routeY + 48, 248, 16, 11, true, "center", "rtl");
+
+  ctx.strokeStyle = "#5D96D8";
+  ctx.lineWidth = 3;
+  ctx.setLineDash([8, 7]);
+  ctx.beginPath();
+  ctx.moveTo(midX - 155, routeY + 102);
+  ctx.lineTo(midX - 36, routeY + 102);
+  ctx.moveTo(midX + 36, routeY + 102);
+  ctx.lineTo(midX + 155, routeY + 102);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrow head pointing right-to-left or left-to-right visually
+  drawVectorIcon(ctx, spec.kind === "flight" ? "plane" : spec.kind === "bus" ? "bus" : "hotel", midX, routeY + 102, "#083470");
+  ctx.restore();
+
+  // 6. Row 3: 5-Cell Horizontal Spec Strip (y: cardY + 474 .. cardY + 592)
+  const specY = cardY + 474;
+  const specH = 116;
+  ctx.save();
+  drawRoundedRect(ctx, bodyL, specY, bodyW, specH, 16);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.strokeStyle = "#C9DCF2";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  const specItems = spec.specs.slice(0, 5);
+  const cellW = bodyW / 5;
+  specItems.forEach((sp, idx) => {
+    const cx0 = bodyR - (idx + 1) * cellW; // RTL order right-to-left
+    if (idx > 0) {
+      ctx.beginPath();
+      ctx.moveTo(cx0 + cellW, specY + 16);
+      ctx.lineTo(cx0 + cellW, specY + specH - 16);
+      ctx.strokeStyle = "#DCE8F6";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+    drawVectorIcon(ctx, sp.icon, cx0 + cellW - 28, specY + 34, "#0F54A6");
+    ctx.fillStyle = "#475569";
+    drawFittedText(ctx, sp.label, cx0 + cellW - 52, specY + 40, cellW - 64, 15, 11, true, "right", "rtl");
+    ctx.fillStyle = "#08264D";
+    const valStr = sp.value && String(sp.value).trim() ? String(sp.value).trim() : "---";
+    drawFittedText(
+      ctx,
+      sp.isLtr ? wrapLtrIsolate(valStr) : valStr,
+      cx0 + cellW - 18,
+      specY + 86,
+      cellW - 34,
+      20,
+      13,
+      true,
+      "right",
+      sp.isLtr && /^[\x00-\x7F\u2066\u2069]+$/.test(valStr) ? "ltr" : "rtl"
+    );
+  });
+  ctx.restore();
+
+  // 7. Row 4: Complementary Full Details Bar (y: cardY + 610 .. cardY + 718)
+  const extraY = cardY + 612;
+  const extraH = 104;
+  ctx.save();
+  drawRoundedRect(ctx, bodyL, extraY, bodyW, extraH, 14);
+  ctx.fillStyle = "rgba(241, 246, 253, 0.92)";
+  ctx.fill();
+  ctx.strokeStyle = "#D1E1F4";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  const details = spec.extraDetails.slice(0, 6);
+  const detCols = 3;
+  const detColW = (bodyW - 36) / detCols;
+  details.forEach((d, idx) => {
+    const col = idx % detCols;
+    const row = Math.floor(idx / detCols);
+    const dxRight = bodyR - 18 - col * detColW;
+    const dy = extraY + 38 + row * 42;
+    const lineText = `${d.label}: ${d.value}`;
+    ctx.fillStyle = "#0F3D73";
+    drawFittedText(ctx, lineText, dxRight, dy, detColW - 14, 16, 11, true, "right", "rtl");
+  });
+  ctx.restore();
+
+  // 8. Row 5: Scannable 1D Barcode + Pleasant Trip Wish + QR Code (y: cardY + 738 .. cardY + 918)
+  const botY = cardY + 742;
+  // Barcode card on Left
+  ctx.save();
+  drawRoundedRect(ctx, bodyL, botY + 12, 340, 146, 14);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.strokeStyle = "#C9DCF2";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  draw1DBarcode(ctx, spec.barcodeSeed, bodyL + 18, botY + 26, 304, 86);
+  ctx.fillStyle = "#475569";
+  drawFittedText(ctx, spec.barcodeSeed, bodyL + 170, botY + 140, 300, 15, 11, true, "center", "ltr");
+  ctx.restore();
+
+  // Center Pleasant Trip / Stay Wish with Amber Underline
+  ctx.save();
+  const wishCenterX = bodyL + 530;
+  ctx.fillStyle = "#083470";
+  drawFittedText(ctx, spec.wishAr, wishCenterX, botY + 62, 330, 24, 15, true, "center", "rtl");
+  ctx.fillStyle = "#1D65B8";
+  drawFittedText(ctx, spec.wishEn, wishCenterX, botY + 98, 330, 19, 13, true, "center", "ltr");
+  const swGrad = ctx.createLinearGradient(wishCenterX - 110, 0, wishCenterX + 110, 0);
+  swGrad.addColorStop(0, "rgba(245, 158, 11, 0)");
+  swGrad.addColorStop(0.5, "#F59E0B");
+  swGrad.addColorStop(1, "rgba(245, 158, 11, 0)");
+  ctx.fillStyle = swGrad;
+  drawRoundedRect(ctx, wishCenterX - 110, botY + 114, 220, 6, 3);
+  ctx.fill();
+  ctx.restore();
+
+  // Scannable QR Code on Right of Main Panel Bottom
+  const qrSize = 148;
+  const qrX = bodyR - qrSize;
+  const qrY = botY + 10;
+  ctx.save();
+  drawRoundedRect(ctx, qrX - 8, qrY - 6, qrSize + 16, qrSize + 16, 16);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.strokeStyle = "#083470";
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+  try {
+    const qrBuf = await QRCode.toBuffer(spec.qrPayload, {
+      width: qrSize,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#08264D", light: "#FFFFFF" },
+    });
+    const qrImg = await loadImage(qrBuf);
+    ctx.drawImage(qrImg, qrX, qrY + 2, qrSize, qrSize);
+  } catch (e) {
+    logger.warn({ e }, "QR generation warning in BoardingPass PDF");
+  }
+  ctx.restore();
+
+  // 9. Bottom Navy & Amber Curved Footer Wave inside Main Panel
+  ctx.save();
+  const baseWaveY = cardY + cardH;
+  ctx.beginPath();
+  ctx.moveTo(cardX, baseWaveY - 38);
+  ctx.bezierCurveTo(cardX + 340, baseWaveY - 22, cardX + 760, baseWaveY - 6, tearX, baseWaveY - 12);
+  ctx.lineTo(tearX, baseWaveY);
+  ctx.lineTo(cardX, baseWaveY);
+  ctx.closePath();
+  ctx.fillStyle = "#F59E0B";
+  ctx.fill();
+
+  const footWaveGrad = ctx.createLinearGradient(cardX, baseWaveY - 34, tearX, baseWaveY);
+  footWaveGrad.addColorStop(0, "#083470");
+  footWaveGrad.addColorStop(1, "#0E4C9A");
+  ctx.beginPath();
+  ctx.moveTo(cardX, baseWaveY - 26);
+  ctx.bezierCurveTo(cardX + 380, baseWaveY - 10, cardX + 780, baseWaveY + 2, tearX, baseWaveY - 6);
+  ctx.lineTo(tearX, baseWaveY);
+  ctx.lineTo(cardX, baseWaveY);
+  ctx.closePath();
+  ctx.fillStyle = footWaveGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // 10. Stub Panel Items (y: cardY + 178 .. cardY + 868)
+  const stubItems = spec.stubItems.slice(0, 6);
+  const stubStartY = cardY + 176;
+  const stubRowH = 112;
+  stubItems.forEach((st, idx) => {
+    const sy = stubStartY + idx * stubRowH;
+    drawVectorIcon(ctx, st.icon, stubX + stubW - 42, sy + 28, "#083470");
+    ctx.fillStyle = "#475569";
+    drawFittedText(ctx, st.label, stubX + stubW - 70, sy + 34, stubW - 96, 15, 11, true, "right", "rtl");
+    ctx.fillStyle = "#08264D";
+    const sVal = st.value && String(st.value).trim() ? String(st.value).trim() : "---";
+    drawFittedText(
+      ctx,
+      st.isLtr ? wrapLtrIsolate(sVal) : sVal,
+      stubX + stubW - 28,
+      sy + 76,
+      stubW - 56,
+      20,
+      13,
+      true,
+      "right",
+      st.isLtr && /^[\x00-\x7F\u2066\u2069]+$/.test(sVal) ? "ltr" : "rtl"
+    );
+    if (idx < stubItems.length - 1) {
+      ctx.beginPath();
+      ctx.moveTo(stubX + 26, sy + stubRowH - 8);
+      ctx.lineTo(stubX + stubW - 26, sy + stubRowH - 8);
+      ctx.strokeStyle = "#E2ECF7";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+  });
+
+  // Stub Bottom Mini Barcode
+  draw1DBarcode(ctx, `${spec.barcodeSeed}-STUB`, stubX + 34, cardY + cardH - 112, stubW - 68, 72);
+
+  // End inner card clip
+  ctx.restore();
+
+  // 11. Perforated Tear Line & Top/Bottom Semicircular Cutouts
+  ctx.save();
+  ctx.strokeStyle = "#8EB1D8";
+  ctx.lineWidth = 3;
+  ctx.setLineDash([12, 10]);
+  ctx.beginPath();
+  ctx.moveTo(tearX, cardY + 18);
+  ctx.lineTo(tearX, cardY + cardH - 18);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (const ny of [cardY, cardY + cardH]) {
+    ctx.beginPath();
+    ctx.arc(tearX, ny, 16, 0, Math.PI * 2);
+    ctx.fillStyle = "#F4F8FE";
+    ctx.fill();
+    ctx.strokeStyle = "#C5D8EE";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 12. Bottom Credit Strip Outside Card ("تم إنشاء هذه التذكرة من نظام أومني فلاي برو" + Agency Contact)
+  const creditY = cardY + cardH + 26; // 1056
+  const creditH = 88;
+  ctx.save();
+  drawRoundedRect(ctx, cardX, creditY, cardW, creditH, 18);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.strokeStyle = "#C5D8EE";
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // Right bold requested credit line
+  ctx.fillStyle = "#083470";
+  drawFittedText(ctx, spec.footerCreditText, cardX + cardW - 28, creditY + 54, 720, 22, 15, true, "right", "rtl");
+
+  // Left dynamic Agency Contact info
+  const footerContact: string[] = [agency.businessName];
+  if (agency.address) footerContact.push(agency.address);
+  if (agency.allPhones.length > 0) footerContact.push(agency.allPhones.map((p) => wrapLtrIsolate(p)).join(" | "));
+  if (agency.licenseNumber) footerContact.push(`ترخيص: ${agency.licenseNumber}`);
+  ctx.fillStyle = "#475569";
+  drawFittedText(ctx, footerContact.join("  ·  "), cardX + 28, creditY + 53, 760, 17, 12, true, "left", "rtl");
+  ctx.restore();
+
+  // 13. Convert crisp Landscape PNG -> A4 Landscape PDF via pdf-lib
+  const pngBuffer = canvas.toBuffer("image/png");
+  const pdfDoc = await PDFDocument.create();
+  const pngImage = await pdfDoc.embedPng(pngBuffer);
+  const page = pdfDoc.addPage([841.89, 595.28]); // A4 Landscape in points
+  page.drawImage(pngImage, {
+    x: 0,
+    y: 0,
+    width: 841.89,
+    height: 595.28,
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  const filePath = path.join(UPLOADS_DIR, spec.fileName);
+  fs.writeFileSync(filePath, Buffer.from(pdfBytes));
+
+  const relativeUrl = `/uploads/passengers_pdfs/${encodeURIComponent(spec.fileName)}`;
+  return {
+    fileUrl: relativeUrl,
+    fileName: spec.fileName,
+    filePath,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. PASSENGER & VISA CARD PDF
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generatePassengerCardPdf(
@@ -1196,43 +1903,81 @@ export async function generatePassengerCardPdf(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. FLIGHT TICKET & ITINERARY PDF
+// 2. FLIGHT TICKET & BOARDING PASS PDF
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generateFlightTicketPdf(
   data: any,
   hostBase?: string
 ): Promise<{ fileUrl: string; fileName: string; filePath: string }> {
   const cleanName = sanitizeFileSegment(data.passenger_name || data.customer_name || "traveler", 32);
-  const cleanRef = sanitizeFileSegment(data.pnr || data.ticket_number || `FLT-${data.id || Date.now()}`, 24);
+  const cleanRef = sanitizeFileSegment(data.pnr || data.ticket_number || data.booking_number || `FLT-${data.id || Date.now()}`, 24);
   const fileName = `تذكرة_طيران_${cleanName}_${cleanRef}.pdf`;
-  const origin = data.origin || "نقطة المغادرة";
-  const destination = data.destination || "الوجهة";
+  const originRaw = data.origin || data.origin_city || "نقطة المغادرة";
+  const destRaw = data.destination || data.destination_city || "مدينة الوصول";
+  const origin = fmtAirportCodePdf(originRaw, data.origin_airport_code);
+  const dest = fmtAirportCodePdf(destRaw, data.destination_airport_code);
   const docRef = `OMNI-FLT-${cleanRef}`;
+  const paxName = data.passenger_name || data.customer_name || "المسافر الكريم";
+  const flightStatusRaw = String(data.flight_status || "مؤكدة").trim();
+  const statusTone =
+    flightStatusRaw === "ملغاة" || flightStatusRaw === "cancelled"
+      ? "danger"
+      : flightStatusRaw === "بانتظار التأكيد" || flightStatusRaw === "مؤجلة"
+      ? "warning"
+      : flightStatusRaw === "مكتملة"
+      ? "info"
+      : "success";
 
-  const saved = await renderTravelPdfDocument({
+  const saved = await renderBoardingPassPdfDocument({
     kind: "flight",
     fileName,
-    titleAr: "تذكرة وتأكيد حجز طيران إلكترونية",
-    titleEn: "Electronic Flight Ticket & Itinerary",
-    heroTitle: `المسافر: ${data.passenger_name || data.customer_name || "المسافر الكريم"}`,
-    heroSubtitle: `خط السير: ${origin}  إلى  ${destination}  |  PNR: ${wrapLtrIsolate(data.pnr || "---")}`,
-    statusLabel: data.ticket_number && data.ticket_number !== "قيد الإصدار" ? "تذكرة صادرة ومؤكدة" : "حجز طيران مؤكد",
-    statusTone: "info",
-    docRef,
-    qrPayload: `FLIGHT|${docRef}|${data.passenger_name || ""}|PNR:${data.pnr || ""}|TKT:${data.ticket_number || ""}`,
-    fields: [
-      { labelAr: "اسم المسافر", labelEn: "Passenger Name", value: data.passenger_name || data.customer_name || "المسافر الكريم", icon: "user" },
-      { labelAr: "رقم الحجز (PNR)", labelEn: "Booking Reference", value: data.pnr || "---", icon: "hash", isLtr: true },
-      { labelAr: "رقم التذكرة الإلكترونية", labelEn: "E-Ticket Number", value: data.ticket_number || "قيد الإصدار", icon: "ticket", isLtr: true },
-      { labelAr: "الناقل الجوي ورقم الرحلة", labelEn: "Airline & Flight", value: `${data.airline || "الناقل الجوي"} ${data.flight_no ? `(${data.flight_no})` : ""}`.trim(), icon: "plane" },
-      { labelAr: "مدينة / مطار المغادرة", labelEn: "Origin", value: origin, icon: "map" },
-      { labelAr: "مدينة / مطار الوصول", labelEn: "Destination", value: destination, icon: "map" },
-      { labelAr: "تاريخ الإقلاع", labelEn: "Departure Date", value: safeFormatDate(data.departure_date), icon: "calendar", isLtr: true },
-      { labelAr: "وقت الإقلاع", labelEn: "Departure Time", value: data.departure_time || "حسب التذكرة", icon: "clock", isLtr: true },
-      { labelAr: "المقعد والدرجة", labelEn: "Seat & Class", value: `${data.seat || "تم التعيين"} - ${data.travel_class || "السياحية"}`, icon: "seat" },
-      { labelAr: "القيمة الإجمالية", labelEn: "Total Amount", value: `${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}`, icon: "money" },
+    stubHeaderEn: "AIRLINE TICKET",
+    stubHeaderAr: "تذكرة سفر جوي",
+    sloganAr: "رحلتك .. بكل سهولة",
+    sloganEn: "Your Journey .. Made Easy",
+    holderLabelAr: "اسم المسافر",
+    holderLabelEn: "Passenger Name",
+    holderName: paxName,
+    secondaryHolder:
+      data.customer_name && data.customer_name !== paxName ? `العميل المتعاقد: ${data.customer_name}` : undefined,
+    statusLabel: `حالة الرحلة: ${flightStatusRaw}`,
+    statusTone,
+    leftLabel: "من / From",
+    leftCode: origin.code,
+    leftSub: origin.name,
+    rightLabel: "إلى / To",
+    rightCode: dest.code,
+    rightSub: dest.name,
+    middleTag: `${data.airline || data.airline_supplier || "الناقل الجوي"} ${data.flight_no || data.flight_number || ""}`.trim(),
+    specs: [
+      { icon: "calendar", label: "تاريخ الرحلة", value: safeFormatDate(data.departure_date), isLtr: true },
+      { icon: "clock", label: "وقت الإقلاع", value: data.departure_time || "حسب الجدول", isLtr: true },
+      { icon: "plane", label: "رقم الرحلة", value: data.flight_no || data.flight_number || "---", isLtr: true },
+      { icon: "ticket", label: "PNR / التذكرة", value: data.ticket_number || data.pnr || "---", isLtr: true },
+      { icon: "seat", label: "المقعد والدرجة", value: `${data.seat || "تم التعيين"} - ${data.travel_class || "اقتصادية"}` },
     ],
-    footerNote: "يرجى التواجد في المطار قبل موعد الإقلاع بـ 3 ساعات للرحلات الدولية مع أصل الجواز",
+    extraDetails: [
+      { label: "رقم الحجز", value: data.booking_number || data.pnr || "---" },
+      { label: "رقم PNR", value: data.pnr || "---" },
+      { label: "رقم التذكرة", value: data.ticket_number || "قيد الإصدار" },
+      { label: "الأمتعة المسموحة", value: `${data.baggage_weight || 30} كجم (${data.baggage_pieces || 1} قطعة)` },
+      { label: "الإجمالي", value: `${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}` },
+      { label: "تنبيه المطار", value: data.notes || "الحضور قبل الإقلاع بـ 3 ساعات مع الجواز" },
+    ],
+    wishAr: "نتمنى لكم رحلة سعيدة",
+    wishEn: "Have a pleasant trip",
+    barcodeSeed: data.ticket_number || data.pnr || data.booking_number || docRef,
+    docRef,
+    qrPayload: `FLIGHT|${docRef}|${paxName}|PNR:${data.pnr || ""}|TKT:${data.ticket_number || ""}|STATUS:${flightStatusRaw}`,
+    stubItems: [
+      { icon: "user", label: "المسافر / Passenger", value: paxName },
+      { icon: "plane", label: "المسار / Route", value: `${origin.code} -> ${dest.code}`, isLtr: true },
+      { icon: "calendar", label: "التاريخ / Date", value: safeFormatDate(data.departure_date), isLtr: true },
+      { icon: "clock", label: "الوقت / Time", value: data.departure_time || "حسب التذكرة", isLtr: true },
+      { icon: "seat", label: "المقعد / الدرجة", value: `${data.seat || "مخصص"} · ${data.travel_class || "اقتصادية"}` },
+      { icon: "status", label: "حالة الرحلة / PNR", value: `${flightStatusRaw} · ${data.pnr || "---"}` },
+    ],
+    footerCreditText: "تم إنشاء هذه التذكرة من نظام أومني فلاي برو",
   });
 
   return { ...saved, fileUrl: hostBase ? `${hostBase}${saved.fileUrl}` : saved.fileUrl };
@@ -1248,34 +1993,61 @@ export async function generateBusTicketPdf(
   const cleanName = sanitizeFileSegment(data.passenger_name || data.customer_name || "passenger", 32);
   const cleanRef = sanitizeFileSegment(data.ticket_number || data.booking_number || `BUS-${data.id || Date.now()}`, 24);
   const fileName = `تذكرة_نقل_بري_${cleanName}_${cleanRef}.pdf`;
-  const origin = data.origin || "محطة الانطلاق";
-  const destination = data.destination || "محطة الوصول";
+  const origin = data.origin || data.origin_city || "محطة الانطلاق";
+  const destination = data.destination || data.destination_city || "محطة الوصول";
   const docRef = `OMNI-BUS-${cleanRef}`;
+  const paxName = data.passenger_name || data.customer_name || "المسافر الكريم";
 
-  const saved = await renderTravelPdfDocument({
+  const saved = await renderBoardingPassPdfDocument({
     kind: "bus",
     fileName,
-    titleAr: "تذكرة سفر النقل البري والباصات",
-    titleEn: "Land Transport & Coach E-Ticket",
-    heroTitle: `المسافر: ${data.passenger_name || data.customer_name || "المسافر الكريم"}`,
-    heroSubtitle: `خط السير: ${origin}  إلى  ${destination}  |  التذكرة: ${wrapLtrIsolate(data.ticket_number || data.booking_number || "---")}`,
+    stubHeaderEn: "BUS TICKET",
+    stubHeaderAr: "تذكرة نقل بري",
+    sloganAr: "سفر بري مريح .. بكل أمان",
+    sloganEn: "Safe & Comfortable Land Travel",
+    holderLabelAr: "اسم الراكب",
+    holderLabelEn: "Passenger Name",
+    holderName: paxName,
+    secondaryHolder:
+      data.customer_name && data.customer_name !== paxName ? `العميل المتعاقد: ${data.customer_name}` : undefined,
     statusLabel: "تذكرة نقل بري مؤكدة",
     statusTone: "success",
-    docRef,
-    qrPayload: `BUS|${docRef}|${data.passenger_name || ""}|${origin}->${destination}|SEAT:${data.seat_no || ""}`,
-    fields: [
-      { labelAr: "اسم المسافر", labelEn: "Passenger Name", value: data.passenger_name || data.customer_name || "المسافر الكريم", icon: "user" },
-      { labelAr: "رقم التذكرة / الحجز", labelEn: "Ticket Number", value: data.ticket_number || data.booking_number || "---", icon: "ticket", isLtr: true },
-      { labelAr: "الشركة الناقلة", labelEn: "Transport Company", value: data.company_name || "شركة النقل البري", icon: "bus" },
-      { labelAr: "خط السير", labelEn: "Travel Route", value: `${origin} - ${destination}`, icon: "map" },
-      { labelAr: "تاريخ الانطلاق", labelEn: "Departure Date", value: safeFormatDate(data.departure_date), icon: "calendar", isLtr: true },
-      { labelAr: "موعد التجمع والانطلاق", labelEn: "Boarding & Departure", value: `${data.boarding_time || "---"} / ${data.departure_time || "---"}`, icon: "clock", isLtr: true },
-      { labelAr: "رقم الحافلة والمقعد", labelEn: "Bus & Seat No.", value: `حافلة ${data.bus_number || "---"} | مقعد ${data.seat_no || "مخصص"}`, icon: "seat" },
-      { labelAr: "محطة الانطلاق", labelEn: "Departure Station", value: data.origin_station || origin, icon: "map" },
-      { labelAr: "الوزن والأمتعة", labelEn: "Luggage Allowance", value: `${data.luggage_weight || 30} كجم (${data.luggage_pieces || 2} حقائب)`, icon: "baggage" },
-      { labelAr: "قيمة التذكرة", labelEn: "Ticket Amount", value: `${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}`, icon: "money" },
+    leftLabel: "محطة الانطلاق / From",
+    leftCode: origin,
+    leftSub: data.origin_station || "المحطة الرئيسية",
+    rightLabel: "محطة الوصول / To",
+    rightCode: destination,
+    rightSub: data.destination_station || "المحطة المركزية",
+    middleTag: data.company_name || "شركة النقل البري المعتمدة",
+    specs: [
+      { icon: "calendar", label: "تاريخ الانطلاق", value: safeFormatDate(data.departure_date), isLtr: true },
+      { icon: "clock", label: "التحرك / الحضور", value: `${data.departure_time || "---"} / ${data.boarding_time || "---"}`, isLtr: true },
+      { icon: "bus", label: "رقم الحافلة", value: data.bus_number || "VIP", isLtr: true },
+      { icon: "seat", label: "رقم المقعد", value: data.seat_no || data.seat_number || "مخصص", isLtr: true },
+      { icon: "money", label: "قيمة التذكرة", value: `${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}` },
     ],
-    footerNote: "يرجى التواجد في محطة الانطلاق قبل موعد التحرك بـ 30 دقيقة على الأقل",
+    extraDetails: [
+      { label: "رقم التذكرة", value: data.ticket_number || data.booking_number || "---" },
+      { label: "رقم الحجز", value: data.booking_number || "---" },
+      { label: "الشركة الناقلة", value: data.company_name || "النقل البري" },
+      { label: "الأمتعة", value: `${data.luggage_weight || 30} كجم (${data.luggage_pieces || 2} حقائب)` },
+      { label: "نوع الرحلة", value: data.trip_type === "round_trip" ? "ذهاب وعودة" : "ذهاب فقط" },
+      { label: "تنبيه التجمع", value: "التواجد بالمحطة قبل الانطلاق بـ 30 دقيقة" },
+    ],
+    wishAr: "نتمنى لكم سفراً آمناً ومريحاً",
+    wishEn: "Have a pleasant journey",
+    barcodeSeed: data.ticket_number || data.booking_number || docRef,
+    docRef,
+    qrPayload: `BUS|${docRef}|${paxName}|${origin}->${destination}|SEAT:${data.seat_no || data.seat_number || ""}`,
+    stubItems: [
+      { icon: "user", label: "الراكب / Passenger", value: paxName },
+      { icon: "bus", label: "المسار / Route", value: `${origin} - ${destination}` },
+      { icon: "calendar", label: "التاريخ / Date", value: safeFormatDate(data.departure_date), isLtr: true },
+      { icon: "clock", label: "التحرك / Departure", value: data.departure_time || "---", isLtr: true },
+      { icon: "seat", label: "المقعد / الحافلة", value: `${data.seat_no || data.seat_number || "حر"} · ${data.bus_number || "VIP"}` },
+      { icon: "ticket", label: "التذكرة / القيمة", value: `${data.ticket_number || "---"} · ${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}` },
+    ],
+    footerCreditText: "تم إنشاء تذكرة النقل البري هذه من نظام أومني فلاي برو",
   });
 
   return { ...saved, fileUrl: hostBase ? `${hostBase}${saved.fileUrl}` : saved.fileUrl };
@@ -1290,33 +2062,61 @@ export async function generateHotelVoucherPdf(
 ): Promise<{ fileUrl: string; fileName: string; filePath: string }> {
   const cleanName = sanitizeFileSegment(data.passenger_name || data.customer_name || "guest", 32);
   const cleanRef = sanitizeFileSegment(data.voucher_number || data.confirmation_number || data.booking_ref || `HTL-${data.id || Date.now()}`, 24);
-  const fileName = `قسيمة_فندق_${cleanName}_${cleanRef}.pdf`;
+  const fileName = `تأكيد_حجز_فندق_${cleanName}_${cleanRef}.pdf`;
   const docRef = `OMNI-HTL-${cleanRef}`;
+  const guestName = data.passenger_name || data.guest_name || data.customer_name || "النزيل الكريم";
+  const cityText = [data.city, data.country].filter(Boolean).join(" - ") || data.city_country || "الوجهة السياحية";
 
-  const saved = await renderTravelPdfDocument({
+  const saved = await renderBoardingPassPdfDocument({
     kind: "hotel",
     fileName,
-    titleAr: "قسيمة وتأكيد حجز فندقي معتمد",
-    titleEn: "Official Hotel Accommodation Voucher",
-    heroTitle: `الفندق: ${data.hotel_name || "حجز فندقي"}`,
-    heroSubtitle: `اسم النزيل: ${data.passenger_name || data.customer_name || "النزيل الكريم"}  |  رقم الفوتشر: ${wrapLtrIsolate(data.voucher_number || cleanRef)}`,
+    stubHeaderEn: "HOTEL VOUCHER",
+    stubHeaderAr: "تأكيد حجز فندق",
+    sloganAr: "إقامة مريحة .. ضيافة متميزة",
+    sloganEn: "Fine Hospitality .. Comfortable Stay",
+    holderLabelAr: "اسم النزيل",
+    holderLabelEn: "Guest Name",
+    holderName: guestName,
+    secondaryHolder:
+      data.customer_name && data.customer_name !== guestName ? `العميل المتعاقد: ${data.customer_name}` : undefined,
     statusLabel: "حجز فندقي مؤكد",
     statusTone: "success",
-    docRef,
-    qrPayload: `HOTEL|${docRef}|${data.hotel_name || ""}|${data.passenger_name || ""}|VCH:${data.voucher_number || ""}`,
-    fields: [
-      { labelAr: "اسم النزيل / الضيف", labelEn: "Guest Name", value: data.passenger_name || data.customer_name || "النزيل الكريم", icon: "user" },
-      { labelAr: "اسم الفندق", labelEn: "Hotel Name", value: data.hotel_name || "الفندق المحجوز", icon: "hotel" },
-      { labelAr: "المدينة والوجهة", labelEn: "City & Country", value: [data.city, data.country].filter(Boolean).join(" - ") || "غير محددة", icon: "map" },
-      { labelAr: "رقم قسيمة السكن (Voucher)", labelEn: "Voucher Number", value: data.voucher_number || data.booking_ref || "---", icon: "ticket", isLtr: true },
-      { labelAr: "رقم التأكيد المرجعي", labelEn: "Confirmation No.", value: data.confirmation_number || data.booking_ref || "---", icon: "hash", isLtr: true },
-      { labelAr: "تاريخ تسجيل الدخول", labelEn: "Check-In Date", value: safeFormatDate(data.check_in), icon: "calendar", isLtr: true },
-      { labelAr: "تاريخ المغادرة", labelEn: "Check-Out Date", value: safeFormatDate(data.check_out), icon: "exit", isLtr: true },
-      { labelAr: "عدد الليالي والغرف", labelEn: "Nights & Rooms", value: `${data.nights || 1} ليلة / ${data.rooms_count || 1} غرفة`, icon: "clock" },
-      { labelAr: "نوع الغرفة والوجبات", labelEn: "Room & Meal Plan", value: `${data.room_type || "قياسية"}`, icon: "room" },
-      { labelAr: "إجمالي قيمة الإقامة", labelEn: "Total Stay Amount", value: `${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}`, icon: "money" },
+    leftLabel: "تاريخ الدخول / Check-In",
+    leftCode: safeFormatDate(data.check_in),
+    leftSub: data.hotel_name || "الفندق المعتمد",
+    rightLabel: "تاريخ المغادرة / Check-Out",
+    rightCode: safeFormatDate(data.check_out),
+    rightSub: cityText,
+    middleTag: `${data.nights || 1} ليالٍ · ${data.rooms_count || 1} غرفة`,
+    specs: [
+      { icon: "hotel", label: "الفندق", value: data.hotel_name || "---" },
+      { icon: "room", label: "نوع الغرفة", value: data.room_type || "قياسية" },
+      { icon: "doc", label: "الوجبات", value: data.meal_plan || "إفطار شامل" },
+      { icon: "ticket", label: "رقم القسيمة", value: data.voucher_number || data.booking_ref || "---", isLtr: true },
+      { icon: "money", label: "قيمة الإقامة", value: `${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}` },
     ],
-    footerNote: "يرجى إبراز قسيمة السكن الفندقية مع أصل جواز السفر عند مكتب الاستقبال",
+    extraDetails: [
+      { label: "رقم التأكيد", value: data.confirmation_number || data.booking_ref || "---" },
+      { label: "المدينة", value: cityText },
+      { label: "عدد النزلاء", value: `${data.guests_count || 1} نزيل · ${data.rooms_count || 1} غرفة` },
+      { label: "عدد الليالي", value: `${data.nights || 1} ليلة` },
+      { label: "سياسة الاستقبال", value: "الدخول 2:00 م والمغادرة 12:00 م" },
+      { label: "ملاحظات", value: data.notes || "يرجى إبراز القسيمة مع أصل جواز السفر" },
+    ],
+    wishAr: "نتمنى لكم إقامة سعيدة ومريحة",
+    wishEn: "Have a pleasant stay",
+    barcodeSeed: data.voucher_number || data.confirmation_number || data.booking_ref || docRef,
+    docRef,
+    qrPayload: `HOTEL|${docRef}|${data.hotel_name || ""}|${guestName}|VCH:${data.voucher_number || ""}`,
+    stubItems: [
+      { icon: "user", label: "النزيل / Guest", value: guestName },
+      { icon: "hotel", label: "الفندق / Hotel", value: data.hotel_name || "---" },
+      { icon: "calendar", label: "الدخول / Check-In", value: safeFormatDate(data.check_in), isLtr: true },
+      { icon: "exit", label: "المغادرة / Check-Out", value: safeFormatDate(data.check_out), isLtr: true },
+      { icon: "room", label: "الغرفة / الليالي", value: `${data.nights || 1} ليلة · ${data.rooms_count || 1} غرفة` },
+      { icon: "ticket", label: "الفوتشر / القيمة", value: `${data.voucher_number || "---"} · ${Number(data.total_amount || 0).toLocaleString()} ${data.currency || "ريال"}` },
+    ],
+    footerCreditText: "تم إنشاء تأكيد حجز الفندق هذا من نظام أومني فلاي برو",
   });
 
   return { ...saved, fileUrl: hostBase ? `${hostBase}${saved.fileUrl}` : saved.fileUrl };

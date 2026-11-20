@@ -1017,7 +1017,7 @@ router.post("/travel/bookings", (req, res) => {
     origin_city, origin_airport_code, destination_city, destination_airport_code, routing_details,
     departure_date, departure_time, return_date, arrival_date, arrival_time, travel_class, fare_basis,
     baggage_weight, baggage_pieces, ticket_price, taxes, service_fee, discount, commission,
-    ticket_number, pnr, status, issue_date, issue_time, cost_price, selling_price,
+    ticket_number, pnr, status, flight_status, issue_date, issue_time, cost_price, selling_price,
     payment_status, payment_method, supplier_id, supplier_name, notes, missing_docs,
     customer_currency, supplier_currency, customer_statement, supplier_statement, supplier_payment_method
   } = req.body;
@@ -1063,17 +1063,19 @@ router.post("/travel/bookings", (req, res) => {
   }
   const suppStmt = supplier_statement || `تكلفة تذكرة طيران PNR: ${pnr || ''} رقم: ${ticket_number || num}`;
 
+  const resolvedFlightStatus = flight_status || (status === "cancelled" ? "ملغاة" : status === "pending_issue" ? "بانتظار التأكيد" : "مؤكدة");
+
   const stmt = db.prepare(`
     INSERT INTO travel_bookings (
       booking_number, service_type, customer_id, passenger_id, airline_id, airline_name, airline_supplier, flight_number,
       origin_city, origin_airport_code, destination_city, destination_airport_code, routing_details,
       departure_date, departure_time, return_date, arrival_date, arrival_time, travel_class, fare_basis,
       baggage_weight, baggage_pieces, ticket_price, taxes, service_fee, discount, commission, profit,
-      ticket_number, pnr, status, issue_date, issue_time, cost_price, selling_price,
+      ticket_number, pnr, status, flight_status, issue_date, issue_time, cost_price, selling_price,
       payment_status, payment_method, issued_by_user_id, issued_by_user_name, branch_id,
       user_id, user_name, supplier_id, supplier_name, notes, missing_docs,
       customer_currency, supplier_currency, customer_statement, supplier_statement, supplier_payment_method
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const info = stmt.run(
@@ -1084,7 +1086,7 @@ router.post("/travel/bookings", (req, res) => {
     departure_date || null, departure_time || null, return_date || null, arrival_date || null, arrival_time || null,
     travel_class || 'اقتصادية', fare_basis || null, Number(baggage_weight || 30), Number(baggage_pieces || 1),
     Number(ticket_price || 0), Number(taxes || 0), Number(service_fee || 0), Number(discount || 0), comm, prof,
-    ticket_number || null, pnr || null, status || 'confirmed', issue_date || getBusinessDate("travel"),
+    ticket_number || null, pnr || null, status || 'confirmed', resolvedFlightStatus, issue_date || getBusinessDate("travel"),
     issue_time || new Date().toLocaleTimeString('ar-EG'), cost, sell, 
     payment_status || (custPayMethod === 'credit' ? 'unpaid' : 'paid'), custPayMethod,
     user.id, user.name, user.id, user.name, supplier_id || null, supplier_name || null, notes || null, missing_docs || null,
@@ -1217,6 +1219,8 @@ router.post("/travel/bookings", (req, res) => {
           departure_date: departure_date || "",
           departure_time: departure_time || "",
           seat: "تم التعيين",
+          flight_status: resolvedFlightStatus,
+          travel_class: travel_class || "اقتصادية",
           total_amount: sell,
           currency: custCur
         },
@@ -1248,7 +1252,7 @@ router.put("/travel/bookings/:id", (req, res) => {
     origin_city, origin_airport_code, destination_city, destination_airport_code, routing_details,
     departure_date, departure_time, return_date, arrival_date, arrival_time, travel_class, fare_basis,
     baggage_weight, baggage_pieces, ticket_price, taxes, service_fee, discount, commission,
-    ticket_number, pnr, status, issue_date, issue_time, cost_price, selling_price,
+    ticket_number, pnr, status, flight_status, issue_date, issue_time, cost_price, selling_price,
     payment_status, payment_method, supplier_id, supplier_name, notes, missing_docs,
     customer_currency, supplier_currency, customer_statement, supplier_statement, supplier_payment_method
   } = req.body;
@@ -1270,13 +1274,15 @@ router.put("/travel/bookings/:id", (req, res) => {
   const custStmt = customer_statement || (oldBooking as any)?.customer_statement || `قيمة تذكرة طيران PNR: ${pnr || (oldBooking as any)?.pnr || ''}`;
   const suppStmt = supplier_statement || (oldBooking as any)?.supplier_statement || `تكلفة تذكرة طيران PNR: ${pnr || (oldBooking as any)?.pnr || ''}`;
 
+  const resolvedFlightStatus = flight_status || (oldBooking as any)?.flight_status || (status === "cancelled" ? "ملغاة" : "مؤكدة");
+
   db.prepare(`
     UPDATE travel_bookings SET
       service_type = ?, customer_id = ?, passenger_id = ?, airline_id = ?, airline_name = ?, airline_supplier = ?, flight_number = ?,
       origin_city = ?, origin_airport_code = ?, destination_city = ?, destination_airport_code = ?, routing_details = ?,
       departure_date = ?, departure_time = ?, return_date = ?, arrival_date = ?, arrival_time = ?, travel_class = ?, fare_basis = ?,
       baggage_weight = ?, baggage_pieces = ?, ticket_price = ?, taxes = ?, service_fee = ?, discount = ?, commission = ?, profit = ?,
-      ticket_number = ?, pnr = ?, status = ?, issue_date = ?, issue_time = ?, cost_price = ?, selling_price = ?,
+      ticket_number = ?, pnr = ?, status = ?, flight_status = ?, issue_date = ?, issue_time = ?, cost_price = ?, selling_price = ?,
       payment_status = ?, payment_method = ?, supplier_id = ?, supplier_name = ?, notes = ?, missing_docs = ?,
       customer_currency = ?, supplier_currency = ?, customer_statement = ?, supplier_statement = ?, supplier_payment_method = ?
     WHERE id = ?
@@ -1288,7 +1294,7 @@ router.put("/travel/bookings/:id", (req, res) => {
     departure_date || null, departure_time || null, return_date || null, arrival_date || null, arrival_time || null,
     travel_class || 'اقتصادية', fare_basis || null, Number(baggage_weight || 30), Number(baggage_pieces || 1),
     Number(ticket_price || 0), Number(taxes || 0), Number(service_fee || 0), Number(discount || 0), comm, prof,
-    ticket_number || null, pnr || null, status || 'confirmed', issue_date || null, issue_time || null,
+    ticket_number || null, pnr || null, status || 'confirmed', resolvedFlightStatus, issue_date || null, issue_time || null,
     cost, sell, payment_status || (custPayMethod === 'credit' ? 'unpaid' : 'paid'), custPayMethod, 
     supplier_id || null, supplier_name || null, notes || null, missing_docs || null,
     custCur, suppCur, custStmt, suppStmt, suppPayMethod, req.params.id
@@ -1369,6 +1375,8 @@ router.put("/travel/bookings/:id", (req, res) => {
             departure_date: departure_date || (oldBooking as any)?.departure_date || "",
             departure_time: departure_time || (oldBooking as any)?.departure_time || "",
             seat: "تم التعيين",
+            flight_status: resolvedFlightStatus,
+            travel_class: travel_class || (oldBooking as any)?.travel_class || "اقتصادية",
             total_amount: sell,
             currency: custCur
           },

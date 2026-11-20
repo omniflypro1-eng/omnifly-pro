@@ -16,6 +16,8 @@ import {
   Maximize2, FileDown
 } from "lucide-react";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
+import { buildBusBoardingPassBody, buildBusBoardingPassHtml } from "@/lib/travelTicketTemplates";
+import { printA4Html } from "@/lib/printUtils";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? "";
@@ -98,7 +100,9 @@ const SUPPLIER_PAYMENT_METHODS = [
 ];
 
 export default function TravelBusTicketsPage() {
-  const qc = useQueryClient();  const { agencyName } = useAgencyConfig();
+  const qc = useQueryClient();
+  const { agencyName, agencyNameEn, logoUrl, address, phone, taxNumber, licenseNumber, currency } = useAgencyConfig();
+  const brandConfig = { agencyName, agencyNameEn, logoUrl, address, phone, taxNumber, licenseNumber, currency };
 
   // Search & Filter State
   const [search, setSearch] = useState("");
@@ -135,131 +139,9 @@ export default function TravelBusTicketsPage() {
 
   const handleOpenBusFullScreenPdf = (bk: any) => {
     if (!bk) return;
-    const html = `
-      <!DOCTYPE html>
-      <html dir="rtl" lang="ar">
-      <head>
-        <meta charset="UTF-8">
-        <title>تذكرة نقل بري - ${bk.booking_number || 'TICKET'}</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
-          body { font-family: 'Tajawal', sans-serif; background: #fff; color: #0f172a; padding: 25px; margin: 0; direction: rtl; }
-          .ticket-card { border: 2px solid #059669; border-radius: 16px; padding: 25px; background: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #059669; padding-bottom: 15px; margin-bottom: 20px; }
-          .agency-title { font-size: 22px; font-weight: 900; color: #064e3b; margin: 0; }
-          .sub-title { font-size: 12px; color: #475569; margin-top: 4px; }
-          .banner { background: linear-gradient(135deg, #065f46 0%, #0d9488 100%); color: #fff; padding: 15px 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-          .route-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px; }
-          .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
-          .box { padding: 15px; border-radius: 12px; font-size: 13px; line-height: 1.8; }
-          .box-blue { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
-          .box-green { background: #ecfdf5; border: 1px solid #a7f3d0; color: #064e3b; }
-          .summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; text-align: center; font-size: 13px; margin-bottom: 20px; }
-          .sum-item { padding: 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #cbd5e1; }
-          .terms { font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 20px; line-height: 1.6; }
-          .footer { display: flex; justify-content: space-between; margin-top: 30px; font-size: 12px; font-weight: bold; border-top: 1px solid #cbd5e1; padding-top: 15px; }
-        </style>
-      </head>
-      <body>
-        <div class="ticket-card">
-          <div class="header">
-            <div>
-              <h1 class="agency-title">🚌 ${agencyName}</h1>
-              <p class="sub-title">خدمات النقل البري الدولي والداخلي المعتمدة | ترخيص رقم: 778899 | الرقم الضريبي: 300998811200003</p>
-            </div>
-            <div style="text-align: left; font-family: monospace;">
-              <strong style="font-size: 16px; color: #0f172a;">${bk.booking_number || 'BUS-REF'}</strong>
-              <div style="font-size: 12px; color: #64748b;">تاريخ الإصدار: ${bk.issue_date || new Date().toISOString().slice(0, 10)}</div>
-            </div>
-          </div>
-
-          <div class="banner">
-            <div>
-              <div style="font-size: 11px; text-transform: uppercase; opacity: 0.9;">OFFICIAL BUS BOARDING PASS & TICKET</div>
-              <div style="font-size: 18px; font-weight: 900;">تذكرة نقل بري وبطاقة صعود الحافلة</div>
-            </div>
-            <div style="text-align: left; font-family: monospace;">
-              <div style="font-size: 11px; opacity: 0.9;">رقم التذكرة Ticket No</div>
-              <div style="font-size: 16px; font-weight: 900;">${bk.ticket_number || 'TKT-BUS-VALID'}</div>
-            </div>
-          </div>
-
-          <div class="route-box">
-            <div>
-              <span style="font-size: 11px; color: #64748b; display: block;">محطة الانطلاق (From)</span>
-              <strong style="font-size: 18px; color: #1e3a8a;">${bk.origin_city || 'الرياض'}</strong>
-              <div style="font-size: 12px; color: #475569;">${bk.origin_station || 'المحطة الرئيسية'}</div>
-            </div>
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-              <span style="background: #d1fae5; color: #065f46; font-size: 11px; font-weight: bold; padding: 4px 12px; border-radius: 20px;">
-                ${bk.trip_type === 'round_trip' ? 'ذهاب وعودة 🔁' : 'رحلة مباشرة ⬅️'}
-              </span>
-              <span style="font-size: 16px; color: #94a3b8; margin: 4px 0;">━━━━ 🚌 ━━━━</span>
-              <span style="font-size: 11px; color: #475569; font-weight: bold;">${bk.bus_type || 'حافلة VIP'}</span>
-            </div>
-            <div>
-              <span style="font-size: 11px; color: #64748b; display: block;">محطة الوصول (To)</span>
-              <strong style="font-size: 18px; color: #065f46;">${bk.destination_city || 'جدة'}</strong>
-              <div style="font-size: 12px; color: #475569;">${bk.destination_station || 'المحطة المركزية'}</div>
-            </div>
-          </div>
-
-          <div class="details-grid">
-            <div class="box box-blue">
-              <strong style="font-size: 14px; border-bottom: 1px solid #bfdbfe; padding-bottom: 5px; display: block; margin-bottom: 8px;">👤 الطرف الأول: بيانات المسافر والعميل</strong>
-              <div><b>اسم الراكب المسافر:</b> ${bk.passenger_name || bk.customer_name || 'عميل نقدي'}</div>
-              <div><b>العميل المتعاقد:</b> ${bk.customer_name || '-'}</div>
-              <div><b>رقم الهوية / الجواز:</b> ${bk.passenger_national_id || '-'}</div>
-              <div><b>رقم الهاتف:</b> ${bk.passenger_phone || '-'}</div>
-              <div><b>البيان:</b> ${bk.customer_statement || 'قيمة تذكرة نقل بري'}</div>
-            </div>
-
-            <div class="box box-green">
-              <strong style="font-size: 14px; border-bottom: 1px solid #a7f3d0; padding-bottom: 5px; display: block; margin-bottom: 8px;">🏢 الطرف الثاني: شركة النقل الناقلة</strong>
-              <div><b>شركة النقل:</b> ${bk.company_name || bk.company_name_joined || 'الناقل المعتمد'}</div>
-              <div><b>رقم الحافلة:</b> ${bk.bus_number || 'حسب الجدولة'}</div>
-              <div><b>رقم المقعد:</b> <span style="background: #a7f3d0; padding: 2px 8px; border-radius: 4px; font-weight: 900;">${bk.seat_number || 'حر'}</span></div>
-              <div><b>الأمتعة المسموحة:</b> ${bk.luggage_weight || 30} كجم (${bk.luggage_pieces || 2} حقيبة)</div>
-              <div><b>البيان:</b> ${bk.supplier_statement || 'تكلفة حجز مقعد حافلة نقل بري'}</div>
-            </div>
-          </div>
-
-          <div class="summary-grid">
-            <div class="sum-item">
-              <span style="color: #64748b; display: block;">تاريخ الرحلة والتحرك</span>
-              <strong style="font-size: 14px; color: #0f172a; display: block; margin-top: 2px;">${bk.departure_date}</strong>
-              <span style="color: #047857; font-weight: bold;">الوقت: ${bk.departure_time || '08:00'}</span>
-            </div>
-            <div class="sum-item">
-              <span style="color: #64748b; display: block;">وقت الحضور بالمحطة</span>
-              <strong style="font-size: 14px; color: #b91c1c; display: block; margin-top: 2px;">${bk.boarding_time || 'قبل الرحلة بـ 30 دقيقة'}</strong>
-              <span style="color: #64748b;">للصعود وشحن الحقائب</span>
-            </div>
-            <div class="sum-item" style="background: #ecfdf5; border-color: #a7f3d0;">
-              <span style="color: #065f46; font-weight: bold; display: block;">إجمالي المبلغ المطلوب</span>
-              <strong style="font-size: 17px; color: #064e3b; display: block; margin-top: 2px;">${Number(bk.selling_price || 0).toLocaleString()} ${bk.customer_currency || 'SAR'}</strong>
-              <span style="color: #047857; font-weight: bold; font-size: 11px;">${bk.payment_status === 'paid' ? '✅ مدفوع بالكامل' : '⚠️ آجل على الحساب'}</span>
-            </div>
-          </div>
-
-          <div class="terms">
-            <strong>شروط وأحكام تذكرة النقل البري:</strong><br/>
-            1. يجب التواجد في محطة الانطلاق قبل موعد الرحلة بـ 30 دقيقة على الأقل لإتمام إجراءات شحن الأمتعة واستلام بطاقة الصعود.<br/>
-            2. يلزم إبراز أصل الهوية الوطنية أو الإقامة أو جواز السفر الساري لجميع الركاب المسجلين قبل صعود الحافلة.<br/>
-            3. يخضع تعديل أو استرجاع التذكرة لسياسة شركة النقل البري الناقلة المعتمدة.
-          </div>
-
-          <div class="footer">
-            <div>توقيع وختم الوكالة: ___________________</div>
-            <div>الموظف المصدر: ${bk.issued_by || 'مدير النظام'}</div>
-            <div>توقيع الراكب / المستلم: ___________________</div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+    const html = buildBusBoardingPassHtml(bk, brandConfig);
     setReportHtml(html);
-    setReportTitle(`تذكرة نقل بري - ${bk.booking_number || bk.ticket_number}`);
+    setReportTitle(`تذكرة_نقل_بري_${bk.booking_number || bk.ticket_number || 'BUS'}`);
     setReportViewerOpen(true);
   };
 
@@ -2080,15 +1962,15 @@ export default function TravelBusTicketsPage() {
 
         {/* MODAL: PRINT / PREVIEW OFFICIAL BUS TICKET & VOUCHER */}
         <Dialog open={!!printBooking} onOpenChange={open => !open && setPrintBooking(null)}>
-          <DialogContent className="max-w-3xl text-right max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogContent className="max-w-5xl text-right max-h-[92vh] overflow-y-auto" dir="rtl">
             <DialogHeader className="text-right border-b pb-3 flex flex-row items-center justify-between">
               <div>
                 <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Printer className="w-5 h-5 text-emerald-600" />
-                  معاينة وطباعة تذكرة وسند النقل البري الرسمي
+                  <Printer className="w-5 h-5 text-blue-700" />
+                  معاينة وطباعة تذكرة النقل البري الرسمية
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500">
-                  تذكرة نقل بري معتمدة مع كافة بيانات الطرفين، والمقعد، والمحطات، والمبالغ المالية.
+                  بطاقة صعود وتذكرة نقل بري معتمدة بكامل البيانات والباركود.
                 </DialogDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -2105,7 +1987,7 @@ export default function TravelBusTicketsPage() {
                   استعراض بشاشة كاملة وتصدير PDF
                 </Button>
                 <Button
-                  onClick={() => window.print()}
+                  onClick={() => printA4Html(buildBusBoardingPassHtml(printBooking, brandConfig), `تذكرة_نقل_بري_${printBooking?.booking_number || printBooking?.ticket_number || 'BUS'}`)}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 text-xs"
                 >
                   <Printer className="w-4 h-4" />
@@ -2115,130 +1997,12 @@ export default function TravelBusTicketsPage() {
             </DialogHeader>
 
             {printBooking && (
-              <div id="printable-bus-ticket" className="p-6 bg-white border border-slate-300 rounded-2xl space-y-6 shadow-sm font-sans text-slate-800">
-                {/* Agency Header */}
-                <div className="flex items-center justify-between border-b-2 border-emerald-600 pb-4">
-                  <div className="space-y-1">
-                    <h2 className="text-xl font-black text-emerald-950 flex items-center gap-2">
-                      <Bus className="w-6 h-6 text-emerald-600" />
-                      ${agencyName}
-                    </h2>
-                    <p className="text-xs text-slate-500">
-                      خدمات النقل الدولي والداخلي | ترخيص سياحي رقم: 778899 | الرقم الضريبي: 300998811200003
-                    </p>
-                  </div>
-                  <div className="text-left font-mono text-xs text-slate-600">
-                    <p className="font-bold text-slate-900 text-sm">{printBooking.booking_number}</p>
-                    <p>التاريخ: {printBooking.issue_date || new Date().toISOString().slice(0, 10)}</p>
-                  </div>
-                </div>
-
-                {/* Ticket Title Banner */}
-                <div className="bg-gradient-to-l from-emerald-800 to-teal-800 text-white p-4 rounded-xl flex items-center justify-between">
-                  <div>
-                    <span className="text-xs uppercase tracking-widest text-emerald-200 block">OFFICIAL BOARDING PASS & BUS TICKET</span>
-                    <h3 className="text-lg font-black text-white">تذكرة نقل بري وبطاقة صعود الحافلة</h3>
-                  </div>
-                  <div className="text-left font-mono">
-                    <span className="text-xs text-emerald-200 block">رقم التذكرة Ticket No</span>
-                    <span className="text-base font-black text-white">{printBooking.ticket_number || "TKT-BUS-VALID"}</span>
-                  </div>
-                </div>
-
-                {/* Route Callout */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-around text-center">
-                  <div>
-                    <span className="text-xs text-slate-500 block">محطة الانطلاق (From)</span>
-                    <span className="text-base font-black text-blue-900">{printBooking.origin_city}</span>
-                    <p className="text-xs text-slate-600">{printBooking.origin_station || "المحطة الرئيسية"}</p>
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                      {printBooking.trip_type === "round_trip" ? "ذهاب وعودة 🔁" : "رحلة مباشرة ⬅️"}
-                    </span>
-                    <span className="text-lg text-slate-400 my-1">━━━━ 🚌 ━━━━</span>
-                    <span className="text-xs text-slate-500 font-mono">
-                      {printBooking.bus_type}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-500 block">محطة الوصول (To)</span>
-                    <span className="text-base font-black text-emerald-900">{printBooking.destination_city}</span>
-                    <p className="text-xs text-slate-600">{printBooking.destination_station || "المحطة المركزية"}</p>
-                  </div>
-                </div>
-
-                {/* Two Parties Details */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Party 1: Customer */}
-                  <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1.5 text-xs">
-                    <h5 className="font-bold text-blue-950 flex items-center gap-1.5 text-sm border-b border-blue-200 pb-1">
-                      <User className="w-4 h-4 text-blue-600" />
-                      الطرف الأول: بيانات الراكب والعميل
-                    </h5>
-                    <p><b>اسم الراكب:</b> {printBooking.passenger_name || printBooking.customer_name || "عميل نقدي"}</p>
-                    <p><b>العميل المتعاقد:</b> {printBooking.customer_name || "-"}</p>
-                    <p><b>رقم الهوية / الجواز:</b> <span className="font-mono">{printBooking.passenger_national_id || "-"}</span></p>
-                    <p><b>رقم الهاتف:</b> <span className="font-mono">{printBooking.passenger_phone || "-"}</span></p>
-                    <p className="text-blue-900 bg-blue-100/60 p-1.5 rounded font-medium mt-1">
-                      <b>البيان:</b> {printBooking.customer_statement || "قيمة تذكرة نقل بري"}
-                    </p>
-                  </div>
-
-                  {/* Party 2: Company */}
-                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5 text-xs">
-                    <h5 className="font-bold text-emerald-950 flex items-center gap-1.5 text-sm border-b border-emerald-200 pb-1">
-                      <Building2 className="w-4 h-4 text-emerald-600" />
-                      الطرف الثاني: شركة النقل البري الناقلة
-                    </h5>
-                    <p><b>اسم شركة النقل:</b> {printBooking.company_name || printBooking.company_name_joined || "الناقل المعتمد"}</p>
-                    <p><b>رقم الحافلة:</b> <span className="font-mono font-bold">{printBooking.bus_number || "حسب الجدولة"}</span></p>
-                    <p><b>رقم المقعد المخصص:</b> <span className="font-mono font-black text-emerald-800 text-sm bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">{printBooking.seat_number || "حر"}</span></p>
-                    <p><b>الأمتعة المسموحة:</b> {printBooking.luggage_weight || 30} كجم ({printBooking.luggage_pieces || 2} حقيبة)</p>
-                    <p className="text-emerald-900 bg-emerald-100/60 p-1.5 rounded font-medium mt-1">
-                      <b>بيان الناقل:</b> {printBooking.supplier_statement || "تكلفة حجز مقعد حافلة نقل بري"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Schedule & Financial Summary */}
-                <div className="grid grid-cols-3 gap-3 text-center text-xs">
-                  <div className="p-3 bg-slate-50 border rounded-xl">
-                    <span className="text-slate-500 block">تاريخ السفر</span>
-                    <span className="font-bold text-slate-900 text-sm block mt-0.5">{printBooking.departure_date}</span>
-                    <span className="text-emerald-700 font-mono font-bold">التحرك: {printBooking.departure_time || "08:00"}</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-xl">
-                    <span className="text-slate-500 block">وقت الحضور بالمحطة</span>
-                    <span className="font-black text-red-700 text-sm block mt-0.5">{printBooking.boarding_time || "قبل الرحلة بـ 30 دقيقة"}</span>
-                    <span className="text-slate-500">للصعود وشحن الأمتعة</span>
-                  </div>
-                  <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl">
-                    <span className="text-emerald-800 font-semibold block">إجمالي المبلغ المطلوب</span>
-                    <span className="font-black text-emerald-950 text-base block mt-0.5">
-                      {Number(printBooking.selling_price || 0).toLocaleString()} {printBooking.customer_currency || "SAR"}
-                    </span>
-                    <span className="text-[11px] text-emerald-700 font-bold">
-                      {printBooking.payment_status === "paid" ? "✅ مدفوع بالكامل" : "⚠️ آجل على الحساب"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Terms and conditions */}
-                <div className="text-[11px] text-slate-500 space-y-1 border-t pt-3">
-                  <p className="font-bold text-slate-700">شروط وأحكام النقل البري:</p>
-                  <p>1. يجب التواجد في محطة الانطلاق قبل موعد الرحلة بنصف ساعة على الأقل لتسليم الأمتعة واستلام بطاقة الصعود.</p>
-                  <p>2. يُشترط إبراز أصل الهوية الوطنية أو الإقامة أو جواز السفر ساري المفعول لجميع الركاب قبل الصعود.</p>
-                  <p>3. في حال الإلغاء أو الاسترجاع، يخضع الطلب لسياسة شركة النقل البري الناقلة.</p>
-                </div>
-
-                {/* Footer Signatures */}
-                <div className="flex items-center justify-between pt-4 border-t text-xs font-semibold text-slate-600">
-                  <div>توقيع وختم الوكالة: __________________</div>
-                  <div>الموظف المصدر: {printBooking.issued_by || "مدير النظام"}</div>
-                  <div>توقيع الراكب / المستلم: __________________</div>
-                </div>
-              </div>
+              <div
+                id="printable-bus-ticket"
+                dangerouslySetInnerHTML={{
+                  __html: buildBusBoardingPassBody(printBooking, brandConfig)
+                }}
+              />
             )}
           </DialogContent>
         </Dialog>
@@ -2249,6 +2013,7 @@ export default function TravelBusTicketsPage() {
           onClose={() => setReportViewerOpen(false)}
           htmlContent={reportHtml}
           title={reportTitle}
+          landscape={true}
         />
       </div>
     </AdminLayout>

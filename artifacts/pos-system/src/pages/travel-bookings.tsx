@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ticket, Plus, Search, Edit2, Trash2, Printer, CheckCircle2, AlertCircle, RefreshCw, XCircle, DollarSign, Plane, Send, Eye } from "lucide-react";
+import { Ticket, Plus, Search, Edit2, Trash2, Printer, CheckCircle2, AlertCircle, RefreshCw, XCircle, DollarSign, Plane, Send, Eye, Maximize2, FileDown } from "lucide-react";
 import { FlightBookingFullscreenDialog } from "@/components/travel/flight-booking-fullscreen-dialog";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
+import { buildFlightBoardingPassBody, buildFlightBoardingPassHtml } from "@/lib/travelTicketTemplates";
+import { printA4Html } from "@/lib/printUtils";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("pos_token") ?? "";
@@ -38,12 +40,22 @@ const STATUS_BADGES: Record<string, { label: string; class: string }> = {
   reissued: { label: "معاد إصدارها", class: "bg-indigo-100 text-indigo-800 border-indigo-200" }
 };
 
+const FLIGHT_STATUS_BADGES: Record<string, { label: string; class: string }> = {
+  "مؤكدة": { label: "مؤكدة", class: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+  "بانتظار التأكيد": { label: "بانتظار التأكيد", class: "bg-amber-100 text-amber-800 border-amber-300" },
+  "ملغاة": { label: "ملغاة", class: "bg-red-100 text-red-800 border-red-300" },
+  "مؤجلة": { label: "مؤجلة", class: "bg-orange-100 text-orange-800 border-orange-300" },
+  "مكتملة": { label: "مكتملة", class: "bg-indigo-100 text-indigo-800 border-indigo-300" },
+};
+
 export default function TravelBookingsPage() {
   const qc = useQueryClient();
-  const { agencyName, currency: globalCurrency } = useAgencyConfig();
+  const { agencyName, agencyNameEn, logoUrl, address, phone, taxNumber, licenseNumber, currency: globalCurrency } = useAgencyConfig();
+  const brandConfig = { agencyName, agencyNameEn, logoUrl, address, phone, taxNumber, licenseNumber, currency: globalCurrency };
   const [search, setSearch] = useState("");
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const [flightStatusFilter, setFlightStatusFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState<any | null>(null);
   const [voucherModalBooking, setVoucherModalBooking] = useState<any | null>(null);
@@ -54,93 +66,9 @@ export default function TravelBookingsPage() {
   const [reportTitle, setReportTitle] = useState("");
 
   const handlePreviewBooking = (bk: any) => {
-    const html = `
-      <div style="direction: rtl; font-family: Tajawal, Arial, sans-serif; padding: 30px; color: #1e293b; background: #ffffff;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px double #2563eb; padding-bottom: 15px; margin-bottom: 25px;">
-          <div>
-            <h2 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 800;">${agencyName}</h2>
-            <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">نظام الحجوزات المركزية وإصدار تذاكر الطيران (Flight E-Ticket)</p>
-          </div>
-          <div style="text-align: center;">
-            <div style="background: #2563eb; color: white; font-size: 16px; font-weight: 800; padding: 8px 26px; border-radius: 8px;">
-              قسيمة حجز تذكرة طيران (E-TICKET VOUCHER)
-            </div>
-            <div style="font-size: 12px; color: #475569; margin-top: 6px;">رقم الحجز / PNR: <strong style="font-family: monospace; color: #2563eb; font-size: 14px;">${bk.pnr || bk.booking_number}</strong></div>
-          </div>
-          <div style="text-align: left; font-size: 12px; color: #475569; font-family: monospace;">
-            <div>تاريخ الإصدار: <strong>${bk.issue_date || bk.departure_date || '-'}</strong></div>
-            <div>رقم التذكرة: <strong>${bk.ticket_number || 'غير مسجل'}</strong></div>
-            <div>الحالة: <strong>${bk.status === 'issued' ? 'مصدرة مؤكدة' : 'قيد التأكيد'}</strong></div>
-          </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;">
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px;">
-            <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-bottom: 5px;">بيانات المسافر (Passenger Details):</div>
-            <div style="font-size: 16px; font-weight: 800; color: #0f172a;">${bk.passenger_name_ar || bk.passenger_name_en || bk.customer_name || 'مسافر عام'}</div>
-            <div style="font-size: 12px; color: #475569; margin-top: 4px;">العميل التابع له: <strong>${bk.customer_name || '-'}</strong></div>
-          </div>
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px;">
-            <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-bottom: 5px;">تفاصيل شركة الطيران والرحلة:</div>
-            <div style="font-size: 15px; font-weight: 800; color: #0f172a;">${bk.airline_supplier || bk.airline_name || 'خطوط الطيران الجوية'}</div>
-            <div style="font-size: 12px; color: #475569; margin-top: 4px;">رقم الرحلة: <strong style="font-family: monospace;">${bk.flight_number || 'FL-101'}</strong> | الدرجة: <strong>${bk.travel_class || 'اقتصادية'}</strong></div>
-          </div>
-        </div>
-
-        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 18px; margin-bottom: 20px; text-align: center;">
-          <div style="font-size: 13px; color: #1e40af; font-weight: bold; margin-bottom: 8px;">خط السير والمحطات (Flight Itinerary):</div>
-          <div style="font-size: 20px; font-weight: 900; color: #1e3a8a; display: flex; justify-content: center; align-items: center; gap: 15px;">
-            <span>${bk.origin_city || 'المدينة الأصلية'}</span>
-            <span style="font-size: 24px;">✈️</span>
-            <span>${bk.destination_city || 'مدينة الوصول'}</span>
-          </div>
-          <div style="font-size: 12px; color: #3b82f6; margin-top: 8px;">
-            تاريخ المغادرة: <strong>${bk.departure_date || '-'}</strong> ${bk.return_date ? `| تاريخ العودة: <strong>${bk.return_date}</strong>` : ''}
-          </div>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; margin-bottom: 25px; border: 1px solid #cbd5e1;">
-          <thead>
-            <tr style="background: #f1f5f9; color: #334155; font-weight: bold;">
-              <th style="padding: 10px; border: 1px solid #cbd5e1;">نوع الخدمة / البيان</th>
-              <th style="padding: 10px; border: 1px solid #cbd5e1;">العملة</th>
-              <th style="padding: 10px; border: 1px solid #cbd5e1;">سعر البيع الإجمالي</th>
-              <th style="padding: 10px; border: 1px solid #cbd5e1;">حالة السداد</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style="padding: 10px; border: 1px solid #cbd5e1; font-weight: bold;">إصدار تذكرة طيران - مسار (${bk.origin_city || '-'} إلى ${bk.destination_city || '-'})</td>
-              <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center;">${bk.customer_currency || 'SAR'}</td>
-              <td style="padding: 10px; border: 1px solid #cbd5e1; font-family: monospace; font-weight: bold; color: #2563eb; font-size: 14px;">${Number(bk.selling_price || 0).toLocaleString()} ${bk.customer_currency || 'SAR'}</td>
-              <td style="padding: 10px; border: 1px solid #cbd5e1; font-weight: bold; color: ${bk.payment_status === 'paid' ? '#059669' : '#d97706'};">
-                ${bk.payment_status === 'paid' ? 'مدفوعة بالكامل ✅' : 'قيد التحصيل ⏳'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; font-size: 11px; color: #64748b; margin-bottom: 30px;">
-          <div>ملاحظات وشروط السفر: ${bk.notes || 'تذكرة مؤكدة، يرجى التواجد بالمطار قبل موعد الرحلة بساعتين للصيغة الدولية.'}</div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; text-align: center; margin-top: 40px; font-size: 13px;">
-          <div style="border-top: 1px solid #94a3b8; padding-top: 10px;">
-            <div>إدارة الحجوزات والمبيعات</div>
-            <div style="height: 50px;"></div>
-            <div style="color: #64748b; font-size: 11px;">التوقيع والختم: .....................</div>
-          </div>
-          <div style="border-top: 1px solid #94a3b8; padding-top: 10px;">
-            <div>اعتماد الإدارة العامة</div>
-            <div style="height: 50px;"></div>
-            <div style="color: #64748b; font-size: 11px;">التوقيع والختم: .....................</div>
-          </div>
-        </div>
-      </div>
-    `;
-
+    const html = buildFlightBoardingPassHtml(bk, brandConfig);
     setReportHtml(html);
-    setReportTitle(`قسيمة تذكرة طيران - ${bk.booking_number || bk.pnr || 'حجز'}`);
+    setReportTitle(`تذكرة_طيران_${bk.pnr || bk.booking_number || 'حجز'}`);
     setReportViewerOpen(true);
   };
 
@@ -159,6 +87,7 @@ export default function TravelBookingsPage() {
     ticket_number: "",
     pnr: "",
     status: "confirmed",
+    flight_status: "مؤكدة",
     issue_date: new Date().toISOString().slice(0, 10),
     cost_price: "0",
     supplier_currency: "SAR",
@@ -238,6 +167,7 @@ export default function TravelBookingsPage() {
       ticket_number: "",
       pnr: "",
       status: "confirmed",
+      flight_status: "مؤكدة",
       issue_date: new Date().toISOString().slice(0, 10),
       cost_price: "0",
       supplier_currency: "SAR",
@@ -270,6 +200,7 @@ export default function TravelBookingsPage() {
       ticket_number: bk.ticket_number || "",
       pnr: bk.pnr || "",
       status: bk.status || "confirmed",
+      flight_status: bk.flight_status || (bk.status === "cancelled" ? "ملغاة" : bk.status === "pending_issue" ? "بانتظار التأكيد" : "مؤكدة"),
       issue_date: bk.issue_date || new Date().toISOString().slice(0, 10),
       cost_price: String(bk.cost_price || 0),
       supplier_currency: bk.supplier_currency || "SAR",
@@ -332,9 +263,9 @@ export default function TravelBookingsPage() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full sm:w-48"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full sm:w-44"
             >
-              <option value="">جميع الحالات</option>
+              <option value="">جميع حالات التذكرة</option>
               <option value="confirmed">مؤكد</option>
               <option value="issued">مصدرة</option>
               <option value="pending_issue">بانتظار الإصدار</option>
@@ -342,18 +273,30 @@ export default function TravelBookingsPage() {
               <option value="refunded">مسترجعة</option>
               <option value="reissued">معاد إصدارها</option>
             </select>
+            <select
+              value={flightStatusFilter}
+              onChange={e => setFlightStatusFilter(e.target.value)}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full sm:w-44"
+            >
+              <option value="">جميع حالات الرحلة</option>
+              <option value="مؤكدة">مؤكدة</option>
+              <option value="بانتظار التأكيد">بانتظار التأكيد</option>
+              <option value="ملغاة">ملغاة</option>
+              <option value="مؤجلة">مؤجلة</option>
+              <option value="مكتملة">مكتملة</option>
+            </select>
           </div>
         </Card>
 
         {/* Bookings Table */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">جدول التذاكر والحجوزات ({bookings.length})</CardTitle>
+            <CardTitle className="text-lg">جدول التذاكر والحجوزات ({bookings.filter(b => !flightStatusFilter || (b.flight_status || 'مؤكدة') === flightStatusFilter).length})</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="p-8 text-center text-muted-foreground">جاري تحميل الحجوزات...</div>
-            ) : bookings.length === 0 ? (
+            ) : bookings.filter(b => !flightStatusFilter || (b.flight_status || 'مؤكدة') === flightStatusFilter).length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">لا توجد حجوزات مطابقة للبحث</div>
             ) : (
               <div className="overflow-x-auto">
@@ -367,13 +310,18 @@ export default function TravelBookingsPage() {
                       <th className="p-3">رقم التذكرة</th>
                       <th className="p-3">التكلفة / سعر البيع</th>
                       <th className="p-3">عمولة المكتب</th>
-                      <th className="p-3">الحالة</th>
+                      <th className="p-3">حالة الرحلة</th>
+                      <th className="p-3">حالة التذكرة</th>
                       <th className="p-3 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {bookings.map((bk, idx) => {
+                    {bookings
+                      .filter(b => !flightStatusFilter || (b.flight_status || 'مؤكدة') === flightStatusFilter)
+                      .map((bk, idx) => {
                       const badge = STATUS_BADGES[bk.status] || { label: bk.status, class: "bg-slate-100" };
+                      const fStatus = bk.flight_status || (bk.status === "cancelled" ? "ملغاة" : bk.status === "pending_issue" ? "بانتظار التأكيد" : "مؤكدة");
+                      const fBadge = FLIGHT_STATUS_BADGES[fStatus] || { label: fStatus, class: "bg-slate-100 text-slate-800 border-slate-200" };
                       return (
                         <tr key={`bk-${bk.id || idx}-${idx}`} onClick={() => setSelectedBooking(bk)} className={`border-b hover:bg-slate-50 transition-colors cursor-pointer ${selectedBooking?.id === bk.id ? "bg-blue-50/50 ring-1 ring-inset ring-blue-300" : ""}`}>
                           <td className="p-3">
@@ -405,6 +353,11 @@ export default function TravelBookingsPage() {
                           </td>
                           <td className="p-3 font-mono text-xs font-bold text-emerald-700 bg-emerald-50/50">
                             +{Number(bk.commission || 0).toLocaleString()}
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 text-xs font-bold rounded-full border ${fBadge.class}`}>
+                              {fBadge.label}
+                            </span>
                           </td>
                           <td className="p-3">
                             <span className={`px-2 py-1 text-xs font-bold rounded-full border ${badge.class}`}>
@@ -473,47 +426,40 @@ export default function TravelBookingsPage() {
 
         {/* Voucher / Invoice Print Dialog */}
         <Dialog open={Boolean(voucherModalBooking)} onOpenChange={open => !open && setVoucherModalBooking(null)}>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>قسيمة حجز تذكرة طيران (Flight Ticket Voucher)</DialogTitle>
-              <DialogDescription>معاينة قسيمة السفر الجاهزة للطباعة أو الإرسال للعميل عبر الواتساب</DialogDescription>
+              <DialogTitle>تذكرة الطيران الإلكترونية (Boarding Pass & E-Ticket)</DialogTitle>
+              <DialogDescription>معاينة التذكرة المعتمدة الجاهزة للطباعة أو التصدير بصيغة PDF</DialogDescription>
             </DialogHeader>
 
             {voucherModalBooking && (
-              <div className="space-y-4 border p-4 rounded-lg bg-slate-50 text-slate-900" id="print-area">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <div>
-                    <h2 className="text-xl font-bold text-primary">شركة أومني لسفريات والسياحة</h2>
-                    <p className="text-xs text-muted-foreground">تأكيد حجز وتذكرة طيران إلكترونية</p>
-                  </div>
-                  <div className="text-left font-mono">
-                    <p className="text-xs font-bold">رقم الحجز: {voucherModalBooking.booking_number}</p>
-                    <p className="text-xs text-muted-foreground">PNR: {voucherModalBooking.pnr || "N/A"}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="font-bold">العميل:</span> {voucherModalBooking.customer_name}</div>
-                  <div><span className="font-bold">المسافر:</span> {voucherModalBooking.passenger_name_ar || voucherModalBooking.passenger_name_en || "نفس العميل"}</div>
-                  <div><span className="font-bold">شركة الطيران:</span> {voucherModalBooking.airline_supplier}</div>
-                  <div><span className="font-bold">رقم الرحلة:</span> {voucherModalBooking.flight_number || "-"}</div>
-                  <div><span className="font-bold">من:</span> {voucherModalBooking.origin_city}</div>
-                  <div><span className="font-bold">إلى:</span> {voucherModalBooking.destination_city}</div>
-                  <div><span className="font-bold">تاريخ المغادرة:</span> {voucherModalBooking.departure_date}</div>
-                  <div><span className="font-bold">رقم التذكرة:</span> {voucherModalBooking.ticket_number || "-"}</div>
-                </div>
-
-                <div className="border-t pt-2 flex items-center justify-between font-bold text-sm">
-                  <span>إجمالي المبلغ المطلوب:</span>
-                  <span className="text-primary font-mono">{Number(voucherModalBooking.selling_price || 0).toLocaleString()} ريال</span>
-                </div>
-              </div>
+              <div
+                id="print-area"
+                dangerouslySetInnerHTML={{
+                  __html: buildFlightBoardingPassBody(voucherModalBooking, brandConfig)
+                }}
+              />
             )}
 
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setVoucherModalBooking(null)}>إغلاق</Button>
-              <Button onClick={() => window.print()} className="bg-primary hover:bg-primary/90 font-bold gap-2">
-                <Printer className="w-4 h-4" /> طباعة القسيمة
+              <Button
+                onClick={() => {
+                  const bk = voucherModalBooking;
+                  setVoucherModalBooking(null);
+                  handlePreviewBooking(bk);
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2"
+              >
+                <Maximize2 className="w-4 h-4" />
+                <FileDown className="w-4 h-4" />
+                استعراض بشاشة كاملة / PDF
+              </Button>
+              <Button
+                onClick={() => printA4Html(buildFlightBoardingPassHtml(voucherModalBooking, brandConfig), `تذكرة طيران - ${voucherModalBooking.pnr || voucherModalBooking.booking_number}`)}
+                className="bg-primary hover:bg-primary/90 font-bold gap-2"
+              >
+                <Printer className="w-4 h-4" /> طباعة التذكرة
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -604,6 +550,7 @@ export default function TravelBookingsPage() {
           onClose={() => setReportViewerOpen(false)}
           htmlContent={reportHtml}
           title={reportTitle}
+          landscape={true}
         />
 
     </AdminLayout>

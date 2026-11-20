@@ -59,6 +59,7 @@ export function FlightBookingFullscreenDialog({
     ticket_number: "",
     pnr: "",
     status: "confirmed",
+    flight_status: "مؤكدة",
     issue_date: new Date().toISOString().slice(0, 10),
     cost_price: "0",
     supplier_currency: "SAR",
@@ -104,6 +105,7 @@ export function FlightBookingFullscreenDialog({
         ticket_number: booking.ticket_number || "",
         pnr: booking.pnr || "",
         status: booking.status || "confirmed",
+        flight_status: booking.flight_status || (booking.status === "cancelled" ? "ملغاة" : booking.status === "pending_issue" ? "بانتظار التأكيد" : "مؤكدة"),
         issue_date: booking.issue_date || new Date().toISOString().slice(0, 10),
         cost_price: String(booking.cost_price || 0),
         supplier_currency: booking.supplier_currency || "SAR",
@@ -139,6 +141,7 @@ export function FlightBookingFullscreenDialog({
       ticket_number: "",
       pnr: "",
       status: "confirmed",
+      flight_status: "مؤكدة",
       issue_date: new Date().toISOString().slice(0, 10),
       cost_price: "0",
       supplier_currency: "SAR",
@@ -189,6 +192,7 @@ export function FlightBookingFullscreenDialog({
       ticket_number: bk.ticket_number || "",
       pnr: bk.pnr || "",
       status: bk.status || "confirmed",
+      flight_status: bk.flight_status || (bk.status === "cancelled" ? "ملغاة" : bk.status === "pending_issue" ? "بانتظار التأكيد" : "مؤكدة"),
       issue_date: bk.issue_date || new Date().toISOString().slice(0, 10),
       cost_price: String(bk.cost_price || 0),
       supplier_currency: bk.supplier_currency || "SAR",
@@ -905,20 +909,46 @@ export function FlightBookingFullscreenDialog({
                   <Plane className="w-5 h-5 text-blue-600" />
                   <h3 className="font-black text-sm text-slate-900">بيانات الرحلة والتذكرة (Flight & Booking Details)</h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 font-medium">حالة التذكرة:</span>
-                  <select
-                    value={form.status}
-                    onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="h-8 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold px-2.5 focus:bg-white"
-                  >
-                    <option value="confirmed">حجز مؤكد</option>
-                    <option value="issued">تذكرة مصدرة</option>
-                    <option value="pending_issue">بانتظار الإصدار</option>
-                    <option value="cancelled">ملغاة</option>
-                    <option value="refunded">مسترجعة</option>
-                    <option value="reissued">معاد إصدارها</option>
-                  </select>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-600 font-bold">حالة الرحلة:</span>
+                    <select
+                      value={form.flight_status}
+                      onChange={e => setForm(f => ({ ...f, flight_status: e.target.value }))}
+                      className={`h-8 rounded-lg border text-xs font-bold px-2.5 focus:outline-none ${
+                        form.flight_status === "ملغاة"
+                          ? "bg-red-50 border-red-300 text-red-800"
+                          : form.flight_status === "بانتظار التأكيد"
+                          ? "bg-amber-50 border-amber-300 text-amber-800"
+                          : form.flight_status === "مؤجلة"
+                          ? "bg-orange-50 border-orange-300 text-orange-800"
+                          : form.flight_status === "مكتملة"
+                          ? "bg-indigo-50 border-indigo-300 text-indigo-800"
+                          : "bg-emerald-50 border-emerald-300 text-emerald-800"
+                      }`}
+                    >
+                      <option value="مؤكدة">مؤكدة</option>
+                      <option value="بانتظار التأكيد">بانتظار التأكيد</option>
+                      <option value="ملغاة">ملغاة</option>
+                      <option value="مؤجلة">مؤجلة</option>
+                      <option value="مكتملة">مكتملة</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 font-medium">حالة التذكرة:</span>
+                    <select
+                      value={form.status}
+                      onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                      className="h-8 rounded-lg border border-slate-300 bg-slate-50 text-xs font-bold px-2.5 focus:bg-white"
+                    >
+                      <option value="confirmed">حجز مؤكد</option>
+                      <option value="issued">تذكرة مصدرة</option>
+                      <option value="pending_issue">بانتظار الإصدار</option>
+                      <option value="cancelled">ملغاة</option>
+                      <option value="refunded">مسترجعة</option>
+                      <option value="reissued">معاد إصدارها</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 

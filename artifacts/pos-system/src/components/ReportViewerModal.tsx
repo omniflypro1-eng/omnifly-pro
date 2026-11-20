@@ -9,12 +9,14 @@ export function ReportViewerModal({
   isOpen, 
   onClose, 
   htmlContent, 
-  title = "استعراض التقرير" 
+  title = "استعراض التقرير",
+  landscape = false,
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   htmlContent: string; 
   title?: string;
+  landscape?: boolean;
 }) {
   const { toast } = useToast();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -56,7 +58,7 @@ export function ReportViewerModal({
     const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_").trim();
     setIsSaving(true);
     try {
-      const res = await saveA4PdfToFile(htmlContent, cleanTitle, cleanTitle);
+      const res = await saveA4PdfToFile(htmlContent, cleanTitle, cleanTitle, landscape ? { landscape: true } : undefined);
       if (res.canceled) {
         setIsSaving(false);
         return;
@@ -198,13 +200,13 @@ export function ReportViewerModal({
               transformOrigin: "top center",
               transition: "transform 0.15s ease-out" 
             }}
-            className="bg-white shadow-2xl max-w-[210mm] w-full min-h-[297mm] h-max border border-slate-700 rounded-sm overflow-hidden"
+            className={`bg-white shadow-2xl w-full ${landscape ? 'max-w-[297mm] min-h-[210mm]' : 'max-w-[210mm] min-h-[297mm]'} h-max border border-slate-700 rounded-sm overflow-hidden`}
           >
             <iframe 
               ref={iframeRef}
               srcDoc={fullHtml} 
-              className="w-full border-none min-h-[297mm]" 
-              style={{ minHeight: "297mm", height: "100%" }}
+              className={`w-full border-none ${landscape ? 'min-h-[210mm]' : 'min-h-[297mm]'}`} 
+              style={{ minHeight: landscape ? "210mm" : "297mm", height: "100%" }}
               title="Report Preview"
             />
           </div>
