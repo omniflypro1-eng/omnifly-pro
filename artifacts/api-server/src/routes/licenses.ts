@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, logAudit, hashPassword } from "../lib/sqlite";
+import { db, masterDb, logAudit, hashPassword, isLocalDesktopMode } from "../lib/sqlite";
+import { decryptJsonPayload, verifyOfflineLicensePolicy, OfflineLicenseSnapshot } from "../lib/hybrid-crypto";
 import { getAuthUser, checkLicenseStatus, getSystemDeviceId, CURRENT_SYSTEM_VERSION } from "./auth";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
@@ -209,9 +210,29 @@ function requireDeveloper(req: any, res: any): boolean {
   return true;
 }
 
-// Public license and device verification status endpoint
+// Public license and device verification status endpoint (Multi-Tenant & Local Offline Aware)
 router.get("/license/status", (req, res) => {
-  const status = checkLicenseStatus();
+  if (isLocalDesktopMode()) {
+    const cfg = (masterDb.prepare("SELECT * FROM sync_runtime_config WHERE id = 1").get() as any) || {};
+    if (cfg.is_bootstrapped && cfg.encrypted_license_snapshot) {
+      const snap = decryptJsonPayload<OfflineLicenseSnapshot>(cfg.encrypted_license_snapshot);
+      const ver = verifyOfflineLicensePolicy(snap);
+      return res.json({
+        blocked: !ver.allowed,
+        code: ver.code,
+        deviceId: getSystemDeviceId(),
+        licenseType: "desktop",
+        clientName: snap?.companyName || cfg.company_name,
+        expiresAt: snap?.licenseExpiresAt,
+        remainingDays: ver.remainingDays,
+        reason: ver.reason,
+        currentVersion: CURRENT_SYSTEM_VERSION,
+      });
+    }
+  }
+  const authUser = getAuthUser(req);
+  const tenantId = Number(authUser?.tenant_id || 1);
+  const status = checkLicenseStatus(undefined, tenantId);
   res.json(status);
 });
 
@@ -321,6 +342,12 @@ router.post("/licenses/activate-cloud-license", (req, res) => {
     `).run(finalExpiresAt, ver, cName, lic.id);
     lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(lic.id);
   }
+
+  try {
+    masterDb.prepare(
+      "UPDATE cloud_tenants SET subscription_status='active', license_status='active', license_expires_at=?, company_name=COALESCE(?, company_name), updated_at=datetime('now','localtime') WHERE id=1"
+    ).run(finalExpiresAt, cName);
+  } catch {}
 
   logAudit(user.id, user.name, "تفعيل ترخيص سحابي عن بعد", `تم تفعيل وتمديد الترخيص السحابي حتى (${finalExpiresAt}) بنجاح`);
 
@@ -891,6 +918,13 @@ router.patch("/licenses/:id", (req, res) => {
     SET client_name=?, devices_limit=?, expires_at=?, active=?, status=?, target_version=?, license_type=?, notes=?
     WHERE id=?
   `).run(finalClientName, finalDevicesLimit, finalExpiresAt, finalActive, finalStatus, finalVersion, finalLicType, finalNotes, req.params.id);
+
+  try {
+    const syncedSubStatus = finalActive === 0 || finalStatus === "suspended" ? "suspended" : "active";
+    masterDb.prepare(
+      "UPDATE cloud_tenants SET company_name=?, license_expires_at=?, subscription_status=?, license_status=?, max_devices=?, updated_at=datetime('now','localtime') WHERE id=1"
+    ).run(finalClientName, finalExpiresAt, syncedSubStatus, syncedSubStatus, finalDevicesLimit);
+  } catch {}
 
   logAudit(userId, userName, "تعديل ترخيص", `تم تحديث الترخيص رقم ${req.params.id} (${lic.license_key}) - الحالة: ${finalStatus}, الإصدار: ${finalVersion}, النوع: ${finalLicType}`);
 

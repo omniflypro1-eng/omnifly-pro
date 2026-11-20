@@ -160,7 +160,7 @@ function resolveDatabasePath(): string {
 
   if (customPath) {
     if (isPathWritable(customPath)) {
-      if (!existsSync(customPath)) {
+      if (!existsSync(customPath) && process.env.OMNIFLY_MODE !== "local" && process.env.OMNIFLY_NO_SEED !== "1") {
         // Find an existing seed file to initialize the custom cloud path
         const seedCandidate = candidatePaths.find(p => existsSync(p));
         if (seedCandidate) {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, hashPassword } from "../lib/sqlite";
+import { db, masterDb, hashPassword, isLocalDesktopMode } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { recordAuditLog } from "./audit";
 
@@ -82,6 +82,23 @@ router.post("/users", (req, res) => {
     res.status(403).json({ error: "غير مصرح لغير المطور بتعيين دور المطور" });
     return;
   }
+
+  const tenantId = Number((user as any).tenant_id || 1);
+  if (!isLocalDesktopMode()) {
+    const tRow = masterDb.prepare("SELECT max_users FROM cloud_tenants WHERE id = ?").get(tenantId) as any;
+    if (tRow?.max_users) {
+      const currentUsers = (db.prepare("SELECT COUNT(*) as c FROM users WHERE LOWER(username) != 'developer'").get() as { c: number })?.c || 0;
+      if (currentUsers >= Number(tRow.max_users)) {
+        res.status(403).json({ error: `تم الوصول للحد الأقصى للمستخدمين المسموح به في باقة المؤسسة (${tRow.max_users} مستخدمين).` });
+        return;
+      }
+    }
+    const globalDup = masterDb.prepare("SELECT id FROM users WHERE LOWER(TRIM(username))=LOWER(TRIM(?))").get(String(username).trim());
+    if (globalDup) {
+      res.status(409).json({ error: `اسم المستخدم (${username}) مستخدم مسبقاً في النظام السحابي` });
+      return;
+    }
+  }
   
   const hash = hashPassword(password);
   const targetIsAdmin = isAdminRole(role);
@@ -117,6 +134,15 @@ router.post("/users", (req, res) => {
            perm_edit_stock, perm_stocktake, perm_edit_entries, perm_close_periods, perm_view_salaries
     FROM users WHERE id=?
   `).get(r.lastInsertRowid) as any;
+
+  if (!isLocalDesktopMode() && tenantId > 1) {
+    try {
+      masterDb.prepare(`
+        INSERT OR IGNORE INTO users (username, password_hash, name, role, active, can_discount, tenant_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(String(username).trim(), hash, name, role, active !== false ? 1 : 0, discountFlag, tenantId);
+    } catch {}
+  }
 
   if (user) {
     recordAuditLog({
@@ -226,6 +252,20 @@ router.put("/users/:id", (req, res) => {
     FROM users WHERE id=?
   `).get(req.params.id) as any;
 
+  if (!isLocalDesktopMode() && Number((user as any).tenant_id || 1) > 1) {
+    try {
+      if (password) {
+        masterDb.prepare(
+          "UPDATE users SET username=?, name=?, role=?, password_hash=?, active=?, can_discount=? WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?"
+        ).run(username, name, targetRole, hashPassword(password), active !== false ? 1 : 0, discountFlag, targetUser.username, Number((user as any).tenant_id));
+      } else {
+        masterDb.prepare(
+          "UPDATE users SET username=?, name=?, role=?, active=?, can_discount=? WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?"
+        ).run(username, name, targetRole, active !== false ? 1 : 0, discountFlag, targetUser.username, Number((user as any).tenant_id));
+      }
+    } catch {}
+  }
+
   if (user) {
     recordAuditLog({
       userId: user.id,
@@ -266,6 +306,11 @@ router.delete("/users/:id", (req, res) => {
   }
   
   db.prepare("DELETE FROM users WHERE id=?").run(req.params.id);
+  if (!isLocalDesktopMode() && Number((user as any).tenant_id || 1) > 1) {
+    try {
+      masterDb.prepare("DELETE FROM users WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?").run(targetUser.username, Number((user as any).tenant_id));
+    } catch {}
+  }
 
   if (user) {
     recordAuditLog({

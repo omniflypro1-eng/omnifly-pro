@@ -39,7 +39,12 @@ export default function Login() {
     queryFn: () => fetch("/api/licenses/device-info").then(r => r.json()).catch(() => ({})),
   });
 
-  const licenseeName = settings?.businessName || "مؤسسة إتقان المعتمدة للتجارة والخدمات";
+  const { data: syncConfig } = useQuery({
+    queryKey: ["sync-config-public"],
+    queryFn: () => fetch("/api/sync/config-public").then(r => r.json()).catch(() => ({})),
+  });
+
+  const licenseeName = settings?.businessName || syncConfig?.companyName || "مؤسسة إتقان المعتمدة للتجارة والخدمات";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -48,6 +53,18 @@ export default function Login() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isFromBlockedSystem, setIsFromBlockedSystem] = useState(false);
+  const [cloudUrlInput, setCloudUrlInput] = useState("");
+  const [showCloudConfig, setShowCloudConfig] = useState(false);
+  const [isHybridSubmitting, setIsHybridSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (syncConfig?.cloudServerUrl && !cloudUrlInput) {
+      setCloudUrlInput(syncConfig.cloudServerUrl);
+    }
+    if (syncConfig?.mode === "local" && !syncConfig?.isBootstrapped) {
+      setShowCloudConfig(true);
+    }
+  }, [syncConfig]);
 
   useEffect(() => {
     try {
@@ -185,84 +202,96 @@ export default function Login() {
     setTimeout(() => setCopiedHwid(false), 3000);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    loginMutation.mutate(
-      { data: { username, password } },
-      {
-        onSuccess: (data) => {
-          login(data.token, data.user);
+    setIsHybridSubmitting(true);
+    try {
+      const electronIdent =
+        typeof window !== "undefined" && (window as any).electronAPI?.getDeviceIdentity
+          ? await (window as any).electronAPI.getDeviceIdentity().catch(() => null)
+          : null;
+
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          password,
+          cloud_url: cloudUrlInput.trim() || syncConfig?.cloudServerUrl || undefined,
+          installation_id: electronIdent?.installationId || syncConfig?.installationId || undefined,
+          device_id: deviceInfo?.deviceId || syncConfig?.deviceId || undefined,
+          device_name: electronIdent?.hostname || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const code = data?.code || data?.error || "";
+        const msg = data?.message || data?.error || data?.reason || "تأكد من اسم المستخدم وكلمة المرور.";
+
+        if (
+          code === "tenant_mismatch" ||
+          code === "cloud_connection_required" ||
+          code === "invalid_credentials" ||
+          res.status === 401 ||
+          res.status === 409 ||
+          res.status === 503
+        ) {
           toast({
-            title: "تم تسجيل الدخول بنجاح",
-            description: `أهلاً بك ${data.user?.name || data.user?.username || ""}`,
+            variant: "destructive",
+            title: code === "tenant_mismatch" ? "تعارض ربط المؤسسة المحلية" : "تعذر تسجيل الدخول",
+            description: msg,
           });
-          setLocation("/travel-dashboard");
-        },
-        onError: (err: any) => {
-          let errorMessage = "تأكد من اسم المستخدم وكلمة المرور.";
-          let isLicenseBlocked = false;
-          let modalTitle = "تنبيه انتهاء ترخيص النظام";
-          let modalMessage = "تم انتهاء فترة صلاحيات ترخيص استخدام النظام يرجى التواصل مع إدارة النظام من أجل ترخيص الاستخدام";
-          let modalType: "expired" | "unauthorized" | "version_upgrade" | "generic" = "expired";
+          return;
+        }
 
-          try {
-            const rawStr = typeof err === "string" ? err : (err?.message || String(err));
-            let parsed: any = null;
-            try { parsed = JSON.parse(rawStr); } catch (e) {}
+        let modalType: "expired" | "unauthorized" | "version_upgrade" | "generic" = "expired";
+        let modalTitle = "تنبيه ترخيص النظام";
+        if (code === "version_upgrade_required") {
+          modalType = "version_upgrade";
+          modalTitle = "تنبيه: يلزم ترخيص الإصدار الجديد للنظام";
+        } else if (
+          code === "device_unauthorized" ||
+          code === "device_blocked" ||
+          code === "device_revoked" ||
+          code === "device_limit_reached" ||
+          code === "no_authorized_devices"
+        ) {
+          modalType = "unauthorized";
+          modalTitle = code === "device_limit_reached" ? "تجاوز الحد الأقصى للأجهزة المسموح بها" : "جهاز غير مرخص أو محظور";
+        } else if (code === "license_expired" || code === "offline_grace_exceeded") {
+          modalType = "expired";
+          modalTitle = code === "offline_grace_exceeded" ? "انتهت مهلة العمل دون اتصال" : "تنبيه: انتهاء فترة ترخيص النظام";
+        } else if (code === "license_suspended" || code === "local_disabled" || code === "license_blocked") {
+          modalType = "expired";
+          modalTitle = "تنبيه: ترخيص أو تشغيل المؤسسة موقوف";
+        }
 
-            const code = parsed?.code || parsed?.error;
-            const msg = parsed?.message || parsed?.reason;
-
-            if (code === "version_upgrade_required") {
-              isLicenseBlocked = true;
-              modalType = "version_upgrade";
-              modalTitle = "تنبيه: يلزم ترخيص الإصدار الجديد للنظام";
-              modalMessage = msg || "تم تثبيت نسخة نظام جديدة. يمنع تشغيل النظام بحسابات المستخدمين حتى يقوم مالك/مطور النظام بتسجيل الدخول وترخيص الإصدار الجديد للجهاز.";
-            } else if (code === "device_unauthorized" || code === "device_blocked" || code === "no_authorized_devices") {
-              isLicenseBlocked = true;
-              modalType = "unauthorized";
-              modalTitle = "تحذير أمني: جهاز غير مرخص للاستخدام";
-              modalMessage = msg || "يمنع منعاً باتاً تشغيل النظام على هذا الجهاز بدون ترخيص مسبق من مطور النظام. تم حظر الدخول لحماية أمان النظام.";
-            } else if (code === "license_expired") {
-              isLicenseBlocked = true;
-              modalType = "expired";
-              modalTitle = "تنبيه: انتهاء فترة ترخيص النظام";
-              modalMessage = msg || "انتهت فترة صلاحية ترخيص استخدام هذا النظام. يرجى التواصل مع مطور النظام لتجديد الترخيص.";
-            } else if (code === "license_suspended" || code === "no_active_license" || code === "license_blocked") {
-              isLicenseBlocked = true;
-              modalType = "expired";
-              modalTitle = "تنبيه: ترخيص النظام موقوف";
-              modalMessage = msg || "ترخيص النظام موقوف حالياً. لا يسمح بالدخول إلا لحساب المطور.";
-            } else if (rawStr.includes("403") || rawStr.includes("license") || rawStr.includes("انتهى") || rawStr.includes("ترخيص") || rawStr.includes("بصمة") || rawStr.includes("إصدار")) {
-              isLicenseBlocked = true;
-              modalType = "unauthorized";
-              modalTitle = "تنبيه ترخيص النظام";
-              modalMessage = msg || "يمنع استخدام النظام على هذا الجهاز بدون ترخيص معتمد من المطور.";
-            } else if (parsed?.message) {
-              errorMessage = parsed.message;
-            }
-          } catch (e) {
-            isLicenseBlocked = true;
-            modalType = "unauthorized";
-            modalTitle = "تنبيه ترخيص النظام";
-            modalMessage = "تم منع الدخول لعدم وجود ترخيص معتمد لهذا الجهاز.";
-          }
-
-          if (isLicenseBlocked) {
-            setLicenseModalTitle(modalTitle);
-            setLicenseModalMessage(modalMessage);
-            setLicenseModalType(modalType);
-            setShowLicenseModal(true);
-          } else {
-            toast({
-              variant: "destructive",
-              title: "خطأ في تسجيل الدخول",
-              description: errorMessage,
-            });
-          }
-        },
+        setLicenseModalTitle(modalTitle);
+        setLicenseModalMessage(msg);
+        setLicenseModalType(modalType);
+        setShowLicenseModal(true);
+        return;
       }
-    );
+
+      login(data.token, data.user);
+      toast({
+        title: data.bootstrapped
+          ? "تم تنزيل بيانات المؤسسة من السحابة وتسجيل الدخول"
+          : data.offline
+          ? "تم تسجيل الدخول بالوضع المحلي (بدون اتصال)"
+          : "تم تسجيل الدخول بنجاح",
+        description: `أهلاً بك ${data.user?.name || data.user?.username || ""}`,
+      });
+      setLocation("/travel-dashboard");
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "خطأ في الاتصال",
+        description: err?.message || "تعذر الاتصال بالخادم.",
+      });
+    } finally {
+      setIsHybridSubmitting(false);
+    }
   };
 
   const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
@@ -581,22 +610,59 @@ export default function Login() {
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="أدخل كلمة المرور الخاصة بك"
                       required
-                      disabled={loginMutation.isPending}
+                      disabled={loginMutation.isPending || isHybridSubmitting}
                       className="text-right border-slate-300 font-bold focus:ring-blue-800 focus:border-blue-800 h-12"
                     />
                   </div>
 
+                  {syncConfig?.mode === "local" && (
+                    <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCloudConfig((v) => !v)}
+                        className="w-full flex items-center justify-between text-xs font-bold text-slate-800"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Cloud className="w-4 h-4 text-blue-700" />
+                          <span>إعدادات الربط السحابي (النسخة المحلية)</span>
+                        </span>
+                        <span className="text-[11px] text-blue-700">
+                          {showCloudConfig ? "إخفاء" : "تعديل"}
+                        </span>
+                      </button>
+                      {showCloudConfig && (
+                        <div className="space-y-1.5 pt-1">
+                          <Input
+                            value={cloudUrlInput}
+                            onChange={(e) => setCloudUrlInput(e.target.value)}
+                            placeholder="https://your-cloud-server.com"
+                            className="h-9 text-xs font-mono dir-ltr text-left bg-white"
+                          />
+                          <p className="text-[11px] text-slate-500">
+                            {syncConfig?.isBootstrapped
+                              ? `مرتبط بمؤسسة: ${syncConfig.companyName || syncConfig.tenantCode}`
+                              : "عند أول دخول، سيتم تنزيل بيانات مؤسستك السحابية تلقائياً."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <Button 
                     type="submit" 
                     className="w-full bg-[#1e3a8a] hover:bg-blue-950 text-white font-extrabold text-sm py-6 shadow-md flex items-center justify-center gap-2 mt-4" 
-                    disabled={loginMutation.isPending}
+                    disabled={loginMutation.isPending || isHybridSubmitting}
                   >
-                    {loginMutation.isPending ? (
+                    {loginMutation.isPending || isHybridSubmitting ? (
                       <Loader2 className="h-5 w-5 animate-spin text-white" />
                     ) : (
                       <>
                         <Laptop className="w-5 h-5" />
-                        <span>تسجيل الدخول للنظام</span>
+                        <span>
+                          {syncConfig?.mode === "local" && !syncConfig?.isBootstrapped
+                            ? "دخول وتنزيل بيانات المؤسسة من السحابة"
+                            : "تسجيل الدخول للنظام"}
+                        </span>
                       </>
                     )}
                   </Button>

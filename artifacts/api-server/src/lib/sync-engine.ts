@@ -1237,6 +1237,8 @@ export function applyBootstrapSnapshotLocally(params: {
           `UPDATE sync_runtime_config
            SET mode = 'local',
                cloud_server_url = ?,
+               device_id = ?,
+               installation_id = ?,
                tenant_id = ?,
                tenant_code = ?,
                company_name = ?,
@@ -1254,6 +1256,8 @@ export function applyBootstrapSnapshotLocally(params: {
         )
         .run(
           cloudUrl,
+          licenseSnapshot.deviceId || "",
+          licenseSnapshot.installationId || "",
           tenantId,
           String(tenant.tenant_code || ""),
           String(tenant.company_name || ""),
@@ -1588,6 +1592,40 @@ export async function runBidirectionalSync(reason: "manual" | "auto" = "manual")
           };
         });
 
+        // Auto-queue any local /uploads/... files referenced in outbound records
+        try {
+          const uploadRegex = /\/uploads\/[^\s"'<>]+/g;
+          const baseRoot = path.resolve(process.cwd(), "public/uploads");
+          for (const opItem of opsToPush) {
+            if (!opItem.payload || opItem.operation === "DELETE") continue;
+            for (const val of Object.values(opItem.payload)) {
+              if (typeof val === "string" && val.includes("/uploads/")) {
+                const matches = val.match(uploadRegex);
+                if (matches) {
+                  for (const m of matches) {
+                    const cleanRel = m.replace(/^\/uploads\//, "").replace(/\.\./g, "");
+                    const diskPath = path.join(baseRoot, cleanRel);
+                    if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
+                      const sha = computeFileSha256(diskPath);
+                      const fileUuid = crypto.createHash("sha256").update(`${tenantId}:${cleanRel}`).digest("hex").slice(0, 32);
+                      const existingQ = masterDb.prepare("SELECT id, checksum_sha256, status FROM sync_file_queue WHERE file_uuid = ? AND direction = 'upload'").get(fileUuid) as any;
+                      if (!existingQ) {
+                        const st = fs.statSync(diskPath);
+                        masterDb.prepare(
+                          `INSERT OR IGNORE INTO sync_file_queue (tenant_id, file_uuid, relative_path, checksum_sha256, file_size, direction, status)
+                           VALUES (?, ?, ?, ?, ?, 'upload', 'pending')`
+                        ).run(tenantId, fileUuid, cleanRel, sha, st.size);
+                      } else if (existingQ.checksum_sha256 !== sha) {
+                        masterDb.prepare("UPDATE sync_file_queue SET checksum_sha256 = ?, status = 'pending', updated_at = datetime('now','localtime') WHERE id = ?").run(sha, existingQ.id);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch {}
+
         const pushRes = await fetch(`${cloudUrl}/api/cloud/sync/push`, {
           method: "POST",
           headers: {
@@ -1680,6 +1718,28 @@ export async function runBidirectionalSync(reason: "manual" | "auto" = "manual")
                 const appRes = applyIncomingOperation(masterDb, tenantId, ch, "local");
                 if (appRes.status === "applied") {
                   downloadedCount++;
+                  // Auto-queue any /uploads/... paths from Cloud changes for local download
+                  if (ch.payload && ch.operation !== "DELETE") {
+                    const uploadRegex = /\/uploads\/[^\s"'<>]+/g;
+                    for (const val of Object.values(ch.payload)) {
+                      if (typeof val === "string" && val.includes("/uploads/")) {
+                        const matches = val.match(uploadRegex);
+                        if (matches) {
+                          for (const m of matches) {
+                            const cleanRel = m.replace(/^\/uploads\//, "").replace(/\.\./g, "");
+                            const fileUuid = crypto.createHash("sha256").update(`${tenantId}:${cleanRel}`).digest("hex").slice(0, 32);
+                            const diskPath = path.join(path.resolve(process.cwd(), "public/uploads"), cleanRel);
+                            if (!fs.existsSync(diskPath)) {
+                              masterDb.prepare(
+                                `INSERT OR IGNORE INTO sync_file_queue (tenant_id, file_uuid, relative_path, direction, status)
+                                 VALUES (?, ?, ?, 'download', 'pending')`
+                              ).run(tenantId, fileUuid, cleanRel);
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
                 } else if (appRes.status === "conflict") {
                   conflictsCount++;
                 }

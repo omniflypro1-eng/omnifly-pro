@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { getSessionInfo, isLocalDesktopMode } from "../lib/sqlite";
+import { runWithTenant } from "../lib/tenant-context";
+import { startHybridSyncScheduler } from "../lib/sync-engine";
 import accountingRouter from "./accounting";
 import adminRouter from "./admin";
 import auditRouter from "./audit";
@@ -14,6 +17,7 @@ import employeesRouter from "./employees";
 import expensesRouter from "./expenses";
 import healthRouter from "./health";
 import hrRouter from "./hr";
+import hybridSyncRouter from "./hybrid-sync";
 import inventoryRouter from "./inventory";
 import kdsRouter from "./kds";
 import licensesRouter from "./licenses";
@@ -46,6 +50,24 @@ import usersRouter from "./users";
 import whatsappServiceRouter from "./whatsapp-service";
 
 const router = Router();
+
+// Route multi-tenant web requests transparently into the authenticated tenant's isolated database
+router.use((req, res, next) => {
+  const authHeader = req.headers?.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      const sInfo = getSessionInfo(token);
+      if (sInfo && sInfo.tenantId > 1 && !isLocalDesktopMode()) {
+        runWithTenant(sInfo.tenantId, () => next(), { userId: sInfo.userId, username: sInfo.username });
+        return;
+      }
+    }
+  }
+  next();
+});
+
+router.use(hybridSyncRouter);
 router.use(accountingRouter);
 router.use(adminRouter);
 router.use(auditRouter);
@@ -91,5 +113,7 @@ router.use(travelPortalsRouter);
 router.use(travelRouter);
 router.use(usersRouter);
 router.use("/whatsapp-service", whatsappServiceRouter);
+
+startHybridSyncScheduler();
 
 export default router;

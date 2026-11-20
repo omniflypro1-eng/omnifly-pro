@@ -80,7 +80,8 @@ import {
   Key,
   Fingerprint,
   LogIn,
-  Shield
+  Shield,
+  Cloud
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppIcon } from "./AppLogo";
@@ -160,11 +161,20 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const [syncIndicator, setSyncIndicator] = useState<{
+    mode: string;
+    status: string;
+    pendingUploadsCount: number;
+    unresolvedConflictsCount: number;
+  } | null>(null);
+
   useEffect(() => {
     let isMounted = true;
-    const checkLicense = async () => {
+    const checkLicenseAndSync = async () => {
       try {
-        const res = await fetch("/api/license/status");
+        const tok = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
+        const headers: Record<string, string> = tok ? { Authorization: `Bearer ${tok}` } : {};
+        const res = await fetch("/api/license/status", { headers });
         if (res.ok) {
           const data = await res.json();
           if (isMounted) {
@@ -175,11 +185,23 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             }
           }
         }
+        if (tok) {
+          const sRes = await fetch("/api/sync/status", { headers });
+          if (sRes.ok && isMounted) {
+            const sData = await sRes.json();
+            setSyncIndicator({
+              mode: sData.mode || "cloud",
+              status: sData.status || "Connected",
+              pendingUploadsCount: Number(sData.pendingUploadsCount || 0),
+              unresolvedConflictsCount: Number(sData.unresolvedConflictsCount || 0),
+            });
+          }
+        }
       } catch (e) {}
     };
 
-    checkLicense();
-    const interval = setInterval(checkLicense, 8000);
+    checkLicenseAndSync();
+    const interval = setInterval(checkLicenseAndSync, 8000);
     return () => { isMounted = false; clearInterval(interval); };
   }, [isDeveloper]);
 
@@ -465,6 +487,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         { name: "تصميم الترويسة والوثائق والسندات", href: "/document-print-settings", icon: Palette },
         { name: "إدارة الفروع والمواقع السياحية", href: "/branches", icon: Building2 },
         { name: "النسخ الاحتياطي واستعادة البيانات", href: "/backup-restore", icon: Database },
+        { name: "مركز المزامنة السحابية والمحلية", href: "/sync-center", icon: Cloud },
         ...(isDeveloper ? [{ name: "تراخيص التشغيل والتفعيل", href: "/licenses", icon: KeyRound }] : []),
         { name: "سجل الطباعة والتحكم", href: "/print-log", icon: Printer },
         { name: "إعدادات النظام العامة", href: "/settings", icon: Settings },
@@ -557,7 +580,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         initialState["sys_purchases"] = true;
       } else if (location.startsWith("/hr")) {
         initialState["sys_hr"] = true;
-      } else if (location.startsWith("/users") || location.startsWith("/audit") || location.startsWith("/licenses")) {
+      } else if (location.startsWith("/users") || location.startsWith("/audit") || location.startsWith("/licenses") || location.startsWith("/sync-center") || location.startsWith("/cloud-sync")) {
         initialState["sys_admin"] = true;
       } else if (location.startsWith("/onyx-erp") || location.startsWith("/settings") || location.startsWith("/currencies") || location.startsWith("/document-print-settings")) {
         initialState["sys_config"] = true;
@@ -1076,6 +1099,36 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </Link>
             )}
+
+            {/* Hybrid Cloud + Local Sync Indicator Link */}
+            <Link href="/sync-center">
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer",
+                  syncIndicator?.status === "Conflict Detected" || (syncIndicator?.unresolvedConflictsCount || 0) > 0
+                    ? "bg-orange-50 border-orange-300 text-orange-800"
+                    : syncIndicator?.status === "Offline"
+                    ? "bg-slate-100 border-slate-300 text-slate-700"
+                    : (syncIndicator?.pendingUploadsCount || 0) > 0
+                    ? "bg-amber-50 border-amber-300 text-amber-800"
+                    : "bg-sky-50 border-sky-200 text-sky-900 hover:bg-sky-100"
+                )}
+                title="مركز المزامنة السحابية والمحلية"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5", syncIndicator?.status === "Syncing" && "animate-spin")} />
+                <span className="hidden sm:inline">
+                  {syncIndicator?.status === "Offline"
+                    ? "غير متصل"
+                    : (syncIndicator?.unresolvedConflictsCount || 0) > 0
+                    ? `تضارب (${syncIndicator?.unresolvedConflictsCount})`
+                    : (syncIndicator?.pendingUploadsCount || 0) > 0
+                    ? `معلق (${syncIndicator?.pendingUploadsCount})`
+                    : syncIndicator?.mode === "local"
+                    ? "متزامن (محلي)"
+                    : "سحابي متصل"}
+                </span>
+              </div>
+            </Link>
 
             {/* Business Day Badge */}
             <BusinessDayBadge />

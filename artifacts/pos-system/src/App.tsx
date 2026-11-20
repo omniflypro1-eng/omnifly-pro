@@ -85,6 +85,7 @@ import TravelVccPaymentsPage from "./pages/travel-vcc-payments";
 import TravelSmartItineraryPage from "./pages/travel-smart-itinerary";
 import CustomerPortalPage from "./pages/customer-portal";
 import WebsiteManagementPage from "./pages/website-management";
+import SyncCenterPage from "./pages/sync-center";
 
 function Router() {
   return (
@@ -475,6 +476,12 @@ function Router() {
       </Route>
       <Route path="/licenses">
         <ProtectedRoute requireDeveloper><Licenses /></ProtectedRoute>
+      </Route>
+      <Route path="/sync-center">
+        <ProtectedRoute requireAdmin><SyncCenterPage /></ProtectedRoute>
+      </Route>
+      <Route path="/cloud-sync">
+        <ProtectedRoute requireAdmin><SyncCenterPage /></ProtectedRoute>
       </Route>
       <Route path="/suppliers">
         <ProtectedRoute requireAdmin><TravelSuppliersPage /></ProtectedRoute>
