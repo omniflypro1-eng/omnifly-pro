@@ -139,6 +139,8 @@ function resolveDatabasePath(): string {
 
   if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim()) {
     customPath = parseDatabaseUrl(process.env.DATABASE_URL);
+  } else if (process.env.OMNIFLY_DB_PATH && process.env.OMNIFLY_DB_PATH.trim()) {
+    customPath = path.resolve(process.env.OMNIFLY_DB_PATH);
   } else if (process.env.DATABASE_PATH && process.env.DATABASE_PATH.trim()) {
     customPath = path.resolve(process.env.DATABASE_PATH);
   } else if (process.env.OMNISYSTEM_DB_PATH && process.env.OMNISYSTEM_DB_PATH.trim()) {
