@@ -103,7 +103,6 @@ function setupDatabase() {
     }
     process.env.DB_PATH = dbPath;
     process.env.OMNISYSTEM_DB_PATH = dbPath;
-    process.env.OMNIFLY_MODE = process.env.OMNIFLY_MODE || "local";
   } catch (err) {
     console.error("Error setting up database path:", err);
   }
@@ -169,7 +168,6 @@ ${serverCandidates.slice(0, 6).join("\n")}`
     process.env.HOST = "127.0.0.1";
     process.env.ELECTRON_WORKER_PORT = String(freePort);
     process.env.PORT = String(freePort);
-    process.env.OMNIFLY_MODE = process.env.OMNIFLY_MODE || "local";
     let inProcessStarted = false;
     try {
       const serverModule = require(serverScript);
@@ -205,7 +203,6 @@ function spawnBackendProcess(serverScript, port, callback) {
     HOST: "127.0.0.1",
     ELECTRON_WORKER_PORT: String(port),
     PORT: String(port),
-    OMNIFLY_MODE: process.env.OMNIFLY_MODE || "local",
     ELECTRON_RUN_AS_NODE: "1"
   };
   if (utilityProcess && typeof utilityProcess.fork === "function") {
@@ -479,53 +476,6 @@ ipcMain.handle("print-silent", async (event, printerName) => {
       }
     );
   });
-});
-ipcMain.handle("get-device-identity", async () => {
-  const os = require("os");
-  const crypto = require("crypto");
-  try {
-    const dbDir = path.join(app.getPath("userData"), "data");
-    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-    const installFile = path.join(dbDir, ".omni-install.json");
-    let meta = {};
-    if (fs.existsSync(installFile)) {
-      try {
-        meta = JSON.parse(fs.readFileSync(installFile, "utf8"));
-      } catch {
-      }
-    }
-    if (!meta.installationId) {
-      meta.installationId = `INST-${crypto.randomUUID().toUpperCase()}`;
-      meta.createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      fs.writeFileSync(installFile, JSON.stringify(meta, null, 2), "utf8");
-    }
-    return {
-      installationId: meta.installationId,
-      cloudUrl: meta.cloudUrl || process.env.OMNIFLY_CLOUD_URL || "",
-      hostname: os.hostname(),
-      platform: os.platform(),
-      arch: os.arch(),
-      mode: process.env.OMNIFLY_MODE || "local"
-    };
-  } catch (e) {
-    return {
-      installationId: "",
-      hostname: os.hostname(),
-      platform: os.platform(),
-      arch: os.arch(),
-      mode: "local"
-    };
-  }
-});
-ipcMain.handle("check-online", async (event, cloudUrl) => {
-  try {
-    if (!cloudUrl) return { online: false };
-    const cleanUrl = String(cloudUrl).trim().replace(/\/+$/, "");
-    const res = await fetch(`${cleanUrl}/api/health`);
-    return { online: res.ok };
-  } catch {
-    return { online: false };
-  }
 });
 function runApp() {
   app.whenReady().then(async () => {
