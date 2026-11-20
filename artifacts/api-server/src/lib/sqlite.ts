@@ -2497,6 +2497,18 @@ function runMigrations() {
         user_id INTEGER REFERENCES users(id),
         user_name TEXT,
         notes TEXT,
+        statement TEXT,
+        grand_total REAL DEFAULT 0,
+        issue_date TEXT,
+        status TEXT DEFAULT 'confirmed',
+        customer_statement TEXT,
+        currency TEXT DEFAULT 'SAR',
+        exchange_rate REAL DEFAULT 1.0,
+        debit_account_code TEXT DEFAULT '11100',
+        credit_account_code TEXT DEFAULT '41000',
+        commission_account_code TEXT DEFAULT '45000',
+        supplier_account_code TEXT DEFAULT '21100',
+        total_commission REAL DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
 
@@ -2510,7 +2522,13 @@ function runMigrations() {
         cost_price REAL DEFAULT 0,
         service_fees REAL DEFAULT 0,
         selling_price REAL DEFAULT 0,
-        profit REAL DEFAULT 0
+        profit REAL DEFAULT 0,
+        supplier_type TEXT,
+        supplier_id INTEGER,
+        supplier_name TEXT,
+        statement TEXT,
+        agency_commission REAL DEFAULT 0,
+        accounting_impact_account TEXT DEFAULT '41000'
       );
 
       -- Module 20: Quotations System
