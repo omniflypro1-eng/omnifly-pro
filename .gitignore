@@ -11,5 +11,7 @@ coverage/
 *.db-wal
 *.corrupt*
 *.db.corrupt*
+*.tsbuildinfo
+artifacts/api-server/data/tenants/
 .aistudio/
 

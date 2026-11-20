@@ -1,4 +1,4 @@
-import { db } from "../../lib/sqlite";
+import { db, registerTenantSchemaInitializer } from "../../lib/sqlite";
 import { logger } from "../../lib/logger";
 
 export type QueueStatus = "PENDING" | "PROCESSING" | "SENT" | "DELIVERED" | "FAILED" | "RETRY" | "CANCELLED";
@@ -48,6 +48,7 @@ export function initWhatsAppQueueSchema() {
 }
 
 initWhatsAppQueueSchema();
+registerTenantSchemaInitializer(initWhatsAppQueueSchema);
 
 export function enqueueMessage(data: {
   phone: string;

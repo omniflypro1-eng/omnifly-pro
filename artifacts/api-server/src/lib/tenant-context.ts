@@ -5,6 +5,7 @@ export interface TenantContextStore {
   userId?: number;
   username?: string;
   installationId?: string;
+  forceIsolated?: boolean;
 }
 
 export const tenantStorage = new AsyncLocalStorage<TenantContextStore>();

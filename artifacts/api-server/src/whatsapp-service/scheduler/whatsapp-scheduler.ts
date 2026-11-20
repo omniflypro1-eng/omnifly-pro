@@ -1,4 +1,4 @@
-import { db } from "../../lib/sqlite";
+import { db, registerTenantSchemaInitializer } from "../../lib/sqlite";
 import { logger } from "../../lib/logger";
 import { getConnectionState } from "../connection/whatsapp-connection";
 import { getQueueItems, updateQueueStatus, QueueItem } from "../queue/whatsapp-queue";
@@ -39,6 +39,7 @@ export function initWhatsAppAutomationSettingsSchema() {
 }
 
 initWhatsAppAutomationSettingsSchema();
+registerTenantSchemaInitializer(initWhatsAppAutomationSettingsSchema);
 
 export function getAutomationSettings() {
   try {

@@ -1,4 +1,4 @@
-import { db } from "../../lib/sqlite";
+import { db, registerTenantSchemaInitializer } from "../../lib/sqlite";
 import { logger } from "../../lib/logger";
 
 export interface WhatsAppTemplate {
@@ -67,6 +67,7 @@ export function initWhatsAppTemplatesSchema() {
 }
 
 initWhatsAppTemplatesSchema();
+registerTenantSchemaInitializer(initWhatsAppTemplatesSchema);
 
 export function getTemplates(): WhatsAppTemplate[] {
   try {

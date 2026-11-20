@@ -1,4 +1,4 @@
-import { db } from "../../lib/sqlite";
+import { db, registerTenantSchemaInitializer } from "../../lib/sqlite";
 import { logger } from "../../lib/logger";
 
 export interface WhatsAppConnectionState {
@@ -41,6 +41,7 @@ export function initWhatsAppConnectionSchema() {
 }
 
 initWhatsAppConnectionSchema();
+registerTenantSchemaInitializer(initWhatsAppConnectionSchema);
 
 export function getConnectionState(): WhatsAppConnectionState {
   try {

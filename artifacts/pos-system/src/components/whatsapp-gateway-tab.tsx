@@ -105,6 +105,8 @@ export function WhatsAppGatewayTab({
   const isConnected = fourWaStatus === "connected" || fourWaData?.session_status === "connected";
   const isReadyForScan = fourWaStatus === "ready_for_scan" || fourWaData?.session_status === "ready_for_scan";
   const daysRemaining = fourWaData?.days_remaining ?? 0;
+  const serverVerified = Boolean(fourWaData?.server_verified);
+  const verificationError = fourWaData?.verification_error || fourWaData?.last_verification_error || "";
 
   // Active sub-tab inside 4WhatsApp Gateway:
   // default to "settings" if already connected, else "credentials" or "qr_code"
@@ -117,6 +119,35 @@ export function WhatsAppGatewayTab({
       setActiveSubTab("settings");
     }
   }, [isConnected]);
+
+  const validateFourWaCredentials = (requireAllFieldsForLogin = true) => {
+    const phoneDigits = String(fourWaForm.phone_number || "").replace(/\D/g, "");
+    if (!phoneDigits || phoneDigits.length < 7) {
+      toast({
+        title: "بيانات ناقصة",
+        description: "يرجى إدخال رقم هاتف الواتساب المرتبط بحساب 4WhatsApp بشكل صحيح.",
+        variant: "destructive"
+      });
+      return false;
+    }
+    if (!String(fourWaForm.password || "").trim()) {
+      toast({
+        title: "بيانات ناقصة",
+        description: "يرجى إدخال الرمز السري (Token) للتحقق المباشر مع سيرفر 4WhatsApp.",
+        variant: "destructive"
+      });
+      return false;
+    }
+    if (requireAllFieldsForLogin && (!String(fourWaForm.company_code || "").trim() || !String(fourWaForm.username || "").trim())) {
+      toast({
+        title: "بيانات ناقصة",
+        description: "يرجى إدخال كود الشركة واسم المستخدم للتحقق الكامل وجلب الباركود من سيرفر 4WhatsApp.",
+        variant: "destructive"
+      });
+      return false;
+    }
+    return true;
+  };
 
   // Fetch travel WhatsApp automation settings
   const { data: automationConfig, isLoading: isLoadingConfig } = useQuery<any>({
@@ -322,7 +353,7 @@ export function WhatsAppGatewayTab({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => fourWaCheckStatusMutation.mutate()}
+            onClick={() => fourWaCheckStatusMutation.mutate(undefined)}
             disabled={fourWaCheckStatusMutation.isPending}
             className="text-xs font-bold gap-1 rounded-xl bg-white/10 hover:bg-white/20 text-white border-white/20 h-9"
           >
@@ -330,7 +361,7 @@ export function WhatsAppGatewayTab({
             <span>فحص الحالة اللحظية</span>
           </Button>
 
-          {isConnected && (
+          {(isConnected || isReadyForScan) && (
             <Button
               size="sm"
               variant="outline"
@@ -343,6 +374,26 @@ export function WhatsAppGatewayTab({
           )}
         </div>
       </div>
+
+      {verificationError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-900 px-4 py-3 rounded-2xl flex items-start justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-black block">تنبيه التحقق المباشر من سيرفر 4WhatsApp:</span>
+              <span className="text-rose-800">{verificationError}</span>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setActiveSubTab("credentials")}
+            className="h-7 px-3 text-[11px] font-bold border-rose-300 text-rose-800 hover:bg-rose-100 rounded-xl shrink-0"
+          >
+            مراجعة البيانات
+          </Button>
+        </div>
+      )}
 
       {/* 2. Sleek Secondary Navigation Tabs */}
       <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 overflow-x-auto">
@@ -1322,7 +1373,7 @@ export function WhatsAppGatewayTab({
               <span>مسح الباركود وربط الجهاز (Live 4WhatsApp Barcode QR)</span>
             </CardTitle>
             <CardDescription className="text-xs text-slate-500 mt-0.5">
-              امسح رمز الباركود من تطبيق واتساب بهاتفك لربط الرقم بسحابة 4WhatsApp مباشرة وبشكل دائم.
+              امسح رمز الباركود القادم مباشرة من سيرفر 4WhatsApp بهاتفك لربط الرقم بسحابة 4WhatsApp والتحقق الفوري من الاتصال.
             </CardDescription>
           </CardHeader>
 
@@ -1336,6 +1387,12 @@ export function WhatsAppGatewayTab({
                       <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
                       <span className="text-xs font-bold text-slate-600">جاري طلب الباركود من سيرفر 4WhatsApp...</span>
                     </div>
+                  ) : isConnected ? (
+                    <div className="w-64 h-64 flex flex-col items-center justify-center gap-3 bg-emerald-50 rounded-2xl p-4">
+                      <CheckCircle2 className="w-12 h-12 text-emerald-600" />
+                      <span className="text-xs font-black text-emerald-900">الرقم متصل ومرتبط بالفعل بسيرفر 4WhatsApp</span>
+                      <span className="text-[11px] font-mono font-bold text-emerald-700">{fourWaPhone}</span>
+                    </div>
                   ) : fourWaQrDataUrl ? (
                     <img
                       src={fourWaQrDataUrl}
@@ -1345,14 +1402,26 @@ export function WhatsAppGatewayTab({
                   ) : (
                     <div className="w-64 h-64 flex flex-col items-center justify-center gap-3 bg-slate-50 rounded-2xl p-4">
                       <QrCode className="w-12 h-12 text-slate-300" />
-                      <span className="text-xs font-bold text-slate-600">انقر لتوليد وجلب رمز الباركود</span>
-                      <Button
-                        size="sm"
-                        onClick={() => fourWaGenerateQrMutation.mutate()}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl"
-                      >
-                        توليد الباركود الآن
-                      </Button>
+                      <span className="text-xs font-bold text-slate-600">
+                        {isReadyForScan ? "انقر لتحديث وجلب رمز الباركود من السيرفر" : "تحقق من بيانات الحساب أولاً ثم اطلب الباركود"}
+                      </span>
+                      {isReadyForScan ? (
+                        <Button
+                          size="sm"
+                          onClick={() => fourWaGenerateQrMutation.mutate()}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl"
+                        >
+                          جلب الباركود من السيرفر
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => setActiveSubTab("credentials")}
+                          className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl"
+                        >
+                          إدخال والتحقق من بيانات الحساب
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1366,7 +1435,7 @@ export function WhatsAppGatewayTab({
                     className="text-xs font-bold gap-1 rounded-xl"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${fourWaGenerateQrMutation.isPending ? "animate-spin" : ""}`} />
-                    <span>تحديث الباركود</span>
+                    <span>تحديث الباركود من السيرفر</span>
                   </Button>
 
                   <Button
@@ -1376,7 +1445,7 @@ export function WhatsAppGatewayTab({
                     className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs gap-1 rounded-xl"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>تأكيد المسح والاتصال ✓</span>
+                    <span>{fourWaConfirmScanMutation.isPending ? "جاري التحقق من السيرفر..." : "تحقق وتأكيد الاتصال من السيرفر ✓"}</span>
                   </Button>
                 </div>
               </div>
@@ -1391,16 +1460,16 @@ export function WhatsAppGatewayTab({
                     <li>افتح تطبيق **WhatsApp** على هاتفك المحمول.</li>
                     <li>انقر على قائمة **الإعدادات** (أو الثلاث نقاط الرأسية) واختر **الأجهزة المرتبطة**.</li>
                     <li>انقر على **ربط جهاز** ووجّه كاميرا هاتفك نحو رمز الباركود المعروض أمامك.</li>
-                    <li>فور اكتمال المسح، انقر على زر **تأكيد المسح والاتصال** أعلاه لحفظ الجلسة في النظام.</li>
+                    <li>يقوم النظام تلقائياً بالتحقق من سيرفر 4WhatsApp كل 10 ثوانٍ، أو يمكنك النقر على **تحقق وتأكيد الاتصال من السيرفر** فوراً.</li>
                   </ol>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
                   <span className="font-bold text-slate-900 block">
-                    ملاحظات حول سحابة 4WhatsApp:
+                    التحقق المباشر مع سيرفر 4WhatsApp:
                   </span>
                   <p className="text-[11px] leading-relaxed text-slate-500">
-                    رمز الباركود يتم جلبه عبر بروتوكول 4WhatsApp الرسمي. بعد الربط يظل الرقم متصلاً بشكل دائم، مما يتيح إرسال كافة التنبيهات والرسائل في الخلفية دون الحاجة لبقاء المتصفح مفتوحاً.
+                    لا يتم اعتماد الاتصال إلا بعد تأكيد حالة الارتباط فعلياً من خادم <span className="font-mono">api2.4whatsapp.com</span>، مع جلب الباركود الحقيقي وتحديث صلاحية الاشتراك تلقائياً.
                   </p>
                 </div>
               </div>
@@ -1415,19 +1484,30 @@ export function WhatsAppGatewayTab({
       {activeSubTab === "credentials" && (
         <Card className="border-slate-200 shadow-sm rounded-3xl overflow-hidden bg-white">
           <CardHeader className="bg-slate-50/50 border-b pb-4">
-            <CardTitle className="text-base font-black text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              <span>بيانات حساب 4WhatsApp ومفاتيح الربط والاعتماد</span>
-            </CardTitle>
-            <CardDescription className="text-xs text-slate-500 mt-0.5">
-              بيانات الدخول والرمز السري (Token) وكود الشركة المعتمد لدى سحابة 4WhatsApp.
-            </CardDescription>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <CardTitle className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                  <span>بيانات حساب 4WhatsApp ومفاتيح الربط والاعتماد</span>
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500 mt-0.5">
+                  يتم فحص جميع البيانات والتحقق منها مباشرة مع سيرفر 4WhatsApp الرسمي قبل الحفظ أو الربط لضمان عمل الإرسال دون أي أعطال.
+                </CardDescription>
+              </div>
+              {serverVerified && (
+                <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold gap-1 shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>تم التحقق من السيرفر</span>
+                </Badge>
+              )}
+            </div>
           </CardHeader>
 
           <CardContent className="p-6">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!validateFourWaCredentials(true)) return;
                 fourWaLoginMutation.mutate(fourWaForm);
               }}
               className="space-y-4 text-xs"
@@ -1435,25 +1515,25 @@ export function WhatsAppGatewayTab({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                    كود الشركة (Company Code)
+                    كود الشركة (Company Code) <span className="text-rose-500">*</span>
                   </label>
                   <Input
                     value={fourWaForm.company_code}
                     onChange={(e) => setFourWaForm((prev: any) => ({ ...prev, company_code: e.target.value }))}
-                    placeholder="0058"
+                    placeholder="مثال: 0058"
                     className="font-mono font-bold text-xs h-10 rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
                   />
-                  <span className="text-[10px] text-slate-400 mt-1 block">الكود الافتراضي: 0058</span>
+                  <span className="text-[10px] text-slate-400 mt-1 block">كود الشركة المسجل لدى 4WhatsApp</span>
                 </div>
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                    اسم المستخدم (Username)
+                    اسم المستخدم (Username) <span className="text-rose-500">*</span>
                   </label>
                   <Input
                     value={fourWaForm.username}
                     onChange={(e) => setFourWaForm((prev: any) => ({ ...prev, username: e.target.value }))}
-                    placeholder="admin"
+                    placeholder="مثال: admin"
                     className="font-bold text-xs h-10 rounded-xl bg-slate-50 border-slate-200 focus:bg-white"
                   />
                   <span className="text-[10px] text-slate-400 mt-1 block">اسم المستخدم بالحساب</span>
@@ -1461,7 +1541,7 @@ export function WhatsAppGatewayTab({
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                    رقم هاتف الواتساب
+                    رقم هاتف الواتساب <span className="text-rose-500">*</span>
                   </label>
                   <div className="flex gap-2">
                     <select
@@ -1487,7 +1567,7 @@ export function WhatsAppGatewayTab({
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                    الرمز السري (Token / Password)
+                    الرمز السري (Token / Password) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <Input
@@ -1509,21 +1589,37 @@ export function WhatsAppGatewayTab({
               </div>
 
               <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100">
-                <Button
-                  type="submit"
-                  disabled={fourWaLoginMutation.isPending}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs h-10 px-6 rounded-xl gap-2 shadow-sm"
-                >
-                  {fourWaLoginMutation.isPending ? (
-                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  )}
-                  <span>{fourWaLoginMutation.isPending ? "جاري التحقق والاتصال..." : "حفظ بيانات الحساب والتحقق مع السيرفر 🔐"}</span>
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="submit"
+                    disabled={fourWaLoginMutation.isPending}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs h-10 px-6 rounded-xl gap-2 shadow-sm"
+                  >
+                    {fourWaLoginMutation.isPending ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    )}
+                    <span>{fourWaLoginMutation.isPending ? "جاري التحقق من سيرفر 4WhatsApp..." : "التحقق من السيرفر وحفظ البيانات 🔐"}</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={fourWaCheckStatusMutation.isPending}
+                    onClick={() => {
+                      if (!validateFourWaCredentials(false)) return;
+                      fourWaCheckStatusMutation.mutate(fourWaForm);
+                    }}
+                    className="text-xs font-bold h-10 px-4 rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-50 gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${fourWaCheckStatusMutation.isPending ? "animate-spin" : ""}`} />
+                    <span>فحص البيانات مباشرة مع السيرفر</span>
+                  </Button>
+                </div>
 
                 <p className="text-[11px] text-slate-400">
-                  يتم حفظ بيانات الحساب في قاعدة بيانات النظام واستخدامها تلقائياً لإرسال كافة التنبيهات
+                  لن يتم حفظ أي بيانات ما لم يؤكد سيرفر 4WhatsApp صحتها أولاً
                 </p>
               </div>
             </form>

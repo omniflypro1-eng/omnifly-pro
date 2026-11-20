@@ -1,4 +1,4 @@
-import { db } from "../../lib/sqlite";
+import { db, registerTenantSchemaInitializer } from "../../lib/sqlite";
 import { logger } from "../../lib/logger";
 
 export interface WhatsAppMessageHistoryItem {
@@ -36,6 +36,7 @@ export function initWhatsAppHistorySchema() {
 }
 
 initWhatsAppHistorySchema();
+registerTenantSchemaInitializer(initWhatsAppHistorySchema);
 
 export function logWhatsAppMessage(data: {
   traveler_id: number;

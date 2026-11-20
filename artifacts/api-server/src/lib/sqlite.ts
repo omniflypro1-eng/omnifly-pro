@@ -3,7 +3,7 @@ import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, renameSync, existsSync, unlinkSync, copyFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { getCurrentTenantId, runWithTenant } from "./tenant-context";
+import { getCurrentTenantId, getTenantContext, runWithTenant } from "./tenant-context";
 import { initHybridCoreTables, ensureSyncMetadataAndTriggers } from "./hybrid-sync-schema";
 
 const moduleDir = typeof __dirname !== "undefined"
@@ -281,6 +281,25 @@ export function createDatabaseInstance(filepath: string): DatabaseWrapper {
 }
 
 const tenantDbPool = new Map<number, DatabaseWrapper>();
+const tenantSchemaInitializers: Array<() => void> = [];
+const initializedTenantSchemas = new Set<number>();
+const creatingTenants = new Set<number>();
+
+export function registerTenantSchemaInitializer(fn: () => void): void {
+  if (!tenantSchemaInitializers.includes(fn)) {
+    tenantSchemaInitializers.push(fn);
+  }
+}
+
+export function runRegisteredTenantSchemaInitializers(): void {
+  for (const fn of tenantSchemaInitializers) {
+    try {
+      fn();
+    } catch (err) {
+      console.error("[TenantSchemaInit] Error running registered schema initializer:", err);
+    }
+  }
+}
 
 export function isLocalDesktopMode(): boolean {
   if (process.env.OMNIFLY_MODE === "local") return true;
@@ -297,27 +316,36 @@ export function getTenantDbPath(tenantId: number): string {
   return path.join(getDbDir(), "tenants", `tenant_${tenantId}.db`);
 }
 
-export function getTenantDb(tenantId: number): DatabaseWrapper {
-  if (!tenantId || tenantId <= 1 || isLocalDesktopMode()) {
+export function getTenantDb(tenantId: number, forceIsolated = false): DatabaseWrapper {
+  if (!tenantId || tenantId <= 1 || (!forceIsolated && isLocalDesktopMode())) {
     return masterDb;
   }
   const cached = tenantDbPool.get(tenantId);
   if (cached) return cached;
 
   const tPath = getTenantDbPath(tenantId);
+  const alreadyExisted = existsSync(tPath);
   mkdirSync(path.dirname(tPath), { recursive: true });
   const tDb = new DatabaseWrapper(tPath);
   applySafePragmas(tDb);
   tenantDbPool.set(tenantId, tDb);
+  if (alreadyExisted && !creatingTenants.has(tenantId) && !initializedTenantSchemas.has(tenantId)) {
+    initializedTenantSchemas.add(tenantId);
+    runWithTenant(tenantId, () => {
+      runRegisteredTenantSchemaInitializers();
+      ensureSyncMetadataAndTriggers(tDb, tenantId, false);
+    }, { forceIsolated: true });
+  }
   return tDb;
 }
 
 export function getActiveDb(): DatabaseWrapper {
-  const tenantId = getCurrentTenantId();
-  if (!tenantId || tenantId <= 1 || isLocalDesktopMode()) {
+  const ctx = getTenantContext();
+  const tenantId = ctx?.tenantId && ctx.tenantId > 0 ? ctx.tenantId : 1;
+  if (tenantId <= 1 || (!ctx?.forceIsolated && isLocalDesktopMode())) {
     return masterDb;
   }
-  return getTenantDb(tenantId);
+  return getTenantDb(tenantId, Boolean(ctx?.forceIsolated));
 }
 
 export const db: DatabaseWrapper = new Proxy(dbInstance, {
@@ -515,6 +543,47 @@ export function deleteSession(token: string): void {
   try {
     masterDb.prepare("DELETE FROM user_tokens WHERE token = ?").run(token);
   } catch (e) {}
+}
+
+export function revokeTenantSessions(tenantId: number): number {
+  let removed = 0;
+  for (const [token, rec] of Array.from(sessions.entries())) {
+    if (rec.tenantId === tenantId && rec.username?.toLowerCase() !== "developer") {
+      sessions.delete(token);
+      removed += 1;
+    }
+  }
+  try {
+    const info = masterDb
+      .prepare(
+        "DELETE FROM user_tokens WHERE COALESCE(tenant_id, 1) = ? AND user_id NOT IN (SELECT id FROM users WHERE LOWER(username) = 'developer' OR role = 'developer')"
+      )
+      .run(tenantId);
+    removed = Math.max(removed, Number(info?.changes || 0));
+  } catch {}
+  return removed;
+}
+
+export function revokeUserSessions(tenantId: number, username: string, masterUserId?: number): void {
+  const cleanUser = String(username || "").trim().toLowerCase();
+  for (const [token, rec] of Array.from(sessions.entries())) {
+    const matchName = cleanUser && rec.username?.toLowerCase() === cleanUser;
+    const matchId = masterUserId && rec.userId === masterUserId;
+    if (rec.tenantId === tenantId && (matchName || matchId)) {
+      sessions.delete(token);
+    }
+  }
+  try {
+    if (masterUserId) {
+      masterDb.prepare("DELETE FROM user_tokens WHERE user_id = ? AND COALESCE(tenant_id, 1) = ?").run(masterUserId, tenantId);
+    } else if (cleanUser) {
+      masterDb
+        .prepare(
+          "DELETE FROM user_tokens WHERE COALESCE(tenant_id, 1) = ? AND user_id IN (SELECT id FROM users WHERE LOWER(TRIM(username)) = ?)"
+        )
+        .run(tenantId, cleanUser);
+    }
+  } catch {}
 }
 
 function initSchema() {
@@ -3393,19 +3462,19 @@ function runMigrations() {
       `);
 
       insGw.run(
-        "whatsapp_meta", "Meta WhatsApp Cloud API (Official)", "whatsapp", 1, 1,
+        "whatsapp_meta", "Meta WhatsApp Cloud API (Official)", "whatsapp", 0, 1,
         "EAAG...SAMPLE_META_ACCESS_TOKEN", "meta_app_secret_demo", "https://graph.facebook.com/v19.0",
         "109283746501928", "105544332211000", "omnifly_meta_webhook_2026",
         JSON.stringify({ api_version: "v19.0", webhook_callback_url: "/api/travel/notifications/webhook/meta" }),
-        new Date().toISOString().slice(0, 19).replace("T", " "), "success", "الاتصال السحابي ببوابة WhatsApp Meta نشط وجاهز"
+        null, "not_tested", "في انتظار إدخال رمز الوصول (Access Token) الحقيقي"
       );
 
       insGw.run(
-        "infobip", "Infobip Multi-Channel API (WhatsApp & SMS)", "whatsapp,sms", 1, 0,
+        "infobip", "Infobip Multi-Channel API (WhatsApp & SMS)", "whatsapp,sms", 0, 0,
         "ib_live_apikey_998877665544332211", "ib_secret_2026", "https://8k2pxm.api.infobip.com",
         "INFOBIP-ACCT-9921", "447860099299", "infobip_verify_token_secure",
         JSON.stringify({ default_sms_sender: "OMNIFLY", whatsapp_scenario_key: "SCN-OMNIFLY-01" }),
-        new Date().toISOString().slice(0, 19).replace("T", " "), "success", "تم فحص واجهة Infobip بنجاح (جاهز للرسائل النصية والواتساب)"
+        null, "not_tested", "في انتظار إدخال مفتاح API الحقيقي"
       );
 
       insGw.run(
@@ -3417,19 +3486,19 @@ function runMigrations() {
       );
 
       insGw.run(
-        "unifonic", "Unifonic Enterprise SMS Gateway (KSA / MENA)", "sms", 1, 1,
+        "unifonic", "Unifonic Enterprise SMS Gateway (KSA / MENA)", "sms", 0, 1,
         "unifonic_appsid_sample_token_8899", null, "https://el.cloud.unifonic.com/rest",
         "UNIFONIC-SA-01", "OMNIFLY", null,
         JSON.stringify({ default_sender: "OMNIFLY_TRV", encoding: "UTF8" }),
-        new Date().toISOString().slice(0, 19).replace("T", " "), "success", "بوابة الرسائل النصية القصيرة السعودية جاهزة"
+        null, "not_tested", "في انتظار إدخال AppSID الحقيقي"
       );
 
       insGw.run(
-        "smtp_google", "Google Workspace & SMTP Relay (البريد الإلكتروني)", "email", 1, 1,
+        "smtp_google", "Google Workspace & SMTP Relay (البريد الإلكتروني)", "email", 0, 1,
         "google_app_password_sample", null, "smtp.gmail.com",
         "reservations@omnifly-travel.sa", "reservations@omnifly-travel.sa", null,
         JSON.stringify({ host: "smtp.gmail.com", port: 587, secure: false, from_name: "OmniFly Travel Reservations" }),
-        new Date().toISOString().slice(0, 19).replace("T", " "), "success", "تم التحقق من خادم SMTP بنجاح"
+        null, "not_tested", "في انتظار إدخال كلمة مرور التطبيقات الحقيقية"
       );
     }
 
@@ -6456,72 +6525,113 @@ export function createTenantDatabase(tenantId: number, opts: {
   licenseExpiresAt: string;
   maxDevices: number;
 }): void {
-  const tDb = getTenantDb(tenantId);
-  runWithTenant(tenantId, () => {
-    initSchema();
-    runMigrations();
-    ensureDefaultAccountingChart();
-    ensureTravelHotelsColumns();
-    ensureTravelBusBookingsColumns();
-    ensureTravelVisasColumns();
-    fixTravelForeignKeys();
-    initHybridCoreTables(tDb, path.dirname(getTenantDbPath(tenantId)), tenantId);
-
-    // Clear any leftover default users/settings created by runMigrations if clean tenant
-    try {
-      tDb.prepare("INSERT OR REPLACE INTO settings (key, value, tenant_id) VALUES ('businessName', ?, ?)").run(opts.companyName, tenantId);
-      tDb.prepare("INSERT OR REPLACE INTO settings (key, value, tenant_id) VALUES ('tenantCode', ?, ?)").run(opts.tenantCode, tenantId);
-    } catch {
-      tDb.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('businessName', ?)").run(opts.companyName);
+  if (!tenantId || tenantId <= 1) {
+    throw new Error("Cannot create isolated database for invalid or main tenantId");
+  }
+  creatingTenants.add(tenantId);
+  try {
+    const tDb = getTenantDb(tenantId, true);
+    if (tDb === masterDb) {
+      throw new Error("Refusing to initialize tenant database on masterDb");
     }
+    runWithTenant(tenantId, () => {
+      initSchema();
+      runMigrations();
+      ensureDefaultAccountingChart();
+      ensureTravelHotelsColumns();
+      ensureTravelBusBookingsColumns();
+      ensureTravelVisasColumns();
+      fixTravelForeignKeys();
+      initHybridCoreTables(tDb, path.dirname(getTenantDbPath(tenantId)), tenantId);
 
-    try {
+      // Clear any leftover default users/settings created by runMigrations if clean tenant
+      try {
+        tDb.prepare("INSERT OR REPLACE INTO settings (key, value, tenant_id) VALUES ('businessName', ?, ?)").run(opts.companyName, tenantId);
+        tDb.prepare("INSERT OR REPLACE INTO settings (key, value, tenant_id) VALUES ('tenantCode', ?, ?)").run(opts.tenantCode, tenantId);
+      } catch {
+        tDb.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('businessName', ?)").run(opts.companyName);
+      }
+
+      try {
+        tDb.prepare(`
+          INSERT OR REPLACE INTO travel_system_settings (id, company_name_ar, company_name_en, default_currency, vat_percentage)
+          VALUES (1, ?, ?, 'SAR', 15.0)
+        `).run(opts.companyName, opts.companyName);
+      } catch {}
+
+      // Ensure basic default branch, safe & currency
+      try {
+        const brCount = (tDb.prepare("SELECT COUNT(*) as c FROM branches").get() as any)?.c || 0;
+        if (brCount === 0) {
+          tDb.prepare("INSERT INTO branches (id, name, address, phone, active) VALUES (1, 'الفرع الرئيسي', 'المقر الرئيسي', '', 1)").run();
+        }
+        const curCount = (tDb.prepare("SELECT COUNT(*) as c FROM currencies").get() as any)?.c || 0;
+        if (curCount === 0) {
+          tDb.prepare("INSERT INTO currencies (code, name_ar, name_en, symbol, exchange_rate, is_default, active) VALUES ('SAR', 'ريال سعودي', 'Saudi Riyal', 'ر.س', 1.0, 1, 1)").run();
+          tDb.prepare("INSERT INTO currencies (code, name_ar, name_en, symbol, exchange_rate, is_default, active) VALUES ('USD', 'دولار أمريكي', 'US Dollar', '$', 3.75, 0, 1)").run();
+        }
+        const safeCount = (tDb.prepare("SELECT COUNT(*) as c FROM safes").get() as any)?.c || 0;
+        if (safeCount === 0) {
+          tDb.prepare("INSERT INTO safes (name, balance, branch_id, active) VALUES ('الصندوق الرئيسي', 0, 1, 1)").run();
+        }
+        const roleCount = (tDb.prepare("SELECT COUNT(*) as c FROM role_permissions").get() as any)?.c || 0;
+        if (roleCount === 0) {
+          tDb.prepare("INSERT OR IGNORE INTO role_permissions (role, can_void_bills, can_view_cost, can_change_currencies, can_approve_returns, can_open_close_safe, can_transfer_funds, can_edit_products, can_delete_orders) VALUES ('admin', 1, 1, 1, 1, 1, 1, 1, 1)").run();
+        }
+      } catch {}
+
+      // Insert Tenant Admin User cleanly into Tenant DB
+      tDb.pragma("foreign_keys = OFF");
+      try {
+        tDb.prepare("DELETE FROM users WHERE username != ?").run(opts.adminUsername);
+        tDb.prepare(`
+          INSERT OR REPLACE INTO users (
+            id, username, password_hash, name, role, active, can_discount, tenant_id,
+            perm_create_invoice, perm_edit_invoice, perm_cancel_invoice, perm_return, perm_view_prices, perm_view_profits,
+            perm_edit_stock, perm_stocktake, perm_edit_entries, perm_close_periods, perm_view_salaries
+          ) VALUES (1, ?, ?, ?, 'admin', 1, 1, ?, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+        `).run(opts.adminUsername, opts.adminPasswordHash, opts.adminName, tenantId);
+      } finally {
+        tDb.pragma("foreign_keys = ON");
+      }
+
+      // Update runtime config in tenant DB with tenant company info
       tDb.prepare(`
-        INSERT OR REPLACE INTO travel_system_settings (id, company_name_ar, company_name_en, default_currency, vat_percentage)
-        VALUES (1, ?, ?, 'SAR', 15.0)
-      `).run(opts.companyName, opts.companyName);
-    } catch {}
+        UPDATE sync_runtime_config
+        SET tenant_id = ?, tenant_code = ?, company_name = ?, mode = 'cloud', is_bootstrapped = 1
+        WHERE id = 1
+      `).run(tenantId, opts.tenantCode, opts.companyName);
 
-    // Ensure basic default branch, safe & currency
+      runRegisteredTenantSchemaInitializers();
+      initializedTenantSchemas.add(tenantId);
+      ensureSyncMetadataAndTriggers(tDb, tenantId, true);
+    }, { forceIsolated: true });
+  } finally {
+    creatingTenants.delete(tenantId);
+  }
+}
+
+export function deleteTenantDatabase(tenantId: number): void {
+  if (!tenantId || tenantId <= 1) {
+    throw new Error("لا يمكن حذف قاعدة البيانات الرئيسية للنظام");
+  }
+  const pooled = tenantDbPool.get(tenantId);
+  if (pooled) {
     try {
-      const brCount = (tDb.prepare("SELECT COUNT(*) as c FROM branches").get() as any)?.c || 0;
-      if (brCount === 0) {
-        tDb.prepare("INSERT INTO branches (id, name, address, phone, active) VALUES (1, 'الفرع الرئيسي', 'المقر الرئيسي', '', 1)").run();
-      }
-      const curCount = (tDb.prepare("SELECT COUNT(*) as c FROM currencies").get() as any)?.c || 0;
-      if (curCount === 0) {
-        tDb.prepare("INSERT INTO currencies (code, name_ar, name_en, symbol, exchange_rate, is_default, active) VALUES ('SAR', 'ريال سعودي', 'Saudi Riyal', 'ر.س', 1.0, 1, 1)").run();
-        tDb.prepare("INSERT INTO currencies (code, name_ar, name_en, symbol, exchange_rate, is_default, active) VALUES ('USD', 'دولار أمريكي', 'US Dollar', '$', 3.75, 0, 1)").run();
-      }
-      const safeCount = (tDb.prepare("SELECT COUNT(*) as c FROM safes").get() as any)?.c || 0;
-      if (safeCount === 0) {
-        tDb.prepare("INSERT INTO safes (name, balance, branch_id, active) VALUES ('الصندوق الرئيسي', 0, 1, 1)").run();
-      }
-      const roleCount = (tDb.prepare("SELECT COUNT(*) as c FROM role_permissions").get() as any)?.c || 0;
-      if (roleCount === 0) {
-        tDb.prepare("INSERT OR IGNORE INTO role_permissions (role, can_void_bills, can_view_cost, can_change_currencies, can_approve_returns, can_open_close_safe, can_transfer_funds, can_edit_products, can_delete_orders) VALUES ('admin', 1, 1, 1, 1, 1, 1, 1, 1)").run();
-      }
+      pooled.close();
     } catch {}
+    tenantDbPool.delete(tenantId);
+  }
+  initializedTenantSchemas.delete(tenantId);
 
-    // Insert Tenant Admin User cleanly into Tenant DB
-    tDb.prepare("DELETE FROM users WHERE username != ?").run(opts.adminUsername);
-    tDb.prepare(`
-      INSERT OR REPLACE INTO users (
-        id, username, password_hash, name, role, active, can_discount, tenant_id,
-        perm_create_invoice, perm_edit_invoice, perm_cancel_invoice, perm_return, perm_view_prices, perm_view_profits,
-        perm_edit_stock, perm_stocktake, perm_edit_entries, perm_close_periods, perm_view_salaries
-      ) VALUES (1, ?, ?, ?, 'admin', 1, 1, ?, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
-    `).run(opts.adminUsername, opts.adminPasswordHash, opts.adminName, tenantId);
-
-    // Update runtime config in tenant DB with tenant company info
-    tDb.prepare(`
-      UPDATE sync_runtime_config
-      SET tenant_id = ?, tenant_code = ?, company_name = ?, mode = 'cloud', is_bootstrapped = 1
-      WHERE id = 1
-    `).run(tenantId, opts.tenantCode, opts.companyName);
-
-    ensureSyncMetadataAndTriggers(tDb, tenantId, true);
-  });
+  const tPath = getTenantDbPath(tenantId);
+  for (const f of [tPath, `${tPath}-wal`, `${tPath}-shm`]) {
+    if (existsSync(f)) {
+      try {
+        unlinkSync(f);
+      } catch {}
+    }
+  }
 }
 
 export function createDoubleEntryJournal(

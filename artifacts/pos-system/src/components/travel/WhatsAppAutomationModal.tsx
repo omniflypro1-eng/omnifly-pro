@@ -42,7 +42,7 @@ export function WhatsAppAutomationModal({
   
   // 4WhatsApp Gateway status
   const [fourWaConfig, setFourWaConfig] = useState<any>(null);
-  const [fourWaConnected, setFourWaConnected] = useState<boolean>(true);
+  const [fourWaConnected, setFourWaConnected] = useState<boolean>(false);
 
   // Fetch 4WhatsApp status
   useEffect(() => {
@@ -52,7 +52,7 @@ export function WhatsAppAutomationModal({
         .then(data => {
           if (data?.config) {
             setFourWaConfig(data.config);
-            setFourWaConnected(data.config.session_status === "connected" || data.config.is_authenticated === 1);
+            setFourWaConnected(Boolean(data.linked || (data.config.is_authenticated === 1 && data.config.session_status === "connected")));
           }
         })
         .catch(() => {});

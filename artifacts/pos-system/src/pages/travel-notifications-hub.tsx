@@ -535,7 +535,8 @@ ${agencyName}`
   // ─── 4WHATSAPP ENTERPRISE STATUS QUERY & QR CODE GENERATOR ───
   const { data: fourWaData, isLoading: fourWaLoading, refetch: refetchFourWa } = useQuery<any>({
     queryKey: ["travel-4whatsapp-status"],
-    queryFn: () => fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/status").then(res => res?.config ?? null)
+    queryFn: () => fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/status").then(res => res?.config ?? null),
+    refetchInterval: fourWaStatus === "ready_for_scan" ? 10000 : false
   });
 
   useEffect(() => {
@@ -553,33 +554,33 @@ ${agencyName}`
     }
   }, [fourWaData]);
 
-  // Generate real camera-scannable QR code for 4WhatsApp
+  // Render authentic QR code received strictly from 4WhatsApp server (no fake fallback)
   useEffect(() => {
-    if (!fourWaData?.qr_data) return;
-    if (fourWaData.qr_data.startsWith("data:image/")) {
-      setFourWaQrDataUrl(fourWaData.qr_data);
+    const serverQr = fourWaData?.qr_data;
+    if (!serverQr || typeof serverQr !== "string" || serverQr.trim().length <= 10) {
+      setFourWaQrDataUrl("");
+      return;
+    }
+    if (serverQr.startsWith("data:image/")) {
+      setFourWaQrDataUrl(serverQr);
       return;
     }
 
-    const defaultRef = btoa(`4WA_OMNIFLY_${Date.now()}_SECURE_PAIRING_SESSION`).substring(0, 32);
-    const defaultPubKey = btoa(`4WA_PUBKEY_NOISE_HANDSHAKE_${Date.now()}`).substring(0, 44);
-    const defaultClientId = btoa(`4WA_CLIENT_ID_OMNIFLY_GATEWAY_${Date.now()}`).substring(0, 44);
-    const fallbackNoiseQr = `2@${defaultRef},${defaultPubKey},${defaultClientId}`;
-
-    const rawQr = fourWaData.qr_data.length > 10 ? fourWaData.qr_data : fallbackNoiseQr;
     try {
       const toDataUrl = (QRCode as any)?.toDataURL || (QRCode as any)?.default?.toDataURL;
       if (typeof toDataUrl === "function") {
-        toDataUrl(rawQr, {
+        toDataUrl(serverQr, {
           width: 320,
           margin: 1,
           errorCorrectionLevel: "H",
           color: { dark: "#111b21", light: "#ffffff" },
         })
           .then((dataUrl: string) => setFourWaQrDataUrl(dataUrl))
-          .catch(() => {});
+          .catch(() => setFourWaQrDataUrl(""));
       }
-    } catch {}
+    } catch {
+      setFourWaQrDataUrl("");
+    }
   }, [fourWaData?.qr_data]);
 
   // 4WhatsApp 60-Second Auto Refresh Timer
@@ -838,8 +839,8 @@ ${agencyName}`
     onError: (err: any) => toast({ title: "فشل الإرسال عبر الباركود", description: err.message, variant: "destructive" })
   });
 
-  // ─── 4WHATSAPP ENTERPRISE MUTATIONS (https://api2.4whatsapp.com/api/Agent_Client) ───
-  // 1. 4WhatsApp Login Mutation
+  // ─── 4WHATSAPP ENTERPRISE MUTATIONS (https://api2.4whatsapp.com/api/Agent_Client_) ───
+  // 1. 4WhatsApp Login & Direct Server Verification Mutation
   const fourWaLoginMutation = useMutation({
     mutationFn: (vars: any) =>
       fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/login", {
@@ -847,35 +848,39 @@ ${agencyName}`
         body: JSON.stringify(vars)
       }),
     onSuccess: (data) => {
-      setFourWaStatus(data.config?.session_status || "ready_for_scan");
-      setFourWaPairingCode(data.pairing_code || "4WA-9677");
+      setFourWaStatus(data.config?.session_status || (data.account_linked ? "connected" : "ready_for_scan"));
+      setFourWaPairingCode(data.pairing_code || "");
       setFourWaPhone(data.phone || `+${fourWaForm.country_code} ${fourWaForm.phone_number}`);
       setFourWaCelebrationShown(true);
       setFourWaSecondsLeft(60);
       refetchFourWa();
       toast({
-        title: "🎉 ألف مبروك! تم تسجيل حسابك بنجاح",
-        description: "تم التحقق من صحة بيانات الدخول عبر مفتاح 4WhatsApp الرسمي وتوليد رمز QR للربط فوراً!"
+        title: data.account_linked
+          ? "🟢 تم التحقق المباشر والاتصال بنجاح!"
+          : "🟡 تم التحقق وجلب رمز QR من سيرفر 4WhatsApp",
+        description: data.message || "تم التحقق من صحة البيانات مباشرة عبر سيرفر 4WhatsApp الرسمي!"
       });
     },
     onError: (err: any) =>
-      toast({ title: "فشل التحقق من تسجيل الدخول", description: err.message, variant: "destructive" })
+      toast({ title: "فشل التحقق من سيرفر 4WhatsApp", description: err.message, variant: "destructive" })
   });
 
-  // 2. 4WhatsApp Confirm Scan & Link
+  // 2. 4WhatsApp Confirm Scan & Link (Verified Directly Against Server)
   const fourWaConfirmScanMutation = useMutation({
     mutationFn: () =>
       fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/confirm-scan", { method: "POST" }),
     onSuccess: (data) => {
-      setFourWaStatus("connected");
+      setFourWaStatus(data.config?.session_status || "connected");
       refetchFourWa();
       toast({
-        title: "🟢 تم ربط واتساب بنجاح!",
-        description: data.message || "أصبح رقم الواتساب متصلاً بنجاح مع بوابة 4WhatsApp السحابية"
+        title: "🟢 تم التحقق والربط بنجاح!",
+        description: data.message || "تم تأكيد اتصال رقم الواتساب مباشرة مع سيرفر 4WhatsApp"
       });
     },
-    onError: (err: any) =>
-      toast({ title: "خطأ في تأكيد الربط", description: err.message, variant: "destructive" })
+    onError: (err: any) => {
+      refetchFourWa();
+      toast({ title: "تعذر تأكيد الربط من السيرفر", description: err.message, variant: "destructive" });
+    }
   });
 
   // 3. 4WhatsApp Disconnect Session
@@ -883,9 +888,10 @@ ${agencyName}`
     mutationFn: () =>
       fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/disconnect", { method: "POST" }),
     onSuccess: () => {
-      setFourWaStatus("ready_for_scan");
+      setFourWaStatus("pending_login");
+      setFourWaQrDataUrl("");
       refetchFourWa();
-      toast({ title: "تم إلغاء الربط مؤقتاً بأمان" });
+      toast({ title: "تم إلغاء الربط في النظام بأمان" });
     },
     onError: (err: any) =>
       toast({ title: "خطأ", description: err.message, variant: "destructive" })
@@ -895,13 +901,23 @@ ${agencyName}`
   const fourWaGenerateQrMutation = useMutation({
     mutationFn: () =>
       fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/generate-qr", { method: "POST" }),
-    onSuccess: () => {
-      setFourWaSecondsLeft(60);
+    onSuccess: (data) => {
+      if (data?.already_linked) {
+        setFourWaStatus("connected");
+        setFourWaQrDataUrl("");
+      } else {
+        setFourWaSecondsLeft(60);
+      }
       refetchFourWa();
-      toast({ title: "✓ تم تحديث رمز الباركود لجلسة 4WhatsApp" });
+      toast({
+        title: data?.already_linked ? "🟢 الحساب متصل بالفعل!" : "✓ تم تحديث رمز الباركود من سيرفر 4WhatsApp",
+        description: data?.message
+      });
     },
-    onError: (err: any) =>
-      toast({ title: "خطأ في تحديث الباركود", description: err.message, variant: "destructive" })
+    onError: (err: any) => {
+      refetchFourWa();
+      toast({ title: "خطأ في جلب الباركود", description: err.message, variant: "destructive" });
+    }
   });
 
   // 5. 4WhatsApp Send Message & Attachment
@@ -927,23 +943,30 @@ ${agencyName}`
         description: res.message
       });
     },
-    onError: (err: any) =>
-      toast({ title: "فشل الإرسال عبر 4WhatsApp", description: err.message, variant: "destructive" })
+    onError: (err: any) => {
+      refetchFourWa();
+      toast({ title: "فشل الإرسال عبر 4WhatsApp", description: err.message, variant: "destructive" });
+    }
   });
 
-  // 6. 4WhatsApp Live Check Status (فحص الحساب اللحظي)
+  // 6. 4WhatsApp Live Check Status (فحص الحساب اللحظي مباشرة من سيرفر 4WhatsApp)
   const fourWaCheckStatusMutation = useMutation({
-    mutationFn: () =>
-      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/check-status", { method: "POST" }),
+    mutationFn: (vars?: any) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/check-status", {
+        method: "POST",
+        body: vars ? JSON.stringify(vars) : undefined
+      }),
     onSuccess: (data) => {
       refetchFourWa();
       toast({
-        title: data.linked ? "🟢 الحساب مرتبط ونشط!" : "🟡 الحساب بحاجة لمسح رمز QR",
+        title: data.linked ? "🟢 الحساب متصل وموثق من السيرفر!" : "🟡 الحساب معتمد وبانتظار مسح رمز QR",
         description: data.message
       });
     },
-    onError: (err: any) =>
-      toast({ title: "فحص الحساب", description: err.message, variant: "destructive" })
+    onError: (err: any) => {
+      refetchFourWa();
+      toast({ title: "نتيجة الفحص المباشر من السيرفر", description: err.message, variant: "destructive" });
+    }
   });
 
   // ─── AUTO-SCHEDULER STATUS QUERY & MUTATIONS ───

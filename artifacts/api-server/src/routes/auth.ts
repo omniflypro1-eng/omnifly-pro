@@ -311,6 +311,7 @@ export function getAuthUser(req: any) {
                   .prepare("SELECT id, username, name, role, active, can_discount FROM users WHERE LOWER(TRIM(username))=LOWER(TRIM(?))")
                   .get(user.username) as any;
                 if (tUser) {
+                  if (!tUser.active) return null;
                   return { ...tUser, tenant_id: effectiveTenantId, master_user_id: user.id };
                 }
               } catch {}
