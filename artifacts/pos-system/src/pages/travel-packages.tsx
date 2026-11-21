@@ -85,7 +85,7 @@ export default function TravelPackagesPage() {
 
   const createPkgMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/travel/packages", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -115,7 +115,7 @@ export default function TravelPackagesPage() {
 
   const addItinDayMutation = useMutation({
     mutationFn: async ({ pkgId, payload }: { pkgId: number; payload: any }) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch(`/api/travel/packages/${pkgId}/itinerary`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -133,7 +133,7 @@ export default function TravelPackagesPage() {
 
   const deleteItinDayMutation = useMutation({
     mutationFn: async (dayId: number) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       await fetch(`/api/travel/packages/itinerary/${dayId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }

@@ -81,10 +81,13 @@ function tableExists(targetDb: any, tableName: string): boolean {
 
 export function getTenantPolicyStatus(tenant: any): {
   allowed: boolean;
-  code?: "license_expired" | "license_suspended" | "local_disabled" | "license_required";
+  code?: "license_expired" | "license_suspended" | "license_not_started" | "local_disabled" | "license_required";
   reason?: string;
   remainingDays?: number;
+  isGracePeriod?: boolean;
   isWarning?: boolean;
+  isRetentionWarning?: boolean;
+  retentionDaysLeft?: number;
   warningMessage?: string;
 } {
   if (!tenant) {
@@ -99,33 +102,67 @@ export function getTenantPolicyStatus(tenant: any): {
     return {
       allowed: false,
       code: "license_suspended",
-      reason: `تم تعليق حساب واشتراك المؤسسة (${tenant.company_name}). يرجى التواصل مع المطور لإعادة التفعيل.`,
+      reason: `تم تعليق حساب واشتراك المؤسسة (${tenant.company_name}). جميع بياناتك محفوظة بأمان، يرجى التواصل مع المطور لإعادة التفعيل.`,
     };
   }
+
+  const now = new Date();
+  const todayMid = new Date(now);
+  todayMid.setHours(0, 0, 0, 0);
+
+  if (tenant.license_start_date) {
+    const startMid = new Date(`${tenant.license_start_date}T00:00:00`);
+    if (!Number.isNaN(startMid.getTime()) && todayMid.getTime() < startMid.getTime()) {
+      return {
+        allowed: false,
+        code: "license_not_started",
+        reason: `لم يبدأ سريان اشتراك المؤسسة (${tenant.company_name}) بعد. تاريخ بدء التفعيل: ${tenant.license_start_date}.`,
+      };
+    }
+  }
+
+  const graceDays = Math.max(0, Number(tenant.grace_days ?? 14));
+  const retentionDays = Math.max(graceDays, Number(tenant.retention_days_after_expiry ?? 30));
 
   if (tenant.subscription_status === "expired" || tenant.license_status === "expired") {
     return {
       allowed: false,
       code: "license_expired",
-      reason: `انتهت فترة اشتراك وترخيص المؤسسة (${tenant.company_name}) بتاريخ (${tenant.license_expires_at}). جميع بياناتك محفوظة بأمان، يرجى التواصل مع المطور لتجديد الاشتراك.`,
+      isRetentionWarning: true,
+      retentionDaysLeft: retentionDays,
+      warningMessage: `تنبيه هام: انتهت صلاحية الاشتراك (${tenant.license_expires_at || ""}). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDays} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً بأمان.`,
+      reason: `انتهت فترة اشتراك وترخيص المؤسسة (${tenant.company_name}) بتاريخ (${tenant.license_expires_at}). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDays} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً بأمان.`,
     };
   }
 
   if (tenant.license_expires_at) {
     const exp = new Date(`${tenant.license_expires_at}T23:59:59`);
-    const now = new Date();
     if (!Number.isNaN(exp.getTime())) {
-      const todayMid = new Date(now);
-      todayMid.setHours(0, 0, 0, 0);
       const expMid = new Date(`${tenant.license_expires_at}T00:00:00`);
       const diffDays = Math.ceil((expMid.getTime() - todayMid.getTime()) / (1000 * 60 * 60 * 24));
-      if (exp.getTime() < now.getTime() && diffDays < 0) {
-        return {
-          allowed: false,
-          code: "license_expired",
-          remainingDays: diffDays,
-          reason: `انتهت صلاحية ترخيص المؤسسة (${tenant.company_name}) بتاريخ (${tenant.license_expires_at}). يرجى التجديد عبر لوحة المطور للاستمرار في المزامنة والدخول.`,
-        };
+      if (diffDays < 0) {
+        const retentionDaysLeft = Math.max(1, retentionDays + diffDays);
+        if (diffDays >= -graceDays) {
+          return {
+            allowed: true,
+            remainingDays: diffDays,
+            isGracePeriod: true,
+            isWarning: true,
+            isRetentionWarning: true,
+            retentionDaysLeft,
+            warningMessage: `تنبيه هام: انتهت صلاحية الترخيص بتاريخ (${tenant.license_expires_at}) والمؤسسة تعمل ضمن فترة السماح (${graceDays} يوم). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDaysLeft} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً بأمان.`
+          };
+        } else {
+          return {
+            allowed: false,
+            code: "license_expired",
+            remainingDays: diffDays,
+            isRetentionWarning: true,
+            retentionDaysLeft,
+            warningMessage: `سوف يتم حذف بيانات هذا الحساب بعد ${retentionDaysLeft} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً بأمان.`,
+            reason: `انتهت صلاحية ترخيص المؤسسة (${tenant.company_name}) وفترة السماح بتاريخ (${tenant.license_expires_at}). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDaysLeft} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً بأمان ولن يتم حذف أي ملف عند التجديد.`,
+          };
+        }
       }
       const isWarning = diffDays <= 15 && diffDays >= 0;
       const warningMessage = isWarning
@@ -157,6 +194,8 @@ export function buildOfflineSnapshotFromTenant(
     maxDevices: Number(tenant.max_devices || 5),
     allowLocalDesktop: Boolean(tenant.allow_local_desktop ?? 1),
     offlineGraceHours: Number(tenant.offline_grace_hours || 72),
+    graceDays: Number(tenant.grace_days ?? 14),
+    retentionDaysAfterExpiry: Number(tenant.retention_days_after_expiry ?? 30),
     lastServerContactMs: nowMs,
     maxMonotonicEpochMs: nowMs,
     installationId,
@@ -814,23 +853,43 @@ export function applyIncomingOperation(
       .prepare("INSERT OR IGNORE INTO sync_applied_ops (sync_op_id, tenant_id, table_name, sync_uuid) VALUES (?, ?, ?, ?)")
       .run(op.sync_op_id, tenantId, cfg.table, op.sync_uuid);
 
-    // Mirror user edits into masterDb directory if running on Cloud Tenant > 1
+    // Mirror user inserts into masterDb directory if running on Cloud Tenant > 1
     if (contextSide === "cloud" && cfg.table === "users" && tenantId > 1 && payload.username) {
       try {
-        masterDb
-          .prepare(
-            `INSERT OR IGNORE INTO users (username, password_hash, name, role, active, can_discount, tenant_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
-          )
-          .run(
-            payload.username,
-            payload.password_hash,
-            payload.name || payload.username,
-            payload.role || "sales",
-            payload.active ?? 1,
-            payload.can_discount ?? 0,
-            tenantId
-          );
+        const cleanU = String(payload.username).trim();
+        const existingMaster = masterDb
+          .prepare("SELECT id FROM users WHERE LOWER(TRIM(username)) = ? AND tenant_id = ?")
+          .get(cleanU.toLowerCase(), tenantId) as { id: number } | undefined;
+        if (existingMaster) {
+          masterDb
+            .prepare(
+              `UPDATE users SET password_hash = COALESCE(?, password_hash), name = ?, role = ?, active = ?, can_discount = ?
+               WHERE id = ?`
+            )
+            .run(
+              payload.password_hash || null,
+              payload.name || cleanU,
+              payload.role || "sales",
+              payload.active ?? 1,
+              payload.can_discount ?? 0,
+              existingMaster.id
+            );
+        } else {
+          masterDb
+            .prepare(
+              `INSERT OR IGNORE INTO users (username, password_hash, name, role, active, can_discount, tenant_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            )
+            .run(
+              cleanU,
+              payload.password_hash,
+              payload.name || cleanU,
+              payload.role || "sales",
+              payload.active ?? 1,
+              payload.can_discount ?? 0,
+              tenantId
+            );
+        }
       } catch {}
     }
 
@@ -974,6 +1033,44 @@ export function applyIncomingOperation(
   targetDb
     .prepare("INSERT OR IGNORE INTO sync_applied_ops (sync_op_id, tenant_id, table_name, sync_uuid) VALUES (?, ?, ?, ?)")
     .run(op.sync_op_id, tenantId, cfg.table, op.sync_uuid);
+
+  // Mirror user updates into masterDb directory when Cloud Tenant > 1 receives local user edits
+  if (contextSide === "cloud" && cfg.table === "users" && tenantId > 1 && (payload.username || existing.username)) {
+    try {
+      const cleanU = String(payload.username || existing.username).trim();
+      const masterU = masterDb
+        .prepare("SELECT id FROM users WHERE LOWER(TRIM(username)) = ? AND tenant_id = ?")
+        .get(cleanU.toLowerCase(), tenantId) as { id: number } | undefined;
+      if (masterU) {
+        masterDb
+          .prepare(
+            `UPDATE users SET password_hash = COALESCE(?, password_hash), name = ?, role = ?, active = ?, can_discount = ? WHERE id = ?`
+          )
+          .run(
+            payload.password_hash ?? null,
+            payload.name ?? existing.name ?? cleanU,
+            payload.role ?? existing.role ?? "sales",
+            payload.active ?? existing.active ?? 1,
+            payload.can_discount ?? existing.can_discount ?? 0,
+            masterU.id
+          );
+      } else if (payload.password_hash || existing.password_hash) {
+        masterDb
+          .prepare(
+            `INSERT OR IGNORE INTO users (username, password_hash, name, role, active, can_discount, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            cleanU,
+            payload.password_hash || existing.password_hash,
+            payload.name ?? existing.name ?? cleanU,
+            payload.role ?? existing.role ?? "sales",
+            payload.active ?? existing.active ?? 1,
+            payload.can_discount ?? existing.can_discount ?? 0,
+            tenantId
+          );
+      }
+    } catch {}
+  }
 
   return { op_id: op.sync_op_id, status: "applied", server_version: nextVer };
 }
@@ -1180,11 +1277,37 @@ export function applyBootstrapSnapshotLocally(params: {
   // Create safe backup before mutating local DB
   createSafeDatabaseBackup("pre-bootstrap", getActiveDatabasePath());
 
+  // Preserve any pre-existing unsynced offline local operations created before cloud linking so ZERO data is ever lost
+  const preExistingLocalOps: any[] = [];
+  try {
+    const rawPending = masterDb
+      .prepare(
+        `SELECT * FROM sync_change_log
+         WHERE synced = 0 AND COALESCE(source_env, 'local') = 'local'
+         ORDER BY seq ASC`
+      )
+      .all() as any[];
+    for (const r of rawPending) {
+      let payload: any = {};
+      try { payload = JSON.parse(r.payload_json || "{}"); } catch {}
+      const fkUuids = buildFkUuidsForRow(masterDb, r.table_name, payload);
+      preExistingLocalOps.push({ ...r, payloadObj: payload, fkUuidsObj: fkUuids });
+    }
+  } catch {}
+
+  // Build lookup set of sync_uuids already present in the authoritative Cloud snapshot
+  const snapshotUuidSet = new Set<string>();
+  for (const tbl of Object.keys(snapshot.tables || {})) {
+    for (const row of snapshot.tables[tbl] || []) {
+      if (row?.sync_uuid) snapshotUuidSet.add(`${tbl}:${row.sync_uuid}`);
+    }
+  }
+
   const execHydration = masterDb.transaction(() => {
     masterDb.prepare("UPDATE sync_internal_guard SET suppress = 1 WHERE id = 1").run();
 
     try {
-      // Clear local operational tables in reverse dependency order so zero foreign-demo seed rows pollute Tenant
+      // Clear local operational tables in reverse dependency order before hydrating Cloud snapshot
       for (const cfg of [...SYNC_TABLES_ORDERED].reverse()) {
         if (!tableExists(masterDb, cfg.table)) continue;
         masterDb.exec(`DELETE FROM "${cfg.table}"`);
@@ -1195,13 +1318,13 @@ export function applyBootstrapSnapshotLocally(params: {
         }
       }
 
-      // Clear local pending sync queues/conflicts before hydrating authoritative snapshot
+      // Clear previous sync metadata before hydrating authoritative baseline
       masterDb.exec("DELETE FROM sync_change_log");
       masterDb.exec("DELETE FROM sync_applied_ops");
       masterDb.exec("DELETE FROM sync_conflicts");
       masterDb.exec("DELETE FROM sync_file_queue");
 
-      // Insert hydrated rows in topological dependency order
+      // Insert hydrated Cloud rows in topological dependency order
       for (const cfg of SYNC_TABLES_ORDERED) {
         if (!tableExists(masterDb, cfg.table)) continue;
         const rows = snapshot.tables[cfg.table] || [];
@@ -1215,6 +1338,78 @@ export function applyBootstrapSnapshotLocally(params: {
           const placeholders = validCols.map(() => "?").join(", ");
           const vals = validCols.map((c) => (c === "tenant_id" ? tenantId : row[c]));
           masterDb.prepare(`INSERT OR REPLACE INTO "${cfg.table}" (${colSql}) VALUES (${placeholders})`).run(...vals);
+        }
+      }
+
+      // Re-apply and re-queue any pre-existing unsynced local operations created while offline before cloud link
+      // Skip only pure seed/config tables so system defaults from Cloud aren't duplicated, while all business records (bookings, visas, customers, suppliers, invoices, vouchers, WhatsApp config, users) are safely preserved & queued for immediate upload!
+      const SAFE_MERGE_SKIP_TABLES = new Set(["settings", "roles_permissions", "payment_methods", "loyalty_settings", "pos_themes", "branches", "warehouses", "accounts", "cost_centers", "safes", "bank_accounts"]);
+      for (const opRow of preExistingLocalOps) {
+        const tbl = String(opRow.table_name || "");
+        if (SAFE_MERGE_SKIP_TABLES.has(tbl)) continue;
+        const cfg = SYNC_TABLE_MAP.get(tbl);
+        if (!cfg || !tableExists(masterDb, tbl)) continue;
+
+        const payload: Record<string, any> = { ...(opRow.payloadObj || {}), tenant_id: tenantId };
+        if (opRow.sync_uuid) payload.sync_uuid = opRow.sync_uuid;
+        const alreadyInCloud = snapshotUuidSet.has(`${tbl}:${opRow.sync_uuid}`);
+
+        if (opRow.operation === "INSERT" && !alreadyInCloud) {
+          remapIncomingForeignKeys(masterDb, tbl, payload, opRow.fkUuidsObj);
+          const cols = getTableColumns(masterDb, tbl);
+          let validCols = cols.filter((c) => Object.prototype.hasOwnProperty.call(payload, c));
+          if (cfg.pk === "id" && validCols.includes("id")) {
+            validCols = validCols.filter((c) => c !== "id");
+          }
+          if (validCols.length > 0) {
+            const colSql = validCols.map((c) => `"${c}"`).join(", ");
+            const placeholders = validCols.map(() => "?").join(", ");
+            const vals = validCols.map((c) => payload[c]);
+            try {
+              const info = masterDb.prepare(`INSERT OR IGNORE INTO "${tbl}" (${colSql}) VALUES (${placeholders})`).run(...vals);
+              const newId = info?.lastInsertRowid ? String(info.lastInsertRowid) : String(opRow.record_id || "");
+              masterDb
+                .prepare(
+                  `INSERT OR IGNORE INTO sync_change_log (
+                    sync_op_id, tenant_id, table_name, record_id, sync_uuid, operation, record_version,
+                    payload_json, previous_json, fk_uuids_json, source_env, installation_id, synced
+                  ) VALUES (?, ?, ?, ?, ?, 'INSERT', ?, ?, ?, ?, 'local', ?, 0)`
+                )
+                .run(
+                  opRow.sync_op_id || crypto.randomUUID(),
+                  tenantId,
+                  tbl,
+                  newId,
+                  opRow.sync_uuid,
+                  Number(opRow.record_version || 1),
+                  JSON.stringify(payload),
+                  opRow.previous_json || null,
+                  JSON.stringify(opRow.fkUuidsObj || {}),
+                  licenseSnapshot.installationId || ""
+                );
+            } catch {}
+          }
+        } else if (alreadyInCloud && opRow.operation === "UPDATE") {
+          // Preserve offline modification for normal bidirectional conflict/merge upload
+          masterDb
+            .prepare(
+              `INSERT OR IGNORE INTO sync_change_log (
+                sync_op_id, tenant_id, table_name, record_id, sync_uuid, operation, record_version,
+                payload_json, previous_json, fk_uuids_json, source_env, installation_id, synced
+              ) VALUES (?, ?, ?, ?, ?, 'UPDATE', ?, ?, ?, ?, 'local', ?, 0)`
+            )
+            .run(
+              opRow.sync_op_id || crypto.randomUUID(),
+              tenantId,
+              tbl,
+              String(opRow.record_id || ""),
+              opRow.sync_uuid,
+              Number(opRow.record_version || 1),
+              JSON.stringify(payload),
+              opRow.previous_json || null,
+              JSON.stringify(opRow.fkUuidsObj || {}),
+              licenseSnapshot.installationId || ""
+            );
         }
       }
 
@@ -1302,7 +1497,7 @@ export function applyBootstrapSnapshotLocally(params: {
 /**
  * Local Client Side: Get current Sync Center full dashboard state
  */
-export function getLocalSyncStatusSummary(): {
+export function getLocalSyncStatusSummary(overrideTenantId?: number): {
   mode: "cloud" | "local";
   status: SyncLifecycleStatus;
   connectionOnline: boolean;
@@ -1333,23 +1528,45 @@ export function getLocalSyncStatusSummary(): {
     expiresAt?: string;
     remainingDays?: number;
     offlineGraceHours?: number;
+    isGracePeriod?: boolean;
+    isWarning?: boolean;
+    isRetentionWarning?: boolean;
+    retentionDaysLeft?: number;
+    warningMessage?: string;
   };
   recentLogs: any[];
 } {
   const cfg = (masterDb.prepare("SELECT * FROM sync_runtime_config WHERE id = 1").get() as any) || {};
   const mode = isLocalDesktopMode() ? "local" : "cloud";
-  const tenantId = Number(cfg.tenant_id || 1);
+  const tenantId = mode === "cloud" && overrideTenantId ? Number(overrideTenantId) : Number(cfg.tenant_id || 1);
+  const statsDb = mode === "local" ? masterDb : getTenantDb(tenantId);
 
-  const pendingUploadsCount =
-    (masterDb.prepare("SELECT COUNT(*) as c FROM sync_change_log WHERE synced = 0").get() as any)?.c || 0;
-  const syncedRecordsCount =
-    (masterDb.prepare("SELECT COUNT(*) as c FROM sync_change_log WHERE synced = 1").get() as any)?.c || 0;
-  const pendingFilesCount =
-    (masterDb.prepare("SELECT COUNT(*) as c FROM sync_file_queue WHERE status != 'synced'").get() as any)?.c || 0;
-  const unresolvedConflictsCount =
-    (masterDb.prepare("SELECT COUNT(*) as c FROM sync_conflicts WHERE status = 'pending'").get() as any)?.c || 0;
+  let pendingUploadsCount = 0;
+  let syncedRecordsCount = 0;
+  let pendingFilesCount = 0;
+  let unresolvedConflictsCount = 0;
+  let recentLogs: any[] = [];
 
+  try {
+    pendingUploadsCount =
+      mode === "local"
+        ? (statsDb.prepare("SELECT COUNT(*) as c FROM sync_change_log WHERE synced = 0 AND COALESCE(source_env, 'local') = 'local'").get() as any)?.c || 0
+        : 0;
+    syncedRecordsCount =
+      (statsDb.prepare("SELECT COUNT(*) as c FROM sync_change_log WHERE synced = 1").get() as any)?.c || 0;
+    pendingFilesCount =
+      (statsDb.prepare("SELECT COUNT(*) as c FROM sync_file_queue WHERE status != 'synced'").get() as any)?.c || 0;
+    unresolvedConflictsCount =
+      (statsDb.prepare("SELECT COUNT(*) as c FROM sync_conflicts WHERE status = 'pending'").get() as any)?.c || 0;
+    recentLogs = statsDb
+      .prepare("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 25")
+      .all() as any[];
+  } catch {}
+
+  let tenantCode = cfg.tenant_code || "OMNI-MAIN";
+  let companyName = cfg.company_name || "";
   let licensePolicy: any = { allowed: true };
+
   if (mode === "local" && cfg.encrypted_license_snapshot) {
     const snap = decryptJsonPayload<OfflineLicenseSnapshot>(cfg.encrypted_license_snapshot);
     const ver = verifyOfflineLicensePolicy(snap);
@@ -1360,10 +1577,16 @@ export function getLocalSyncStatusSummary(): {
       expiresAt: snap?.licenseExpiresAt,
       remainingDays: ver.remainingDays,
       offlineGraceHours: snap?.offlineGraceHours,
+      isGracePeriod: ver.isGracePeriod,
+      isRetentionWarning: ver.isRetentionWarning,
+      retentionDaysLeft: ver.retentionDaysLeft,
+      warningMessage: ver.isGracePeriod ? ver.reason : undefined,
     };
   } else {
     const tRow = masterDb.prepare("SELECT * FROM cloud_tenants WHERE id = ?").get(tenantId) as any;
     if (tRow) {
+      tenantCode = tRow.tenant_code || tenantCode;
+      companyName = tRow.company_name || companyName;
       const p = getTenantPolicyStatus(tRow);
       licensePolicy = {
         allowed: p.allowed,
@@ -1372,6 +1595,11 @@ export function getLocalSyncStatusSummary(): {
         expiresAt: tRow.license_expires_at,
         remainingDays: p.remainingDays,
         offlineGraceHours: tRow.offline_grace_hours,
+        isGracePeriod: p.isGracePeriod,
+        isWarning: p.isWarning,
+        isRetentionWarning: p.isRetentionWarning,
+        retentionDaysLeft: p.retentionDaysLeft,
+        warningMessage: p.warningMessage,
       };
     }
   }
@@ -1389,10 +1617,6 @@ export function getLocalSyncStatusSummary(): {
     status = "Connected";
   }
 
-  const recentLogs = masterDb
-    .prepare("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 25")
-    .all() as any[];
-
   return {
     mode,
     status,
@@ -1401,9 +1625,9 @@ export function getLocalSyncStatusSummary(): {
     installationId: cfg.installation_id || getOrCreatePersistentInstallationId(getDbDir()),
     deviceId: cfg.device_id || "",
     tenantId,
-    tenantCode: cfg.tenant_code || "OMNI-MAIN",
-    companyName: cfg.company_name || "",
-    isBootstrapped: Boolean(cfg.is_bootstrapped),
+    tenantCode,
+    companyName,
+    isBootstrapped: mode === "cloud" ? true : Boolean(cfg.is_bootstrapped),
     localDbVersion: HYBRID_DB_VERSION,
     cloudDbVersion: cfg.db_version || HYBRID_DB_VERSION,
     appVersion: APP_VERSION,

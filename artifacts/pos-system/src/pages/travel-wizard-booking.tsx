@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
   return fetch(url, {
     ...options,
     headers: {
@@ -162,7 +162,7 @@ export default function TravelWizardBookingPage() {
 
   const { data: bankAccounts = [] } = useQuery<any[]>({
     queryKey: ["bank-accounts-list"],
-    queryFn: () => fetchWithAuth("/api/accounting/banks")
+    queryFn: () => fetchWithAuth("/api/accounting/bank-accounts")
   });
 
   // Calculate dynamic math

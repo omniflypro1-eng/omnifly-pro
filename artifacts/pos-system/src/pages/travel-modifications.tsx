@@ -84,7 +84,7 @@ export default function TravelModificationsPage() {
     }
 
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const res = await fetch("/api/travel/modifications", {
         method: "POST",
         headers: {

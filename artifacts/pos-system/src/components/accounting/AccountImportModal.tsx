@@ -615,7 +615,7 @@ export function AccountImportModal({
 
     setIsCleaning(true);
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const r = await fetch("/api/accounting/accounts/clean-corrupted", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -654,7 +654,7 @@ export function AccountImportModal({
 
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const accountsPayload = rowsToImport.map((r, idx) => ({
         code: r.code,
         name: r.name,

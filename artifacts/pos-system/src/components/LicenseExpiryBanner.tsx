@@ -19,10 +19,20 @@ export function LicenseExpiryBanner() {
 
   // Check license status every 10 minutes or on load
   const { data: status } = useQuery({
-    queryKey: ["license-status-banner"],
-    queryFn: () => fetch("/api/license/status").then(r => r.json()).catch(() => null),
+    queryKey: ["license-status-banner", user?.id],
+    queryFn: () => {
+      const token =
+        (typeof window !== "undefined"
+          ? sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")
+          : "") || "";
+      return fetch("/api/license/status", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then(r => r.json())
+        .catch(() => null);
+    },
     refetchInterval: 10 * 60 * 1000,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
 
   const { data: deviceInfo } = useQuery({
@@ -31,11 +41,13 @@ export function LicenseExpiryBanner() {
   });
 
   const remainingDays = status?.remainingDays;
+  const isGracePeriod = Boolean(status?.isGracePeriod);
+  const isRetentionWarning = Boolean(status?.isRetentionWarning);
+  const retentionDaysLeft = status?.retentionDaysLeft;
   const isExpiringSoon = remainingDays !== undefined && remainingDays !== null && remainingDays <= 15 && remainingDays > 0;
-  const isCritical = remainingDays !== undefined && remainingDays !== null && remainingDays <= 3 && remainingDays > 0;
-  const isExpired = remainingDays !== undefined && remainingDays !== null && remainingDays <= 0;
+  const isCritical = (remainingDays !== undefined && remainingDays !== null && remainingDays <= 3 && remainingDays > 0) || isGracePeriod || isRetentionWarning;
 
-  // Show urgent popup once per session if critical (<= 3 days)
+  // Show urgent popup once per session if critical (<= 3 days) or in grace/retention warning period
   useEffect(() => {
     if (isCritical) {
       const hasShown = sessionStorage.getItem("omni_expiry_popup_shown");
@@ -46,7 +58,7 @@ export function LicenseExpiryBanner() {
     }
   }, [isCritical]);
 
-  if (!status || status.blocked || (!isExpiringSoon && !isCritical) || bannerDismissed) {
+  if (!status || status.blocked || (!isExpiringSoon && !isCritical && !isGracePeriod && !isRetentionWarning) || bannerDismissed) {
     return null;
   }
 
@@ -119,13 +131,26 @@ export function LicenseExpiryBanner() {
           </div>
           <div className="leading-snug">
             <span className="font-extrabold ml-1.5">
-              {isCritical ? "⚠️ تحذير عاجل: اقتراب توقف النظام!" : "🔔 تنبيه قرب انتهاء الترخيص:"}
+              {isGracePeriod || isRetentionWarning
+                ? "⚠️ انتهى الاشتراك — فترة سماح واحتفاظ بالبيانات:"
+                : isCritical
+                ? "⚠️ تحذير عاجل: اقتراب انتهاء الترخيص!"
+                : "🔔 تنبيه قرب انتهاء الترخيص:"}
             </span>
-            <span>
-              متبقي <span className="underline font-black text-yellow-200 text-sm">{remainingDays} يوم</span> على انتهاء ترخيص هذا الجهاز (تاريخ الانتهاء: <span className="font-mono">{status.expiresAt}</span>).
-            </span>
+            {isRetentionWarning && typeof retentionDaysLeft === "number" ? (
+              <span>
+                سوف يتم حذف بيانات هذا الحساب بعد{" "}
+                <span className="underline font-black text-yellow-200 text-sm">{retentionDaysLeft} يوم</span>{" "}
+                إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً (تاريخ الانتهاء:{" "}
+                <span className="font-mono">{status.expiresAt}</span>).
+              </span>
+            ) : (
+              <span>
+                متبقي <span className="underline font-black text-yellow-200 text-sm">{remainingDays} يوم</span> على انتهاء ترخيص الحساب (تاريخ الانتهاء: <span className="font-mono">{status.expiresAt}</span>).
+              </span>
+            )}
             <span className="hidden md:inline mr-1 text-white/90">
-              يرجى سرعة التواصل مع إدارة ومطور النظام لتجديد الترخيص قبل موعد التوقف لضمان استمرار العمل دون انقطاع.
+              يرجى التواصل مع إدارة ومطور النظام لتجديد الترخيص لضمان استمرار العمل وحماية البيانات.
             </span>
           </div>
         </div>
@@ -171,7 +196,19 @@ export function LicenseExpiryBanner() {
               </DialogTitle>
             </div>
             <DialogDescription className="text-xs text-slate-600 font-medium leading-relaxed">
-              ينتهي ترخيص النظام على هذا الجهاز بعد <b className="text-red-600">{remainingDays} يوم</b> (بتاريخ: {status.expiresAt}). أدخل كود التجديد الممنوح من إدارة ومطور النظام للاستمرار في استخدام النظام.
+              {isRetentionWarning && typeof retentionDaysLeft === "number" ? (
+                <span className="block bg-red-50 border border-red-200 text-red-900 p-3 rounded-xl font-bold mt-1">
+                  تنبيه هام لحماية بياناتك: انتهت صلاحية الاشتراك بتاريخ <span className="font-mono">{status.expiresAt}</span>.
+                  جميع بيانات حسابك محفوظة حالياً ولن تُحذف أثناء فترة السماح، لكن{" "}
+                  <b className="text-red-700 underline">
+                    سوف يتم حذف بيانات هذا الحساب بعد {retentionDaysLeft} يوم إذا لم يتم التجديد
+                  </b>.
+                </span>
+              ) : (
+                <>
+                  ينتهي ترخيص النظام على هذا الحساب بعد <b className="text-red-600">{remainingDays} يوم</b> (بتاريخ: {status.expiresAt}). أدخل كود التجديد الممنوح من إدارة ومطور النظام للاستمرار في استخدام النظام.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 

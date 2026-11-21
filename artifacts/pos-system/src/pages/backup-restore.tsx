@@ -72,7 +72,7 @@ export default function BackupRestorePage() {
   const { data: backups, refetch: refetchBackups, isLoading: loadingBackups } = useQuery({
     queryKey: ["backups"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/backups", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -85,7 +85,7 @@ export default function BackupRestorePage() {
   const { data: settingsData, refetch: refetchSettings } = useQuery({
     queryKey: ["backup-settings"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/backup/settings", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -107,7 +107,7 @@ export default function BackupRestorePage() {
   // 1. Settings mutation
   const updateSettingsMutation = useMutation({
     mutationFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/backup/settings", {
         method: "POST",
         headers: {
@@ -137,7 +137,7 @@ export default function BackupRestorePage() {
   // 2. Instant backup mutation
   const createInstantBackupMutation = useMutation({
     mutationFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/backup", { 
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
@@ -161,7 +161,7 @@ export default function BackupRestorePage() {
   // 3. Delete backup mutation
   const deleteBackupMutation = useMutation({
     mutationFn: async (filename: string) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch(`/api/system/backup/${encodeURIComponent(filename)}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
@@ -182,7 +182,7 @@ export default function BackupRestorePage() {
   const handleInspectFile = async (file?: File, filename?: string) => {
     try {
       setIsInspecting(true);
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       let res: Response;
 
       if (file) {
@@ -225,7 +225,7 @@ export default function BackupRestorePage() {
     if (!inspectionData?.tempKey) return;
     try {
       setActionInProgress("restore");
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/backup/confirm-restore", {
         method: "POST",
         headers: {
@@ -258,7 +258,7 @@ export default function BackupRestorePage() {
     if (!inspectionData?.tempKey) return;
     try {
       setActionInProgress("merge");
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/backup/merge", {
         method: "POST",
         headers: {
@@ -297,7 +297,7 @@ export default function BackupRestorePage() {
     }
     try {
       setIsResetting(true);
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/system/reset-database", {
         method: "POST",
         headers: {
@@ -329,7 +329,7 @@ export default function BackupRestorePage() {
   };
 
   const handleDownloadBackup = (filename?: string) => {
-    const token = localStorage.getItem("pos_token") ?? "";
+    const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
     const url = filename 
       ? `/api/system/backup/download/${encodeURIComponent(filename)}`
       : `/api/system/backup/download/latest`;

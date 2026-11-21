@@ -67,14 +67,17 @@ export const CURRENT_SYSTEM_VERSION = "1.1.0";
 
 export interface LicenseStatusResult {
   blocked: boolean;
-  code?: "license_required" | "license_expired" | "license_suspended" | "version_upgrade_required" | "device_unauthorized" | "device_blocked";
+  code?: "license_required" | "license_expired" | "license_suspended" | "license_not_started" | "version_upgrade_required" | "device_unauthorized" | "device_blocked";
   deviceId: string;
   licenseType?: "cloud" | "desktop";
   reason?: string;
   clientName?: string;
   expiresAt?: string;
   remainingDays?: number;
+  isGracePeriod?: boolean;
   isWarning?: boolean;
+  isRetentionWarning?: boolean;
+  retentionDaysLeft?: number;
   warningMessage?: string;
   targetVersion?: string;
   currentVersion?: string;
@@ -108,6 +111,10 @@ export function checkLicenseStatus(deviceId?: string, tenantId = 1): LicenseStat
           clientName: tRow.company_name,
           expiresAt: tRow.license_expires_at,
           remainingDays: policy.remainingDays,
+          isGracePeriod: policy.isGracePeriod,
+          isRetentionWarning: policy.isRetentionWarning,
+          retentionDaysLeft: policy.retentionDaysLeft,
+          warningMessage: policy.warningMessage,
           currentVersion: CURRENT_SYSTEM_VERSION,
           reason: policy.reason,
         };
@@ -119,7 +126,10 @@ export function checkLicenseStatus(deviceId?: string, tenantId = 1): LicenseStat
         clientName: tRow.company_name,
         expiresAt: tRow.license_expires_at,
         remainingDays: policy.remainingDays,
+        isGracePeriod: policy.isGracePeriod,
         isWarning: policy.isWarning,
+        isRetentionWarning: policy.isRetentionWarning,
+        retentionDaysLeft: policy.retentionDaysLeft,
         warningMessage: policy.warningMessage,
         currentVersion: CURRENT_SYSTEM_VERSION,
         devicesLimit: tRow.max_devices,
@@ -140,6 +150,10 @@ export function checkLicenseStatus(deviceId?: string, tenantId = 1): LicenseStat
             clientName: t1.company_name,
             expiresAt: t1.license_expires_at,
             remainingDays: p1.remainingDays,
+            isGracePeriod: p1.isGracePeriod,
+            isRetentionWarning: p1.isRetentionWarning,
+            retentionDaysLeft: p1.retentionDaysLeft,
+            warningMessage: p1.warningMessage,
             currentVersion: CURRENT_SYSTEM_VERSION,
             reason: p1.reason,
           };
@@ -465,6 +479,8 @@ router.post("/auth/login", async (req, res) => {
               user: cloudJson.user,
             });
             bootstrappedNow = true;
+            // Immediately push any preserved offline local transactions created before first cloud link
+            await runBidirectionalSync("manual").catch(() => {});
           } catch (applyErr: any) {
             logger.error({ err: applyErr?.message, stack: applyErr?.stack }, "Failed applying bootstrap snapshot locally");
             res.status(500).json({
@@ -600,13 +616,18 @@ router.post("/auth/login", async (req, res) => {
 
   const userTenantId = Number(user.tenant_id) || 1;
 
+  let loginLicenseInfo: LicenseStatusResult | null = null;
   if (!isDeveloperUser) {
     const licenseStatus = checkLicenseStatus(undefined, userTenantId);
+    loginLicenseInfo = licenseStatus;
     if (licenseStatus.blocked) {
       res.status(403).json({
         error: licenseStatus.code || "license_blocked",
         code: licenseStatus.code || "license_blocked",
         deviceId: licenseStatus.deviceId,
+        isRetentionWarning: licenseStatus.isRetentionWarning,
+        retentionDaysLeft: licenseStatus.retentionDaysLeft,
+        expiresAt: licenseStatus.expiresAt,
         message: licenseStatus.reason || "تم إيقاف أو انتهاء ترخيص النظام أو أن هذا الجهاز غير مرخص. يرجى التواصل مع المطور."
       });
       return;
@@ -663,6 +684,7 @@ router.post("/auth/login", async (req, res) => {
       tenant_id: userTenantId,
     },
     tenant: tenantRow || null,
+    licenseStatus: loginLicenseInfo,
   });
 });
 

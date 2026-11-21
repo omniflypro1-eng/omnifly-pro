@@ -105,7 +105,7 @@ export default function TravelQuotationsPage() {
   // Mutations
   const createQuoMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/travel/quotations", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -123,7 +123,7 @@ export default function TravelQuotationsPage() {
 
   const convertToInvoiceMutation = useMutation({
     mutationFn: async (quoId: number) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch(`/api/travel/quotations/${quoId}/convert`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` }

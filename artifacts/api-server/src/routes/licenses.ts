@@ -225,6 +225,11 @@ router.get("/license/status", (req, res) => {
         clientName: snap?.companyName || cfg.company_name,
         expiresAt: snap?.licenseExpiresAt,
         remainingDays: ver.remainingDays,
+        isGracePeriod: ver.isGracePeriod,
+        isWarning: ver.isGracePeriod || (typeof ver.remainingDays === "number" && ver.remainingDays <= 15),
+        isRetentionWarning: ver.isRetentionWarning,
+        retentionDaysLeft: ver.retentionDaysLeft,
+        warningMessage: ver.isGracePeriod ? ver.reason : undefined,
         reason: ver.reason,
         currentVersion: CURRENT_SYSTEM_VERSION,
       });

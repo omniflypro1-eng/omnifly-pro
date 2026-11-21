@@ -9,12 +9,8 @@ function isAdminRole(role?: string) {
   return role === "admin" || role === "developer" || role === "general_manager" || role === "مدير" || role === "مدير عام" || role === "مدير عام الشركة";
 }
 
-function getAuthUserWithFallback(req: any) {
-  let user = getAuthUser(req);
-  if (!user) {
-    user = db.prepare("SELECT id, username, name, role, active FROM users WHERE active=1 AND (role='admin' OR role='developer' OR role='general_manager' OR role='مدير عام') LIMIT 1").get() as any;
-  }
-  return user;
+function getAuthUserStrict(req: any) {
+  return getAuthUser(req);
 }
 
 const toUser = (u: any) => {
@@ -52,7 +48,7 @@ const toUser = (u: any) => {
 };
 
 router.get("/users", (req, res) => {
-  const user = getAuthUserWithFallback(req);
+  const user = getAuthUserStrict(req);
   if (!user || (!isAdminRole(user.role) && user.username !== "admin")) { res.status(403).json({ error: "غير مصرح" }); return; }
   let rows = db.prepare(`
     SELECT id, username, name, role, active, can_discount, email, phone, avatar_url, default_branch_id, language, timezone, status, full_name,
@@ -68,7 +64,7 @@ router.get("/users", (req, res) => {
 });
 
 router.post("/users", (req, res) => {
-  const user = getAuthUserWithFallback(req);
+  const user = getAuthUserStrict(req);
   if (!user || (!isAdminRole(user.role) && user.username !== "admin")) { res.status(403).json({ error: "غير مصرح" }); return; }
   const {
     username, name, role, password, active, can_discount, email, phone, avatar_url, default_branch_id, language, timezone, status, full_name,
@@ -137,10 +133,20 @@ router.post("/users", (req, res) => {
 
   if (!isLocalDesktopMode() && tenantId > 1) {
     try {
-      masterDb.prepare(`
-        INSERT OR IGNORE INTO users (username, password_hash, name, role, active, can_discount, tenant_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(String(username).trim(), hash, name, role, active !== false ? 1 : 0, discountFlag, tenantId);
+      const cleanU = String(username).trim();
+      const existingMaster = masterDb
+        .prepare("SELECT id FROM users WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?")
+        .get(cleanU, tenantId) as { id: number } | undefined;
+      if (existingMaster) {
+        masterDb.prepare(
+          "UPDATE users SET password_hash=?, name=?, role=?, active=?, can_discount=? WHERE id=?"
+        ).run(hash, name, role, active !== false ? 1 : 0, discountFlag, existingMaster.id);
+      } else {
+        masterDb.prepare(`
+          INSERT INTO users (username, password_hash, name, role, active, can_discount, tenant_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(cleanU, hash, name, role, active !== false ? 1 : 0, discountFlag, tenantId);
+      }
     } catch {}
   }
 
@@ -160,10 +166,10 @@ router.post("/users", (req, res) => {
 });
 
 router.put("/users/:id", (req, res) => {
-  const user = getAuthUserWithFallback(req);
+  const user = getAuthUserStrict(req);
   if (!user || (!isAdminRole(user.role) && user.username !== "admin")) { res.status(403).json({ error: "غير مصرح" }); return; }
   
-  const targetUser = db.prepare("SELECT id, username, name, role, active, can_discount FROM users WHERE id=?").get(req.params.id) as any;
+  const targetUser = db.prepare("SELECT id, username, name, role, active, can_discount, password_hash FROM users WHERE id=?").get(req.params.id) as any;
   if (!targetUser) { res.status(404).json({ error: "المستخدم غير موجود" }); return; }
   
   if (targetUser.role === "developer" && user.role !== "developer") {
@@ -188,9 +194,9 @@ router.put("/users/:id", (req, res) => {
   const discountFlag = targetIsAdmin ? 1 : (can_discount !== undefined 
     ? (can_discount ? 1 : 0) 
     : (targetUser.can_discount !== undefined && targetUser.can_discount !== null ? targetUser.can_discount : (targetRole === "accountant" ? 1 : 0)));
+  const newPassHash = password ? hashPassword(password) : null;
   
-  if (password) {
-    const hash = hashPassword(password);
+  if (newPassHash) {
     db.prepare(`
       UPDATE users SET
         username=?, name=?, role=?, password_hash=?, active=?, can_discount=?,
@@ -200,7 +206,7 @@ router.put("/users/:id", (req, res) => {
         perm_edit_stock=?, perm_stocktake=?, perm_edit_entries=?, perm_close_periods=?, perm_view_salaries=?
       WHERE id=?
     `).run(
-      username, name, targetRole, hash, active !== false ? 1 : 0, discountFlag,
+      username, name, targetRole, newPassHash, active !== false ? 1 : 0, discountFlag,
       email ?? null, phone ?? null, avatar_url ?? null, default_branch_id ?? 1, language ?? "عربي", timezone ?? "GMT+3", status ?? "نشط", full_name ?? name,
       employee_id !== undefined ? (employee_id ? Number(employee_id) : null) : null,
       branch_id !== undefined ? (branch_id ? Number(branch_id) : null) : null,
@@ -252,16 +258,28 @@ router.put("/users/:id", (req, res) => {
     FROM users WHERE id=?
   `).get(req.params.id) as any;
 
-  if (!isLocalDesktopMode() && Number((user as any).tenant_id || 1) > 1) {
+  const callerTenantId = Number((user as any).tenant_id || 1);
+  if (!isLocalDesktopMode() && callerTenantId > 1) {
     try {
-      if (password) {
-        masterDb.prepare(
-          "UPDATE users SET username=?, name=?, role=?, password_hash=?, active=?, can_discount=? WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?"
-        ).run(username, name, targetRole, hashPassword(password), active !== false ? 1 : 0, discountFlag, targetUser.username, Number((user as any).tenant_id));
+      const cleanOldU = String(targetUser.username || "").trim();
+      const cleanNewU = String(username || targetUser.username || "").trim();
+      const existingMaster = masterDb
+        .prepare("SELECT id FROM users WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?")
+        .get(cleanOldU, callerTenantId) as { id: number } | undefined;
+      if (existingMaster) {
+        if (newPassHash) {
+          masterDb.prepare(
+            "UPDATE users SET username=?, name=?, role=?, password_hash=?, active=?, can_discount=? WHERE id=?"
+          ).run(cleanNewU, name, targetRole, newPassHash, active !== false ? 1 : 0, discountFlag, existingMaster.id);
+        } else {
+          masterDb.prepare(
+            "UPDATE users SET username=?, name=?, role=?, active=?, can_discount=? WHERE id=?"
+          ).run(cleanNewU, name, targetRole, active !== false ? 1 : 0, discountFlag, existingMaster.id);
+        }
       } else {
         masterDb.prepare(
-          "UPDATE users SET username=?, name=?, role=?, active=?, can_discount=? WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) AND tenant_id=?"
-        ).run(username, name, targetRole, active !== false ? 1 : 0, discountFlag, targetUser.username, Number((user as any).tenant_id));
+          "INSERT OR IGNORE INTO users (username, password_hash, name, role, active, can_discount, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).run(cleanNewU, newPassHash || targetUser.password_hash, name, targetRole, active !== false ? 1 : 0, discountFlag, callerTenantId);
       }
     } catch {}
   }
@@ -282,7 +300,7 @@ router.put("/users/:id", (req, res) => {
 });
 
 router.delete("/users/:id", (req, res) => {
-  const user = getAuthUserWithFallback(req);
+  const user = getAuthUserStrict(req);
   if (!user || (!isAdminRole(user.role) && user.username !== "admin")) { res.status(403).json({ error: "غير مصرح" }); return; }
   
   const targetUser = db.prepare("SELECT id, username, name, role, active FROM users WHERE id=?").get(req.params.id) as any;

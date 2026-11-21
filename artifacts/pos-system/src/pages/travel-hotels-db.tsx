@@ -107,7 +107,7 @@ export default function TravelHotelsDbPage() {
     }
 
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const url = editingId ? `/api/travel/hotels-db/${editingId}` : "/api/travel/hotels-db";
       const method = editingId ? "PUT" : "POST";
 

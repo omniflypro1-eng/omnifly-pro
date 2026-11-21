@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, syncCustomerAccounts, syncSupplierAccounts } from "../lib/sqlite";
+import { db, syncCustomerAccounts, syncSupplierAccounts, createDoubleEntryJournal } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 
 const router = Router();
@@ -295,6 +295,118 @@ router.delete("/customers/:id", (req, res) => {
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
   db.prepare("DELETE FROM customers WHERE id=?").run(req.params.id);
   res.status(204).send();
+});
+
+router.post("/customers/:id/payments", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+
+  const customerId = Number(req.params.id);
+  const customer = db.prepare("SELECT * FROM customers WHERE id = ?").get(customerId) as any;
+  if (!customer) { res.status(404).json({ error: "العميل غير موجود" }); return; }
+
+  const { amount, payment_method, reference, notes, safe_id, bank_account_id, currency } = req.body || {};
+  const payAmount = Number(amount || 0);
+  if (!payAmount || payAmount <= 0) {
+    res.status(400).json({ error: "يرجى إدخال مبلغ سداد صحيح أكبر من الصفر" });
+    return;
+  }
+
+  const method = payment_method || "cash";
+  const payCurrency = currency || "SAR";
+  const today = new Date().toISOString().slice(0, 10);
+  const voucherNumber = `RCV-CUST-${Date.now().toString().slice(-6)}`;
+
+  try {
+    const custAccountCode = getCustomerAccountCode(customerId);
+    const txResult = db.transaction(() => {
+      // 1. Insert receipt voucher
+      const vStmt = db.prepare(`
+        INSERT INTO vouchers (
+          voucher_number, type, party_type, party_id, party_name, amount, currency,
+          received_from, payment_against, payment_method, notes, safe_id, bank_account_id
+        ) VALUES (?, 'receipt', 'customer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const vRes = vStmt.run(
+        voucherNumber, customerId, customer.name, payAmount, payCurrency,
+        customer.name,
+        notes || `سند قبض سداد من العميل: ${customer.name}`,
+        method,
+        notes || (reference ? `مرجع: ${reference}` : null),
+        safe_id || (method === "cash" ? 1 : null),
+        bank_account_id || null
+      );
+      const voucherId = Number(vRes.lastInsertRowid);
+
+      // 2. Allocate payment across customer's unpaid bookings, visas, hotels (FIFO)
+      let remainingToAllocate = payAmount;
+      const allocateTable = (tableName: string) => {
+        if (remainingToAllocate <= 0) return;
+        const rows = db.prepare(
+          `SELECT id, COALESCE(paid_amount, 0) as paid_amount, COALESCE(remaining_balance, 0) as remaining_balance
+           FROM ${tableName}
+           WHERE customer_id = ? AND COALESCE(remaining_balance, 0) > 0
+           ORDER BY id ASC`
+        ).all(customerId) as any[];
+        for (const r of rows) {
+          if (remainingToAllocate <= 0) break;
+          const applyAmt = Math.min(remainingToAllocate, Number(r.remaining_balance || 0));
+          const newPaid = Number(r.paid_amount || 0) + applyAmt;
+          const newRem = Math.max(0, Number(r.remaining_balance || 0) - applyAmt);
+          const newPayStatus = newRem <= 0.01 ? "paid" : "partial";
+          db.prepare(
+            `UPDATE ${tableName} SET paid_amount = ?, remaining_balance = ?, payment_status = ? WHERE id = ?`
+          ).run(newPaid, newRem, newPayStatus, r.id);
+          remainingToAllocate -= applyAmt;
+        }
+      };
+
+      allocateTable("travel_bookings");
+      allocateTable("travel_visas");
+      allocateTable("travel_hotels");
+
+      // 3. Update Safe balance if cash
+      if (method === "cash") {
+        const targetSafeId = Number(safe_id || 1);
+        try {
+          db.prepare("UPDATE safes SET balance = COALESCE(balance, 0) + ? WHERE id = ?").run(payAmount, targetSafeId);
+        } catch {}
+      }
+
+      // 4. Post Double Entry Journal (Debit Cash/Bank 11100/11120, Credit Customer Account)
+      const cashOrBankAccount = method === "cash" ? "11100" : "11120";
+      try {
+        createDoubleEntryJournal(
+          today,
+          `سداد دفعة من العميل: ${customer.name}`,
+          "customer_payment",
+          voucherId,
+          [
+            { account_code: cashOrBankAccount, debit: payAmount, credit: 0, description: `قبض نقدي/بنكي من ${customer.name}` },
+            { account_code: custAccountCode, debit: 0, credit: payAmount, description: `تسوية رصيد العميل ${customer.name}` }
+          ],
+          { currency: payCurrency, reference_no: reference || voucherNumber, doc_type: "سند قبض عميل" }
+        );
+      } catch (jErr) {
+        console.warn("Customer payment journal warning:", jErr);
+      }
+
+      return { voucherId, voucherNumber };
+    })();
+
+    try { syncCustomerAccounts(); } catch {}
+
+    res.status(201).json({
+      success: true,
+      id: txResult.voucherId,
+      voucher_number: txResult.voucherNumber,
+      amount: payAmount,
+      message: `تم تسجيل سند قبض بقيمة ${payAmount} بنجاح`
+    });
+  } catch (err: any) {
+    console.error("Error recording customer payment:", err);
+    res.status(500).json({ error: err.message || "فشل تسجيل دفعة العميل" });
+  }
 });
 
 export function getPartnerOfficeAccountCode(officeId: any): string {

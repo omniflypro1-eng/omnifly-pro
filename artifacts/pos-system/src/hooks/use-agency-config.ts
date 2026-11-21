@@ -4,7 +4,7 @@ export function useAgencyConfig() {
   const { data: globalSettings } = useQuery({
     queryKey: ["settings"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/settings", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -16,7 +16,7 @@ export function useAgencyConfig() {
   const { data: travelConfig } = useQuery({
     queryKey: ["travel-settings"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/travel/settings", {
         headers: { "Authorization": `Bearer ${token}` }
       });

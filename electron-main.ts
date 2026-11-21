@@ -1,7 +1,6 @@
 import { app as electronApp, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs";
-import expressApp from "./artifacts/api-server/src/app";
 
 // Handle print-silent IPC invocation
 ipcMain.handle("print-silent", async (event, printerName: string) => {
@@ -156,23 +155,25 @@ ipcMain.handle("open-external", async (event, url: string) => {
 // In production, set the environment variables before initializing the database
 const userDataPath = electronApp.getPath("userData");
 const dbPath = path.join(userDataPath, "pos.db");
+process.env.OMNIFLY_MODE = "local";
 process.env.DB_PATH = dbPath;
 
 // Set FRONTEND_DIST to the path where Vite builds the frontend
 const isDev = process.env.NODE_ENV === "development";
 const frontendDistPath = isDev
-  ? path.resolve(process.cwd(), "artifacts/pos-system/dist/public")
-  : path.join(electronApp.getAppPath(), "artifacts/pos-system/dist/public");
+  ? path.resolve(process.cwd(), "dist")
+  : path.join(electronApp.getAppPath(), "dist");
 
 process.env.FRONTEND_DIST = frontendDistPath;
 
 let mainWindow: BrowserWindow | null = null;
 let server: any = null;
 
-function startServer(port: number) {
+async function startServer(port: number) {
+  const { default: expressApp } = await import("./artifacts/api-server/src/app");
   return new Promise<void>((resolve, reject) => {
     server = expressApp.listen(port, "127.0.0.1", () => {
-      console.log(`Server started internally on port ${port}`);
+      console.log(`Server started internally in LOCAL Desktop mode on port ${port}`);
       resolve();
     });
     server.on("error", (err: any) => {

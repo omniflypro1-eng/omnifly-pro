@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, logAudit, syncSupplierAccounts, ensureTravelBusBookingsColumns } from "../lib/sqlite";
+import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, deleteDoubleEntryJournalBySource, logAudit, syncSupplierAccounts, ensureTravelBusBookingsColumns } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { getCustomerAccountCode, getSupplierAccountCode } from "./customers";
 import { syncJournalEntryForSource, buildTravelJournalLines } from "./travel";
@@ -578,7 +578,7 @@ router.delete("/travel/transports/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
   try {
-    deleteDoubleEntryJournal("transport", Number(req.params.id));
+    deleteDoubleEntryJournalBySource("transport", Number(req.params.id));
   } catch (err) {
     console.error("Error deleting transport journal entry:", err);
   }
@@ -1031,7 +1031,7 @@ router.delete("/travel/bus-bookings/:id", (req, res) => {
     const user = getAuthUser(req);
     if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
     try {
-      deleteDoubleEntryJournal("bus_booking", Number(req.params.id));
+      deleteDoubleEntryJournalBySource("bus_booking", Number(req.params.id));
     } catch (err) {
       console.error("Error deleting bus booking journal entry:", err);
     }
@@ -1332,7 +1332,7 @@ router.delete("/travel/insurances/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
   try {
-    deleteDoubleEntryJournal("insurance", Number(req.params.id));
+    deleteDoubleEntryJournalBySource("insurance", Number(req.params.id));
   } catch (err) {
     console.error("Error deleting insurance journal entry:", err);
   }
@@ -4225,6 +4225,142 @@ router.get("/travel/daily-operations", (req, res) => {
   } catch (e: any) {
     console.error("Critical error in /travel/daily-operations:", e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================================
+// MODULE: APPROVAL WORKFLOW & BRANCH SUMMARY
+// ============================================================================
+router.get("/travel/approvals", (req, res) => {
+  try {
+    const { status, type } = req.query as any;
+    let sql = "SELECT * FROM travel_approvals WHERE 1=1";
+    const params: any[] = [];
+    if (status) {
+      sql += " AND status = ?";
+      params.push(status);
+    }
+    if (type) {
+      sql += " AND request_type = ?";
+      params.push(type);
+    }
+    sql += " ORDER BY id DESC";
+    const rows = db.prepare(sql).all(...params);
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/travel/approvals", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  try {
+    const { request_type, entity_type, entity_id, customer_name, amount, currency, reason, details } = req.body || {};
+    if (!request_type) { res.status(400).json({ error: "نوع طلب الاعتماد مطلوب" }); return; }
+    const reqCode = `APR-${Date.now().toString().slice(-6)}`;
+    const r = db.prepare(`
+      INSERT INTO travel_approvals (
+        request_code, request_type, entity_type, entity_id,
+        requested_by_id, requested_by_name, customer_name, amount, currency, reason, details_json, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `).run(
+      reqCode, request_type, entity_type || null, entity_id || null,
+      user.id || null, user.name || "موظف", customer_name || null,
+      Number(amount || 0), currency || "SAR", reason || null,
+      details ? JSON.stringify(details) : null
+    );
+    const created = db.prepare("SELECT * FROM travel_approvals WHERE id = ?").get(r.lastInsertRowid);
+    res.status(201).json(created);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/travel/approvals/:id/review", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  try {
+    const { status, note } = req.body || {};
+    if (!["approved", "rejected"].includes(status)) {
+      res.status(400).json({ error: "الحالة يجب أن تكون approved أو rejected" });
+      return;
+    }
+    const existing = db.prepare("SELECT * FROM travel_approvals WHERE id = ?").get(req.params.id) as any;
+    if (!existing) { res.status(404).json({ error: "طلب الموافقة غير موجود" }); return; }
+
+    db.prepare(`
+      UPDATE travel_approvals SET
+        status = ?,
+        reviewed_by_id = ?,
+        reviewed_by_name = ?,
+        review_note = ?,
+        reviewed_at = datetime('now', 'localtime')
+      WHERE id = ?
+    `).run(status, user.id || null, user.name || "المدير", note || null, req.params.id);
+
+    logAudit(user.id, user.name, "مراجعة طلب اعتماد", `${existing.request_code}: ${status}`);
+    const updated = db.prepare("SELECT * FROM travel_approvals WHERE id = ?").get(req.params.id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/travel/branches/:id/summary", (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = db.prepare("SELECT * FROM branches WHERE id = ?").get(branchId) as any;
+    if (!branch) { res.status(404).json({ error: "الفرع غير موجود" }); return; }
+
+    let ticketsCount = 0;
+    let totalSales = 0;
+    let totalProfit = 0;
+    try {
+      const bStats = db.prepare(`
+        SELECT
+          COUNT(*) as cnt,
+          COALESCE(SUM(COALESCE(selling_price, 0)), 0) as sales_sum,
+          COALESCE(SUM(COALESCE(profit, 0)), 0) as profit_sum
+        FROM travel_bookings
+        WHERE (branch_id = ? OR (? = 1 AND branch_id IS NULL))
+      `).get(branchId, branchId) as any;
+      ticketsCount = Number(bStats?.cnt || 0);
+      totalSales = Number(bStats?.sales_sum || 0);
+      totalProfit = Number(bStats?.profit_sum || 0);
+    } catch {
+      try {
+        const bStats = db.prepare(`
+          SELECT COUNT(*) as cnt, COALESCE(SUM(COALESCE(selling_price, 0)), 0) as sales_sum, COALESCE(SUM(COALESCE(profit, 0)), 0) as profit_sum
+          FROM travel_bookings
+        `).get() as any;
+        if (branchId === 1) {
+          ticketsCount = Number(bStats?.cnt || 0);
+          totalSales = Number(bStats?.sales_sum || 0);
+          totalProfit = Number(bStats?.profit_sum || 0);
+        }
+      } catch {}
+    }
+
+    let safeBalance = 0;
+    try {
+      const sRow = db.prepare("SELECT COALESCE(SUM(COALESCE(balance, 0)), 0) as bal FROM safes WHERE branch_id = ? OR (? = 1 AND branch_id IS NULL)").get(branchId, branchId) as any;
+      safeBalance = Number(sRow?.bal || 0);
+    } catch {
+      const sRow = db.prepare("SELECT COALESCE(SUM(COALESCE(balance, 0)), 0) as bal FROM safes").get() as any;
+      if (branchId === 1) safeBalance = Number(sRow?.bal || 0);
+    }
+
+    res.json({
+      branch_id: branchId,
+      branch_name: branch.name,
+      tickets_count: ticketsCount,
+      total_sales: totalSales,
+      total_profit: totalProfit,
+      safe_balance: safeBalance
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

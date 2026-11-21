@@ -42,7 +42,7 @@ import {
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
 
 function fetchAuth(url: string) {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
   return fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
 }
 

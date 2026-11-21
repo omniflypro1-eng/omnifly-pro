@@ -210,7 +210,7 @@ export default function Pos() {
   const { data: employees = [] } = useQuery({
     queryKey: ["pos-employees-list"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const resp = await fetch("/api/hr/employees", {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -221,7 +221,7 @@ export default function Pos() {
   const { data: safes = [] } = useQuery({
     queryKey: ["safes-list"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const r = await fetch("/api/safes", {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -233,7 +233,7 @@ export default function Pos() {
   const { data: customers = [] } = useQuery({
     queryKey: ["customers-list"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const r = await fetch("/api/customers", {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -1277,7 +1277,7 @@ export default function Pos() {
     if (!empNumInput.trim()) return;
     setLookingUpEmp(true);
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const resp = await fetch(`/api/hr/employees/by-number/${encodeURIComponent(empNumInput.trim())}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1323,7 +1323,7 @@ export default function Pos() {
     }, {
       onSuccess: async (order) => {
         // تسجيل خصم الوجبة في سجل الموظف
-        const token = localStorage.getItem("pos_token") ?? "";
+        const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
         await fetch("/api/hr/meal-deductions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

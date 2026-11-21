@@ -111,6 +111,8 @@ export default function SyncCenterPage() {
   const [cloudUrlInput, setCloudUrlInput] = useState("");
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
   const [autoSyncInterval, setAutoSyncInterval] = useState("30");
+  const [linkUsername, setLinkUsername] = useState("");
+  const [linkPassword, setLinkPassword] = useState("");
   const [logFilter, setLogFilter] = useState<"all" | "success" | "failed" | "conflict">("all");
   const [activeConflict, setActiveConflict] = useState<any | null>(null);
   const [mergeSelection, setMergeSelection] = useState<Record<string, "cloud" | "local">>({});
@@ -179,6 +181,30 @@ export default function SyncCenterPage() {
     },
     onError: (e: any) => {
       toast({ variant: "destructive", title: "فشل حفظ الإعدادات", description: e.message });
+    },
+  });
+
+  const bootstrapLocalMut = useMutation({
+    mutationFn: () =>
+      apiPost("/api/sync/bootstrap-local", {
+        cloud_url: cloudUrlInput.trim(),
+        username: linkUsername.trim(),
+        password: linkPassword,
+      }),
+    onSuccess: (res) => {
+      setLinkPassword("");
+      qc.invalidateQueries({ queryKey: ["hybrid-sync-status"] });
+      qc.invalidateQueries({ queryKey: ["hybrid-sync-logs"] });
+      qc.invalidateQueries({ queryKey: ["hybrid-sync-conflicts"] });
+      toast({
+        title: "تم ربط النسخة المحلية بحساب السحابة بنجاح",
+        description: res.preservedLocalRecords
+          ? `تمت مزامنة السحابة والحفاظ على (${res.preservedLocalRecords}) سجل محلي مسجل مسبقاً.`
+          : "تم تنزيل البيانات السحابية وتفعيل المزامنة الثنائية.",
+      });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "فشل ربط النسخة المحلية بالسحابة", description: e.message });
     },
   });
 
@@ -329,6 +355,58 @@ export default function SyncCenterPage() {
               رفع التغييرات الآن
             </Button>
           </div>
+        )}
+
+        {syncStatus && !isLocalMode && syncStatus.pendingUploadsCount === 0 && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-center gap-2.5 text-xs text-emerald-950">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span className="font-bold">
+              أنت تعمل الآن على النسخة السحابية المباشرة — جميع العمليات تُحفظ مباشرة في قاعدة بيانات المؤسسة السحابية وتكون جاهزة لأي جهاز محلي مرتبط.
+            </span>
+          </div>
+        )}
+
+        {syncStatus && isLocalMode && !syncStatus.isBootstrapped && (
+          <Card className="border-blue-300 bg-blue-50/70 shadow-none">
+            <CardContent className="p-4 space-y-3">
+              <div className="text-xs font-black text-blue-950 flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-blue-700" />
+                <span>ربط هذه النسخة المحلية بحساب الوكالة السحابي (مع حفظ كافة البيانات المحلية المسجلة مسبقاً)</span>
+              </div>
+              <p className="text-[11px] text-blue-900 font-medium">
+                أدخل عنوان الخادم السحابي وبيانات دخول حساب الوكالة ليتم تنزيل بيانات السحابة ودمج ورفع أي معاملات محلية قمت بها بدون اتصال دون فقدان أي سجل.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end">
+                <Input
+                  value={cloudUrlInput}
+                  onChange={(e) => setCloudUrlInput(e.target.value)}
+                  placeholder="https://cloud.omniflypro.com"
+                  className="h-9 text-xs bg-white font-mono dir-ltr text-left"
+                />
+                <Input
+                  value={linkUsername}
+                  onChange={(e) => setLinkUsername(e.target.value)}
+                  placeholder="اسم مستخدم الوكالة"
+                  className="h-9 text-xs bg-white"
+                />
+                <Input
+                  type="password"
+                  value={linkPassword}
+                  onChange={(e) => setLinkPassword(e.target.value)}
+                  placeholder="كلمة المرور"
+                  className="h-9 text-xs bg-white"
+                />
+                <Button
+                  type="button"
+                  disabled={!cloudUrlInput.trim() || !linkUsername.trim() || !linkPassword || bootstrapLocalMut.isPending}
+                  onClick={() => bootstrapLocalMut.mutate()}
+                  className="h-9 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold"
+                >
+                  {bootstrapLocalMut.isPending ? "جاري الربط والمزامنة..." : "ربط ومزامنة الآن"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* 4 Clean KPI Cards (Tabular Numerals) */}

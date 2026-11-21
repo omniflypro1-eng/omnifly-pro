@@ -228,7 +228,7 @@ export default function TravelCommissionsPage() {
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/travel/commissions", {
         method: "POST",
         headers: {
@@ -276,7 +276,7 @@ export default function TravelCommissionsPage() {
     const due = Math.max(0, selectedComm.expected_amount - newReceived);
 
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch(`/api/travel/commissions/${selectedComm.id}`, {
         method: "PUT",
         headers: {
@@ -308,7 +308,7 @@ export default function TravelCommissionsPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("هل أنت أصلح في رغبتك بحذف هذا السجل؟")) return;
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch(`/api/travel/commissions/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }

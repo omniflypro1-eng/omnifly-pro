@@ -95,10 +95,13 @@ export default function TravelSuppliersPage() {
   });
 
   // Queries
+  const getToken = () => (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
   const { data: safesRaw } = useQuery({
-    queryKey: ["/api/accounting/safes"],
+    queryKey: ["/api/safes"],
     queryFn: async () => {
-      const res = await fetch("/api/accounting/safes");
+      const res = await fetch("/api/safes", {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
       return res.json();
     }
   });
@@ -107,7 +110,9 @@ export default function TravelSuppliersPage() {
   const { data: suppliersRaw, isLoading } = useQuery({
     queryKey: ["/api/travel/suppliers"],
     queryFn: async () => {
-      const res = await fetch("/api/travel/suppliers");
+      const res = await fetch("/api/travel/suppliers", {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
       return res.json();
     }
   });
@@ -132,7 +137,9 @@ export default function TravelSuppliersPage() {
     queryKey: ["/api/travel/suppliers", selectedSupplier?.id, "statement"],
     queryFn: async () => {
       if (!selectedSupplier?.id) return null;
-      const res = await fetch(`/api/travel/suppliers/${selectedSupplier.id}/statement`);
+      const res = await fetch(`/api/travel/suppliers/${selectedSupplier.id}/statement`, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
       return res.json();
     },
     enabled: !!selectedSupplier?.id
@@ -141,7 +148,7 @@ export default function TravelSuppliersPage() {
   // Mutations
   const createSupplierMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
       const res = await fetch("/api/travel/suppliers", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -159,7 +166,7 @@ export default function TravelSuppliersPage() {
 
   const paySupplierMutation = useMutation({
     mutationFn: async ({ suppId, payload }: { suppId: number; payload: any }) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
       const res = await fetch(`/api/travel/suppliers/${suppId}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

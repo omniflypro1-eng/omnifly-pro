@@ -99,7 +99,7 @@ export default function TravelDocumentsPage() {
     }
 
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const res = await fetch("/api/travel/documents", {
         method: "POST",
         headers: {
@@ -136,7 +136,7 @@ export default function TravelDocumentsPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("هل أنت تأكد من حذف هذا المستند؟")) return;
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const res = await fetch(`/api/travel/documents/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }

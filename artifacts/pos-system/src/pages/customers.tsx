@@ -10,7 +10,7 @@ import { printA4Html, generateStatementA4Html } from "@/lib/printUtils";
 import { dispatchWhatsApp } from "@/lib/whatsapp";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
   return fetch(url, {
     ...options,
     headers: {

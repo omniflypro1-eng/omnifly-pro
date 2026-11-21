@@ -1554,7 +1554,7 @@ export async function processPassengerWhatsAppDispatch(
   const whatsappWebUri = `https://api.whatsapp.com/send?phone=${phoneCheck.cleanPhone}&text=${encodedMsg}`;
 
   // 4. Try real API Gateway Dispatch if active (4WhatsApp / Meta Cloud API / HTTP Gateway)
-  let gatewayResult = { dispatched: false, gateway: "desktop_app", error: undefined as string | undefined };
+  let gatewayResult: { dispatched: boolean; gateway?: string; gatewayResponse?: any; error?: string } = { dispatched: false, gateway: "desktop_app", error: undefined };
   try {
     gatewayResult = await dispatchViaActiveGateways(phoneCheck.cleanPhone, messageText, docUrl, fileName, localFilePath);
   } catch (e) {}
@@ -4099,18 +4099,25 @@ router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Respo
           config.last_verification_error = verificationError;
         }
       } else {
-        verificationError = stateResult.error || "تعذر الوصول إلى سيرفر 4WhatsApp";
+        verificationError = stateResult.error || "تعذر الوصول إلى سيرفر 4WhatsApp مؤقتاً — تم الإبقاء على بيانات الربط المحفوظة";
         config.last_verification_error = verificationError;
+        config.account_linked = config.is_authenticated === 1 && config.session_status === "connected";
       }
     }
 
+    const hasSavedPassword = Boolean(config.password && String(config.password).trim());
+    const maskedConfig = {
+      ...config,
+      password: hasSavedPassword ? "••••••••" : "",
+      has_saved_password: hasSavedPassword,
+      server_verified: serverVerified,
+      verification_error: verificationError
+    };
+
     res.json({
       success: true,
-      config: {
-        ...config,
-        server_verified: serverVerified,
-        verification_error: verificationError
-      },
+      has_saved_password: hasSavedPassword,
+      config: maskedConfig,
       server_verified: serverVerified,
       verification_error: verificationError,
       linked: config.is_authenticated === 1 && config.session_status === "connected",
@@ -4126,17 +4133,19 @@ router.post("/travel/whatsapp/4whatsapp/check-status", async (req: Request, res:
   try {
     const dbConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
     const body = req.body || {};
+    const rawPasswordInput = body.password ? String(body.password).trim() : "";
+    const isPasswordMask = !rawPasswordInput || rawPasswordInput === "••••••••" || /^\*+$/.test(rawPasswordInput);
     const usingBodyOverrides = Boolean(
       (body.phone_number && String(body.phone_number).trim()) ||
-      (body.password && String(body.password).trim())
+      !isPasswordMask
     );
 
-    const rawPhone = usingBodyOverrides && body.phone_number
+    const rawPhone = body.phone_number && String(body.phone_number).trim()
       ? String(body.phone_number).trim()
       : (dbConfig?.phone_number || "");
-    const cCode = (usingBodyOverrides && body.country_code ? String(body.country_code).trim() : "") || dbConfig?.country_code || "967";
-    const effectivePassword = usingBodyOverrides && body.password
-      ? String(body.password).trim()
+    const cCode = (body.country_code ? String(body.country_code).trim() : "") || dbConfig?.country_code || "967";
+    const effectivePassword = !isPasswordMask
+      ? rawPasswordInput
       : (dbConfig?.password || "");
 
     if (!rawPhone || !effectivePassword) {
@@ -4219,8 +4228,10 @@ router.post(["/travel/whatsapp/4whatsapp/login", "/travel/whatsapp/4whatsapp/set
       ? String(username).trim()
       : (existingDbConfig?.username || "");
 
-    const effectivePassword = password && String(password).trim()
-      ? String(password).trim()
+    const rawPasswordInput = password ? String(password).trim() : "";
+    const isPasswordMask = !rawPasswordInput || rawPasswordInput === "••••••••" || /^\*+$/.test(rawPasswordInput);
+    const effectivePassword = !isPasswordMask
+      ? rawPasswordInput
       : (existingDbConfig?.password || "");
 
     const effectivePhone = phone_number && String(phone_number).trim()
@@ -4318,8 +4329,10 @@ router.post(["/travel/whatsapp/4whatsapp/login", "/travel/whatsapp/4whatsapp/set
 
     const updatedConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
 
+    const hasSavedPassword = Boolean(updatedConfig?.password && String(updatedConfig.password).trim());
     res.json({
       success: true,
+      has_saved_password: hasSavedPassword,
       message: targetStatus === "connected"
         ? `🟢 تم التحقق المباشر من سيرفر 4WhatsApp والاتصال بنجاح! (صلاحية الاشتراك: ${daysRemaining} يوماً)`
         : `🟡 تم التحقق المباشر من سيرفر 4WhatsApp وجلب رمز QR! امسح الرمز الآن من هاتفك للربط.`,
@@ -4329,6 +4342,8 @@ router.post(["/travel/whatsapp/4whatsapp/login", "/travel/whatsapp/4whatsapp/set
       days_remaining: daysRemaining,
       config: {
         ...updatedConfig,
+        password: hasSavedPassword ? "••••••••" : "",
+        has_saved_password: hasSavedPassword,
         server_verified: true,
         verification_error: ""
       },
@@ -4347,9 +4362,11 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
     const existingDbConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
     const { company_code, username, password, phone_number, country_code } = req.body || {};
 
+    const rawPassConfirm = password ? String(password).trim() : "";
+    const isPassConfirmMask = !rawPassConfirm || rawPassConfirm === "••••••••" || /^\*+$/.test(rawPassConfirm);
     const effectiveCompanyCode = company_code ? String(company_code).trim() : (existingDbConfig?.company_code || "");
     const effectiveUsername = username ? String(username).trim() : (existingDbConfig?.username || "");
-    const effectivePassword = password ? String(password).trim() : (existingDbConfig?.password || "");
+    const effectivePassword = !isPassConfirmMask ? rawPassConfirm : (existingDbConfig?.password || "");
     const cCode = String(country_code || existingDbConfig?.country_code || "967").replace(/\D/g, "") || "967";
     const rawPhone = phone_number ? String(phone_number).trim() : (existingDbConfig?.phone_number || "");
 
@@ -4439,14 +4456,18 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
 
     const config = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
 
+    const hasSavedPassword = Boolean(config?.password && String(config.password).trim());
     res.json({
       success: true,
+      has_saved_password: hasSavedPassword,
       server_verified: true,
       linked: true,
       days_remaining: stateResult.daysRemaining,
       message: `🟢 تم التحقق المباشر من سيرفر 4WhatsApp وتأكيد اتصال الرقم بنجاح! (${config.display_phone_number} — متبقي ${stateResult.daysRemaining} يوماً)`,
       config: {
         ...config,
+        password: hasSavedPassword ? "••••••••" : "",
+        has_saved_password: hasSavedPassword,
         server_verified: true,
         verification_error: ""
       }

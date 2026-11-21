@@ -130,7 +130,8 @@ export function WhatsAppGatewayTab({
       });
       return false;
     }
-    if (!String(fourWaForm.password || "").trim()) {
+    const hasPassOrSaved = Boolean(String(fourWaForm.password || "").trim()) || Boolean(fourWaData?.has_saved_password || fourWaData?.is_authenticated);
+    if (!hasPassOrSaved) {
       toast({
         title: "بيانات ناقصة",
         description: "يرجى إدخال الرمز السري (Token) للتحقق المباشر مع سيرفر 4WhatsApp.",
@@ -153,7 +154,7 @@ export function WhatsAppGatewayTab({
   const { data: automationConfig, isLoading: isLoadingConfig } = useQuery<any>({
     queryKey: ["travel-whatsapp-automation-config"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
       const res = await fetch("/api/travel/whatsapp/automation-config", {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -166,7 +167,7 @@ export function WhatsAppGatewayTab({
   const { data: passengers = [], isLoading: isLoadingPassengers } = useQuery<any[]>({
     queryKey: ["travel-passengers-preview"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
       const res = await fetch("/api/travel/passengers", {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -224,7 +225,7 @@ export function WhatsAppGatewayTab({
   // Mutation to save settings
   const saveSettingsMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
       const res = await fetch("/api/travel/whatsapp/automation-config", {
         method: "POST",
         headers: {

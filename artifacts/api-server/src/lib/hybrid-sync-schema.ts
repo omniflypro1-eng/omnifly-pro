@@ -299,6 +299,8 @@ export function initHybridCoreTables(targetDb: any, dbDir: string, defaultTenant
       max_devices INTEGER NOT NULL DEFAULT 5,
       allow_local_desktop INTEGER NOT NULL DEFAULT 1,
       offline_grace_hours INTEGER NOT NULL DEFAULT 72,
+      grace_days INTEGER NOT NULL DEFAULT 14,
+      retention_days_after_expiry INTEGER NOT NULL DEFAULT 30,
       enforce_clock_guard INTEGER NOT NULL DEFAULT 1,
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
@@ -496,6 +498,23 @@ export function initHybridCoreTables(targetDb: any, dbDir: string, defaultTenant
       .run(effectiveMode, effectiveCloudUrl || "", installationId, HYBRID_DB_VERSION);
   }
 
+  if (tableExists(targetDb, "cloud_tenants")) {
+    const tenantCols = getTableColumns(targetDb, "cloud_tenants");
+    if (!tenantCols.includes("grace_days")) {
+      try { targetDb.exec("ALTER TABLE cloud_tenants ADD COLUMN grace_days INTEGER NOT NULL DEFAULT 14"); } catch {}
+    }
+    if (!tenantCols.includes("retention_days_after_expiry")) {
+      try { targetDb.exec("ALTER TABLE cloud_tenants ADD COLUMN retention_days_after_expiry INTEGER NOT NULL DEFAULT 30"); } catch {}
+    }
+  }
+
+  // Ensure cloud-originating mutations never show up as "unsynced local offline changes"
+  try {
+    if (mode === "cloud") {
+      targetDb.exec("UPDATE sync_change_log SET synced = 1 WHERE synced = 0 AND (source_env = 'cloud' OR source_env IS NULL)");
+    }
+  } catch {}
+
   // Ensure users & user_tokens tables in master/tenant DB also carry tenant_id
   if (tableExists(targetDb, "users")) {
     const userCols = getTableColumns(targetDb, "users");
@@ -679,7 +698,7 @@ export function ensureSyncMetadataAndTriggers(
               ${newJsonExpr},
               COALESCE((SELECT source_env FROM sync_internal_guard WHERE id = 1), 'local'),
               COALESCE((SELECT installation_id FROM sync_internal_guard WHERE id = 1), ''),
-              0
+              CASE WHEN COALESCE((SELECT source_env FROM sync_internal_guard WHERE id = 1), 'local') = 'cloud' THEN 1 ELSE 0 END
             FROM "${tName}" t
             WHERE t.rowid = NEW.rowid;
           END;
@@ -711,7 +730,7 @@ export function ensureSyncMetadataAndTriggers(
               ${oldJsonExpr},
               COALESCE((SELECT source_env FROM sync_internal_guard WHERE id = 1), 'local'),
               COALESCE((SELECT installation_id FROM sync_internal_guard WHERE id = 1), ''),
-              0
+              CASE WHEN COALESCE((SELECT source_env FROM sync_internal_guard WHERE id = 1), 'local') = 'cloud' THEN 1 ELSE 0 END
             FROM "${tName}" t
             WHERE t.rowid = NEW.rowid;
           END;
@@ -737,7 +756,7 @@ export function ensureSyncMetadataAndTriggers(
               ${oldJsonExpr},
               COALESCE((SELECT source_env FROM sync_internal_guard WHERE id = 1), 'local'),
               COALESCE((SELECT installation_id FROM sync_internal_guard WHERE id = 1), ''),
-              0
+              CASE WHEN COALESCE((SELECT source_env FROM sync_internal_guard WHERE id = 1), 'local') = 'cloud' THEN 1 ELSE 0 END
             );
           END;
         `);

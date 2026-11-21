@@ -48,7 +48,7 @@ export default function DocumentPrintSettingsPage() {
 
   const handleSave = () => {
     setSaving(true);
-    const token = localStorage.getItem("pos_token") || "";
+    const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) || "";
     fetch("/api/document-print-settings", {
       method: "PUT",
       headers: {

@@ -104,7 +104,7 @@ export default function Products() {
 
   const loadRecipe = (pid: number) => {
     setIsLoadingRecipe(true);
-    const token = localStorage.getItem("pos_token") ?? "";
+    const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
     fetch(`/api/recipes/${pid}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -222,7 +222,7 @@ export default function Products() {
       return;
     }
 
-    const token = localStorage.getItem("pos_token") ?? "";
+    const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
     fetch("/api/recipes", {
       method: "POST",
       headers: { 
@@ -256,7 +256,7 @@ export default function Products() {
 
   const handleDeleteRecipeIngredient = (id: number) => {
     if (!selectedRecipeProductId) return;
-    const token = localStorage.getItem("pos_token") ?? "";
+    const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
     fetch(`/api/recipes/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` }
@@ -279,7 +279,7 @@ export default function Products() {
     }
 
     setIsProducing(true);
-    const token = localStorage.getItem("pos_token") ?? "";
+    const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
     fetch("/api/recipes/produce", {
       method: "POST",
       headers: {
@@ -352,7 +352,7 @@ export default function Products() {
   const [prodRecipes, setProdRecipes] = useState<any[]>([]);
   useEffect(() => {
     if (productionProductId) {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       fetch(`/api/recipes/${productionProductId}`, {
         headers: { Authorization: `Bearer ${token}` }
       })

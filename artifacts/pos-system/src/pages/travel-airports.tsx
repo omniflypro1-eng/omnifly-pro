@@ -89,7 +89,7 @@ export default function TravelAirportsPage() {
     }
 
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const url = editingId ? `/api/travel/airports/${editingId}` : "/api/travel/airports";
       const method = editingId ? "PUT" : "POST";
 
@@ -118,7 +118,7 @@ export default function TravelAirportsPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("هل أنت تأكد من حذف هذا المطار؟")) return;
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const res = await fetch(`/api/travel/airports/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }

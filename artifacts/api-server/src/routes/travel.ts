@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, syncSupplierAccounts, ensureTravelVisasColumns, ensureTravelHotelsColumns } from "../lib/sqlite";
+import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, deleteDoubleEntryJournalBySource, syncSupplierAccounts, ensureTravelVisasColumns, ensureTravelHotelsColumns } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { recordAuditLog } from "./audit";
 import { triggerTravelNotificationEvent, applyPassengerWhatsAppAutomation, getRequestOrigin } from "./travel-notifications";
@@ -1907,6 +1907,43 @@ router.post("/travel/hotels-db", (req, res) => {
   res.status(201).json(newHotel);
 });
 
+router.put("/travel/hotels-db/:id", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  const existing = db.prepare("SELECT * FROM travel_hotels_db WHERE id = ?").get(req.params.id) as any;
+  if (!existing) { res.status(404).json({ error: "الفندق غير موجود" }); return; }
+  const { name_ar, name_en, country, city, star_rating, address, phone, email, supplier_name, default_commission_percent, notes } = req.body || {};
+  db.prepare(`
+    UPDATE travel_hotels_db SET
+      name_ar = ?, name_en = ?, country = ?, city = ?, star_rating = ?,
+      address = ?, phone = ?, email = ?, supplier_name = ?,
+      default_commission_percent = ?, notes = ?
+    WHERE id = ?
+  `).run(
+    name_ar ?? existing.name_ar,
+    name_en !== undefined ? name_en : existing.name_en,
+    country ?? existing.country,
+    city ?? existing.city,
+    star_rating !== undefined ? Number(star_rating) : existing.star_rating,
+    address !== undefined ? address : existing.address,
+    phone !== undefined ? phone : existing.phone,
+    email !== undefined ? email : existing.email,
+    supplier_name !== undefined ? supplier_name : existing.supplier_name,
+    default_commission_percent !== undefined ? Number(default_commission_percent) : existing.default_commission_percent,
+    notes !== undefined ? notes : existing.notes,
+    req.params.id
+  );
+  const updated = db.prepare("SELECT * FROM travel_hotels_db WHERE id = ?").get(req.params.id);
+  res.json(updated);
+});
+
+router.delete("/travel/hotels-db/:id", (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  db.prepare("DELETE FROM travel_hotels_db WHERE id = ?").run(req.params.id);
+  res.status(204).send();
+});
+
 
 // ==========================================
 // 9. VISAS MANAGEMENT (التأشيرات المتطورة ونظام الطرفين)
@@ -2457,7 +2494,7 @@ router.delete("/travel/visas/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
   try {
-    deleteDoubleEntryJournal("visa", Number(req.params.id));
+    deleteDoubleEntryJournalBySource("visa", Number(req.params.id));
   } catch (err) {
     console.error("Error deleting visa journal entry:", err);
   }
@@ -3178,60 +3215,6 @@ router.get("/travel/hotels", (req, res) => {
   res.json(rows);
 });
 
-function ensureTravelHotelsColumns() {
-  try {
-    const cols = (db.prepare("PRAGMA table_info(travel_hotels)").all() as any[]).map(c => c.name);
-    const set = new Set(cols);
-    const required: [string, string][] = [
-      ["voucher_number", "TEXT"],
-      ["confirmation_number", "TEXT"],
-      ["hotel_db_id", "INTEGER"],
-      ["country", "TEXT"],
-      ["city", "TEXT"],
-      ["city_country", "TEXT"],
-      ["customer_name", "TEXT"],
-      ["guest_name", "TEXT"],
-      ["guest_phone", "TEXT"],
-      ["guest_passport", "TEXT"],
-      ["customer_days", "INTEGER DEFAULT 1"],
-      ["supplier_days", "INTEGER DEFAULT 1"],
-      ["customer_currency", "TEXT DEFAULT 'SAR'"],
-      ["supplier_currency", "TEXT DEFAULT 'SAR'"],
-      ["commission_currency", "TEXT DEFAULT 'SAR'"],
-      ["customer_statement", "TEXT"],
-      ["supplier_statement", "TEXT"],
-      ["commission_statement", "TEXT"],
-      ["commission", "REAL DEFAULT 0"],
-      ["profit", "REAL DEFAULT 0"],
-      ["rooms_count", "INTEGER DEFAULT 1"],
-      ["guests_count", "INTEGER DEFAULT 1"],
-      ["meal_plan", "TEXT DEFAULT 'إفطار شامل (Bed & Breakfast)'"],
-      ["payment_method", "TEXT DEFAULT 'cash'"],
-      ["payment_status", "TEXT DEFAULT 'paid'"],
-      ["paid_amount", "REAL DEFAULT 0"],
-      ["remaining_balance", "REAL DEFAULT 0"],
-      ["supplier_payment_method", "TEXT DEFAULT 'credit'"],
-      ["supplier_payment_status", "TEXT DEFAULT 'unpaid'"],
-      ["supplier_paid_amount", "REAL DEFAULT 0"],
-      ["supplier_remaining_balance", "REAL DEFAULT 0"],
-      ["supplier_office_id", "INTEGER"],
-      ["supplier_office_name", "TEXT"],
-      ["supplier_id", "INTEGER"],
-      ["supplier_name", "TEXT"],
-      ["issue_date", "TEXT"]
-    ];
-    for (const [col, colType] of required) {
-      if (!set.has(col)) {
-        try {
-          db.exec(`ALTER TABLE travel_hotels ADD COLUMN ${col} ${colType}`);
-        } catch {}
-      }
-    }
-  } catch (e) {
-    console.error("ensureTravelHotelsColumns warning:", e);
-  }
-}
-
 function formatArabicTravelError(err: any): string {
   const msg = String(err?.message || err || "");
   console.error("[Travel Arabic Error Handler]:", msg);
@@ -3522,7 +3505,7 @@ router.delete("/travel/hotels/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
   try {
-    deleteDoubleEntryJournal("hotel", Number(req.params.id));
+    deleteDoubleEntryJournalBySource("hotel", Number(req.params.id));
   } catch (err) {
     console.error("Error deleting hotel journal entry:", err);
   }

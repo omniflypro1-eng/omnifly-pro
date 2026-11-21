@@ -21,11 +21,46 @@ router.get("/branches", (req, res) => {
 router.post("/branches", (req, res) => {
   if (!requireAdmin(req, res)) return;
   const user = getAuthUser(req);
-  const { name, address, phone } = req.body;
+  const { name, code, address, phone, email, manager_name, active } = req.body;
   if (!name) { res.status(400).json({ error: "اسم الفرع مطلوب" }); return; }
-  const r = db.prepare("INSERT INTO branches (name, address, phone) VALUES (?,?,?)").run(name, address ?? null, phone ?? null);
+  const isActive = active === undefined ? 1 : (active ? 1 : 0);
+  const r = db.prepare(
+    "INSERT INTO branches (name, code, address, phone, email, manager_name, active) VALUES (?,?,?,?,?,?,?)"
+  ).run(name, code ?? null, address ?? null, phone ?? null, email ?? null, manager_name ?? null, isActive);
   logAudit(user.id, user.name, "إضافة فرع", `تم إضافة الفرع: ${name}`);
-  res.status(201).json({ id: r.lastInsertRowid, name, address, phone, active: 1 });
+  const created = db.prepare("SELECT * FROM branches WHERE id = ?").get(r.lastInsertRowid);
+  res.status(201).json(created);
+});
+
+router.put("/branches/:id", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const user = getAuthUser(req);
+  const existing = db.prepare("SELECT * FROM branches WHERE id = ?").get(req.params.id) as any;
+  if (!existing) { res.status(404).json({ error: "الفرع غير موجود" }); return; }
+  const { name, code, address, phone, email, manager_name, active } = req.body;
+  db.prepare(`
+    UPDATE branches SET
+      name = ?,
+      code = ?,
+      address = ?,
+      phone = ?,
+      email = ?,
+      manager_name = ?,
+      active = ?
+    WHERE id = ?
+  `).run(
+    name ?? existing.name,
+    code !== undefined ? code : existing.code,
+    address !== undefined ? address : existing.address,
+    phone !== undefined ? phone : existing.phone,
+    email !== undefined ? email : existing.email,
+    manager_name !== undefined ? manager_name : existing.manager_name,
+    active !== undefined ? (active ? 1 : 0) : existing.active,
+    req.params.id
+  );
+  logAudit(user.id, user.name, "تعديل فرع", `تم تعديل الفرع رقم ${req.params.id}`);
+  const updated = db.prepare("SELECT * FROM branches WHERE id = ?").get(req.params.id);
+  res.json(updated);
 });
 
 router.delete("/branches/:id", (req, res) => {

@@ -12,7 +12,7 @@ import {
 } from "recharts";
 
 function fetchWithAuth<T>(url: string): Promise<T> {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
   return fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
 }
 
@@ -77,7 +77,7 @@ export default function Dashboard() {
     }, {
       onSuccess: () => {
         // Also update default safe's currency
-        const token = localStorage.getItem("pos_token") ?? "";
+        const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
         fetch("/api/safes", { headers: { Authorization: `Bearer ${token}` } })
           .then(r => r.json())
           .then(safesList => {

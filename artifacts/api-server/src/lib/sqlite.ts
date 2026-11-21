@@ -2005,6 +2005,27 @@ function runMigrations() {
         user_name TEXT,
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
+
+      CREATE TABLE IF NOT EXISTS travel_approvals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_code TEXT UNIQUE,
+        request_type TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id INTEGER,
+        requested_by_id INTEGER REFERENCES users(id),
+        requested_by_name TEXT,
+        customer_name TEXT,
+        amount REAL DEFAULT 0,
+        currency TEXT DEFAULT 'SAR',
+        reason TEXT,
+        details_json TEXT,
+        status TEXT DEFAULT 'pending',
+        reviewed_by_id INTEGER REFERENCES users(id),
+        reviewed_by_name TEXT,
+        review_note TEXT,
+        reviewed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
+      );
     `);
   } catch (e) {
     console.error("Error running travel migrations:", e);
@@ -4423,7 +4444,10 @@ function runMigrations() {
     ["long", "TEXT"],
     ["city", "TEXT"],
     ["street", "TEXT"],
-    ["building", "TEXT"]
+    ["building", "TEXT"],
+    ["code", "TEXT"],
+    ["email", "TEXT"],
+    ["manager_name", "TEXT"]
   ];
   for (const [col, type] of branchCols) {
     try { db.exec(`ALTER TABLE branches ADD COLUMN ${col} ${type}`); } catch {}
@@ -6851,6 +6875,17 @@ export function deleteDoubleEntryJournal(entryId: number): void {
   // 2. Delete lines & entry
   db.prepare("DELETE FROM journal_entry_lines WHERE journal_entry_id = ?").run(entryId);
   db.prepare("DELETE FROM journal_entries WHERE id = ?").run(entryId);
+}
+
+export function deleteDoubleEntryJournalBySource(sourceType: string, sourceId: number): void {
+  const entries = db.prepare("SELECT id FROM journal_entries WHERE source_type = ? AND source_id = ?").all(sourceType, sourceId) as { id: number }[];
+  for (const entry of entries) {
+    try {
+      deleteDoubleEntryJournal(entry.id);
+    } catch (err) {
+      console.error(`Error deleting journal entry #${entry.id} for ${sourceType}:${sourceId}:`, err);
+    }
+  }
 }
 
 export function seedWorkReportsAndPDFData(): void {

@@ -109,7 +109,7 @@ export default function TravelAirlinesPage() {
     }
 
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const url = editingId ? `/api/travel/airlines/${editingId}` : "/api/travel/airlines";
       const method = editingId ? "PUT" : "POST";
 
@@ -138,7 +138,7 @@ export default function TravelAirlinesPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("هل أنت تأكد من حذف شركة الطيران؟")) return;
     try {
-      const token = localStorage.getItem("pos_token");
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null);
       const res = await fetch(`/api/travel/airlines/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }

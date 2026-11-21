@@ -80,6 +80,10 @@ export default function Login() {
   const [licenseModalTitle, setLicenseModalTitle] = useState("");
   const [licenseModalMessage, setLicenseModalMessage] = useState("");
   const [licenseModalType, setLicenseModalType] = useState<"expired" | "unauthorized" | "version_upgrade" | "generic">("generic");
+  const [licenseRetentionInfo, setLicenseRetentionInfo] = useState<{
+    retentionDaysLeft?: number | null;
+    warningMessage?: string;
+  } | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   
   // Quick in-modal device activation state
@@ -269,10 +273,21 @@ export default function Login() {
         setLicenseModalTitle(modalTitle);
         setLicenseModalMessage(msg);
         setLicenseModalType(modalType);
+        setLicenseRetentionInfo(
+          data?.retentionDaysLeft !== undefined || data?.warningMessage
+            ? {
+                retentionDaysLeft: data.retentionDaysLeft ?? null,
+                warningMessage: data.warningMessage || "",
+              }
+            : null
+        );
         setShowLicenseModal(true);
         return;
       }
 
+      if (data?.licenseStatus?.isGracePeriod || data?.licenseStatus?.isRetentionWarning) {
+        sessionStorage.removeItem("omni_expiry_popup_shown");
+      }
       login(data.token, data.user);
       toast({
         title: data.bootstrapped
@@ -280,7 +295,9 @@ export default function Login() {
           : data.offline
           ? "تم تسجيل الدخول بالوضع المحلي (بدون اتصال)"
           : "تم تسجيل الدخول بنجاح",
-        description: `أهلاً بك ${data.user?.name || data.user?.username || ""}`,
+        description:
+          data?.licenseStatus?.warningMessage ||
+          `أهلاً بك ${data.user?.name || data.user?.username || ""}`,
       });
       setLocation("/travel-dashboard");
     } catch (err: any) {
@@ -838,6 +855,19 @@ export default function Login() {
                   {licenseModalMessage || "يمنع منعاً باتاً استخدام أو نسخ ملفات النظام إلى هذا الجهاز دون ترخيص معتمد من المطور."}
                 </p>
               </div>
+
+              {(licenseModalType === "expired" || licenseRetentionInfo) && (
+                <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl p-3.5 text-xs font-bold leading-relaxed text-right space-y-1">
+                  <div>
+                    ✓ جميع بيانات مؤسستك ومعاملات العملاء والموردين محفوظة حالياً بالكامل ولن يتم حذفها أثناء فترة الاحتفاظ.
+                  </div>
+                  {typeof licenseRetentionInfo?.retentionDaysLeft === "number" && (
+                    <div className="text-red-700 font-black">
+                      ⚠️ سوف يتم حذف بيانات هذا الحساب بعد {licenseRetentionInfo.retentionDaysLeft} يوم إذا لم يتم التجديد. تواصل مع المطور للتجديد واستعادة الدخول فوراً.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Hardware Device Fingerprint Card */}
               <div className="bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 space-y-2 text-right">

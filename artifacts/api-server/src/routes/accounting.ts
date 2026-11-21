@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, syncSupplierAccounts } from "../lib/sqlite";
+import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, syncSupplierAccounts, syncCustomerAccounts } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { getSupplierAccountCode, getCustomerAccountCode } from "./customers";
 import { getBusinessDate, getSqlBusinessDateModifier } from "../lib/business-day";
@@ -3254,7 +3254,7 @@ router.get("/accounting/reports/income-statement", (req, res) => {
         e.source_id,
         COALESCE(cc.name, 'بدون مركز') as cost_center_name
       FROM journal_entry_lines l
-      JOIN journal_entries e ON e.id = l.entry_id
+      JOIN journal_entries e ON e.id = l.journal_entry_id
       JOIN accounts a ON a.code = l.account_code
       LEFT JOIN accounts ap ON ap.code = a.parent_code
       LEFT JOIN cost_centers cc ON cc.id = l.cost_center_id

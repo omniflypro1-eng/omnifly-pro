@@ -85,7 +85,7 @@ import { COUNTRY_CODES } from "@/constants/country-codes";
 export { COUNTRY_CODES };
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
   return fetch(url, {
     ...options,
     headers: {
@@ -548,6 +548,7 @@ ${agencyName}`
         ...prev,
         company_code: fourWaData.company_code || prev.company_code,
         username: fourWaData.username || prev.username,
+        password: fourWaData.has_saved_password ? (prev.password || "••••••••") : (fourWaData.password || prev.password),
         phone_number: fourWaData.phone_number?.replace(new RegExp(`^${fourWaData.country_code || '967'}`), '') || prev.phone_number,
         country_code: fourWaData.country_code || "967"
       }));

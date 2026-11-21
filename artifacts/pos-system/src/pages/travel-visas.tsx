@@ -18,7 +18,7 @@ import { generateTransactionA4Html, printA4Html } from "@/lib/printUtils";
 import { useAgencyConfig } from "@/hooks/use-agency-config";
 
 function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
   return fetch(url, {
     ...options,
     headers: {

@@ -271,6 +271,8 @@ router.post("/developer/tenants", (req, res) => {
     max_devices = 5,
     allow_local_desktop = true,
     offline_grace_hours = 72,
+    grace_days = 14,
+    retention_days_after_expiry = 30,
     admin_username,
     admin_password,
     admin_name,
@@ -303,14 +305,16 @@ router.post("/developer/tenants", (req, res) => {
   const startDate = license_start_date || new Date().toISOString().split("T")[0];
   const expDate = license_expires_at || "2027-12-31";
   const passHash = hashPassword(String(admin_password).trim());
+  const effGraceDays = Math.max(0, Number(grace_days ?? 14));
+  const effRetentionDays = Math.max(effGraceDays, Number(retention_days_after_expiry ?? 30));
 
   const insertRes = masterDb
     .prepare(
       `INSERT INTO cloud_tenants (
         tenant_code, company_name, package_name, subscription_status, license_status,
         license_key, license_start_date, license_expires_at, max_users, max_devices,
-        allow_local_desktop, offline_grace_hours, notes
-      ) VALUES (?, ?, ?, 'active', 'active', ?, ?, ?, ?, ?, ?, ?, ?)`
+        allow_local_desktop, offline_grace_hours, grace_days, retention_days_after_expiry, notes
+      ) VALUES (?, ?, ?, 'active', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       tenantCode,
@@ -323,6 +327,8 @@ router.post("/developer/tenants", (req, res) => {
       Math.max(1, Number(max_devices) || 5),
       allow_local_desktop ? 1 : 0,
       Math.max(1, Number(offline_grace_hours) || 72),
+      effGraceDays,
+      effRetentionDays,
       notes
     );
 
@@ -394,6 +400,8 @@ router.patch("/developer/tenants/:id", (req, res) => {
     max_devices,
     allow_local_desktop,
     offline_grace_hours,
+    grace_days,
+    retention_days_after_expiry,
     notes,
   } = req.body;
 
@@ -403,13 +411,18 @@ router.patch("/developer/tenants/:id", (req, res) => {
   const finalExpires = license_expires_at ?? existing.license_expires_at;
   const finalAllowLocal =
     allow_local_desktop !== undefined ? (allow_local_desktop ? 1 : 0) : existing.allow_local_desktop;
+  const nextGraceDays = grace_days !== undefined ? Math.max(0, Number(grace_days)) : Number(existing.grace_days ?? 14);
+  const nextRetentionDays = retention_days_after_expiry !== undefined
+    ? Math.max(nextGraceDays, Number(retention_days_after_expiry))
+    : Math.max(nextGraceDays, Number(existing.retention_days_after_expiry ?? 30));
 
   masterDb
     .prepare(
       `UPDATE cloud_tenants
        SET company_name = ?, package_name = ?, subscription_status = ?, license_status = ?,
            license_start_date = ?, license_expires_at = ?, max_users = ?, max_devices = ?,
-           allow_local_desktop = ?, offline_grace_hours = ?, notes = ?, updated_at = datetime('now', 'localtime')
+           allow_local_desktop = ?, offline_grace_hours = ?, grace_days = ?, retention_days_after_expiry = ?,
+           notes = ?, updated_at = datetime('now', 'localtime')
        WHERE id = ?`
     )
     .run(
@@ -423,6 +436,8 @@ router.patch("/developer/tenants/:id", (req, res) => {
       max_devices !== undefined ? Math.max(1, Number(max_devices)) : existing.max_devices,
       finalAllowLocal,
       offline_grace_hours !== undefined ? Math.max(1, Number(offline_grace_hours)) : existing.offline_grace_hours,
+      nextGraceDays,
+      nextRetentionDays,
       notes !== undefined ? notes : existing.notes,
       tenantId
     );
@@ -869,7 +884,7 @@ router.post("/cloud/auth/desktop-login", (req, res) => {
     dbVersion: db_version,
   });
 
-  if (!result.ok) {
+  if (result.ok === false) {
     return res.status(result.status).json({ error: result.error, code: result.code });
   }
 
@@ -888,7 +903,7 @@ router.post("/cloud/auth/desktop-login", (req, res) => {
 router.get("/cloud/ping", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
   const tDb = getTenantDb(verified.tenantId);
@@ -909,7 +924,7 @@ router.get("/cloud/ping", (req, res) => {
 router.post("/cloud/sync/bootstrap", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
 
@@ -925,7 +940,7 @@ router.post("/cloud/sync/bootstrap", (req, res) => {
 router.get("/cloud/sync/pull", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
 
@@ -939,7 +954,7 @@ router.get("/cloud/sync/pull", (req, res) => {
 router.post("/cloud/sync/push", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
 
@@ -955,7 +970,7 @@ router.post("/cloud/sync/push", (req, res) => {
 router.post("/cloud/conflicts/resolve-by-uuid", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
 
@@ -988,7 +1003,7 @@ router.post("/cloud/conflicts/resolve-by-uuid", (req, res) => {
 router.post("/cloud/files/upload", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
 
@@ -1015,7 +1030,7 @@ router.post("/cloud/files/upload", (req, res) => {
 router.get("/cloud/files/download", (req, res) => {
   const token = String(req.headers["x-sync-token"] || "");
   const verified = verifyCloudDeviceToken(token);
-  if (!verified.ok) {
+  if (verified.ok === false) {
     return res.status(verified.status).json({ error: verified.error, code: verified.code });
   }
 
@@ -1042,9 +1057,8 @@ router.get("/sync/status", (req, res) => {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: "غير مصرح" });
 
-  const summary = getLocalSyncStatusSummary();
-  const tenantId = Number(user.tenant_id || summary.tenantId || 1);
-  const targetDb = isLocalDesktopMode() ? masterDb : getTenantDb(tenantId);
+  const tenantId = Number(user.tenant_id || 1);
+  const summary = getLocalSyncStatusSummary(tenantId);
 
   const installations = masterDb
     .prepare(
@@ -1056,18 +1070,9 @@ router.get("/sync/status", (req, res) => {
     )
     .all(tenantId);
 
-  let activeConflictsCount = summary.unresolvedConflictsCount;
-  let activeLogs = summary.recentLogs;
-  if (!isLocalDesktopMode() && tenantId > 1) {
-    activeConflictsCount = (targetDb.prepare("SELECT COUNT(*) as c FROM sync_conflicts WHERE status = 'pending'").get() as any)?.c || 0;
-    activeLogs = targetDb.prepare("SELECT * FROM sync_logs ORDER BY id DESC LIMIT 25").all();
-  }
-
   res.json({
     ...summary,
     tenantId,
-    unresolvedConflictsCount: activeConflictsCount,
-    recentLogs: activeLogs,
     installations,
     currentSystemDeviceId: getSystemDeviceId(),
     currentVersion: CURRENT_SYSTEM_VERSION,
@@ -1078,6 +1083,7 @@ router.post("/sync/now", async (req, res) => {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: "غير مصرح" });
 
+  const tenantId = Number(user.tenant_id || 1);
   if (!isLocalDesktopMode()) {
     return res.json({
       ok: true,
@@ -1086,7 +1092,7 @@ router.post("/sync/now", async (req, res) => {
       downloadedCount: 0,
       filesSynced: 0,
       conflictsCount: 0,
-      summary: getLocalSyncStatusSummary(),
+      summary: getLocalSyncStatusSummary(tenantId),
       message: "أنت تعمل حالياً مباشرة على النسخة السحابية (Cloud Version).",
     });
   }
@@ -1099,6 +1105,7 @@ router.post("/sync/configure", (req, res) => {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: "غير مصرح" });
 
+  const tenantId = Number(user.tenant_id || 1);
   const { cloud_server_url, auto_sync_enabled, auto_sync_interval_sec, mode } = req.body || {};
   const cfg = masterDb.prepare("SELECT * FROM sync_runtime_config WHERE id = 1").get() as any;
 
@@ -1122,7 +1129,7 @@ router.post("/sync/configure", (req, res) => {
     )
     .run(nextUrl, nextAuto, nextInterval, nextMode);
 
-  res.json({ ok: true, summary: getLocalSyncStatusSummary() });
+  res.json({ ok: true, summary: getLocalSyncStatusSummary(tenantId) });
 });
 
 router.get("/sync/config-public", (req, res) => {
@@ -1184,6 +1191,9 @@ router.post("/sync/bootstrap-local", async (req, res) => {
     tenant: loginJson.tenant,
     user: loginJson.user,
   });
+
+  // Immediately upload any pre-existing offline local operations preserved during bootstrap
+  await runBidirectionalSync("manual").catch(() => {});
 
   res.json({ ok: true, summary: getLocalSyncStatusSummary() });
 });

@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 
 function fetchAuth(url: string, opts: RequestInit = {}) {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
   return fetch(url, { 
     ...opts, 
     headers: { 

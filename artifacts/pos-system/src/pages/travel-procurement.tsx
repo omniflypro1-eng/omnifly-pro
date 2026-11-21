@@ -246,7 +246,7 @@ export default function TravelProcurementPage() {
   const { data: accountsList = [] } = useQuery({
     queryKey: ["accounts-list"],
     queryFn: async () => {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const res = await fetch("/api/accounting/accounts", { headers: { Authorization: `Bearer ${token}` } });
       return res.json().catch(() => []);
     }
@@ -761,7 +761,7 @@ export default function TravelProcurementPage() {
   // Save Payment Voucher
   const handleSavePayment = async () => {
     try {
-      const token = localStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
       const payload = {
         voucher_no: `PV-${Date.now().toString().slice(-6)}`,
         voucher_date: new Date().toISOString().slice(0, 10),

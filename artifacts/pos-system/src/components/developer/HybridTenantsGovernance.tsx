@@ -135,6 +135,8 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
   const [tMaxUsers, setTMaxUsers] = useState("50");
   const [tMaxDevices, setTMaxDevices] = useState("10");
   const [tOfflineHours, setTOfflineHours] = useState("168");
+  const [tGraceDays, setTGraceDays] = useState("14");
+  const [tRetentionDays, setTRetentionDays] = useState("30");
   const [tAllowLocal, setTAllowLocal] = useState(true);
   const [tAdminUser, setTAdminUser] = useState("");
   const [tAdminName, setTAdminName] = useState("");
@@ -156,6 +158,8 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
   const [editMaxUsers, setEditMaxUsers] = useState("25");
   const [editMaxDevices, setEditMaxDevices] = useState("5");
   const [editOfflineHours, setEditOfflineHours] = useState("72");
+  const [editGraceDays, setEditGraceDays] = useState("14");
+  const [editRetentionDays, setEditRetentionDays] = useState("30");
   const [editAllowLocal, setEditAllowLocal] = useState(true);
   const [editNotes, setEditNotes] = useState("");
 
@@ -210,6 +214,8 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
     setEditMaxUsers(String(t.max_users ?? 25));
     setEditMaxDevices(String(t.max_devices ?? 5));
     setEditOfflineHours(String(t.offline_grace_hours ?? 72));
+    setEditGraceDays(String(t.grace_days ?? 14));
+    setEditRetentionDays(String(t.retention_days_after_expiry ?? 30));
     setEditAllowLocal(Boolean(t.allow_local_desktop));
     setEditNotes(t.notes || "");
     setResetTargetUsername(null);
@@ -240,6 +246,8 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
           max_devices: Number(tMaxDevices) || 5,
           allow_local_desktop: tAllowLocal,
           offline_grace_hours: Number(tOfflineHours) || 72,
+          grace_days: Math.max(0, Number(tGraceDays) || 0),
+          retention_days_after_expiry: Math.max(1, Number(tRetentionDays) || 30),
           admin_username: tAdminUser.trim(),
           admin_name: tAdminName.trim() || undefined,
           admin_password: tAdminPass,
@@ -778,7 +786,27 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
                         className="h-9 text-xs bg-white font-mono tabular-nums"
                       />
                     </div>
-                    <div className="sm:col-span-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">مهلة السماح بعد الانتهاء (يوم)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={tGraceDays}
+                        onChange={(e) => setTGraceDays(e.target.value)}
+                        className="h-9 text-xs bg-white font-mono tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">الاحتفاظ بالبيانات بعد الانتهاء (يوم)</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={tRetentionDays}
+                        onChange={(e) => setTRetentionDays(e.target.value)}
+                        className="h-9 text-xs bg-white font-mono tabular-nums"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-4">
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">ملاحظات العقد / المطور</label>
                       <Input
                         value={tNotes}
@@ -957,6 +985,11 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
                                     }`}
                                   >
                                     {remDays < 0 ? `منتهي منذ ${Math.abs(remDays)} يوم` : `متبقي ${remDays} يوم`}
+                                  </div>
+                                )}
+                                {t.effective_policy?.isRetentionWarning && (
+                                  <div className="text-[10px] font-bold text-orange-700 mt-0.5">
+                                    البيانات محفوظة · مهلة الحذف: {t.effective_policy?.retentionDaysLeft ?? 0} يوم
                                   </div>
                                 )}
                               </td>
@@ -1513,6 +1546,30 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
                               className="h-9 text-xs font-mono tabular-nums"
                             />
                           </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              مهلة السماح بعد الانتهاء (يوم)
+                            </label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={editGraceDays}
+                              onChange={(e) => setEditGraceDays(e.target.value)}
+                              className="h-9 text-xs font-mono tabular-nums"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              الاحتفاظ بالبيانات بعد الانتهاء (يوم)
+                            </label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={editRetentionDays}
+                              onChange={(e) => setEditRetentionDays(e.target.value)}
+                              className="h-9 text-xs font-mono tabular-nums"
+                            />
+                          </div>
                         </div>
 
                         <div>
@@ -1553,6 +1610,8 @@ export function HybridTenantsGovernance({ isDeveloper }: { isDeveloper: boolean 
                                   max_users: Number(editMaxUsers) || 1,
                                   max_devices: Number(editMaxDevices) || 1,
                                   offline_grace_hours: Number(editOfflineHours) || 72,
+                                  grace_days: Math.max(0, Number(editGraceDays) || 0),
+                                  retention_days_after_expiry: Math.max(1, Number(editRetentionDays) || 30),
                                   allow_local_desktop: editAllowLocal,
                                   notes: editNotes,
                                 },

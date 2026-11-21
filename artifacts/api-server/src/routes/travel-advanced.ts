@@ -27,7 +27,7 @@ function generateZatcaTLV(seller: string, vatNo: string, timestamp: string, tota
 // 1️⃣ IATA NDC PROTOCOLS & DIRECT AIRLINE APIs
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/ndc/gateways", (req: Request, res: Response) => {
+router.get("/travel/ndc/gateways", (req: Request, res: Response) => {
   try {
     const gateways = db.prepare("SELECT * FROM travel_ndc_gateways ORDER BY id ASC").all();
     res.json({ success: true, data: gateways });
@@ -36,7 +36,7 @@ router.get("/api/travel/ndc/gateways", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/ndc/gateways", (req: Request, res: Response) => {
+router.post("/travel/ndc/gateways", (req: Request, res: Response) => {
   try {
     const { provider_name, airline_code, api_endpoint, ndc_version, auth_type, client_id, client_secret, fee_discount_pct } = req.body;
     if (!provider_name || !airline_code || !api_endpoint) {
@@ -53,7 +53,7 @@ router.post("/api/travel/ndc/gateways", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/ndc/gateways/:id/test", (req: Request, res: Response) => {
+router.post("/travel/ndc/gateways/:id/test", (req: Request, res: Response) => {
   try {
     const gateway = db.prepare("SELECT * FROM travel_ndc_gateways WHERE id = ?").get(req.params.id) as any;
     if (!gateway) return res.status(404).json({ success: false, error: "بوابة NDC غير موجودة" });
@@ -74,7 +74,7 @@ router.post("/api/travel/ndc/gateways/:id/test", (req: Request, res: Response) =
   }
 });
 
-router.get("/api/travel/ndc/offers", (req: Request, res: Response) => {
+router.get("/travel/ndc/offers", (req: Request, res: Response) => {
   try {
     const { origin, destination, airline } = req.query;
     let sql = "SELECT * FROM travel_ndc_offers WHERE status = 'available'";
@@ -105,7 +105,7 @@ router.get("/api/travel/ndc/offers", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/ndc/offers/search", (req: Request, res: Response) => {
+router.post("/travel/ndc/offers/search", (req: Request, res: Response) => {
   try {
     const { origin, destination, departure_date, cabin_class, passengers_count } = req.body;
     
@@ -129,7 +129,7 @@ router.post("/api/travel/ndc/offers/search", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/ndc/book", (req: Request, res: Response) => {
+router.post("/travel/ndc/book", (req: Request, res: Response) => {
   try {
     const { offer_id, passenger_name, passport_no, selected_ancillaries, payment_method } = req.body;
     const offer = db.prepare("SELECT * FROM travel_ndc_offers WHERE offer_id = ?").get(offer_id) as any;
@@ -194,7 +194,7 @@ router.post("/api/travel/ndc/book", (req: Request, res: Response) => {
 // 2️⃣ AIR / MIR / BFM AUTOMATIC FILE LISTENER SERVICE
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/air-mir/listeners", (req: Request, res: Response) => {
+router.get("/travel/air-mir/listeners", (req: Request, res: Response) => {
   try {
     const listeners = db.prepare("SELECT * FROM travel_air_mir_listeners ORDER BY id ASC").all();
     res.json({ success: true, data: listeners });
@@ -203,7 +203,7 @@ router.get("/api/travel/air-mir/listeners", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/air-mir/listeners/:id/toggle", (req: Request, res: Response) => {
+router.post("/travel/air-mir/listeners/:id/toggle", (req: Request, res: Response) => {
   try {
     const listener = db.prepare("SELECT * FROM travel_air_mir_listeners WHERE id = ?").get(req.params.id) as any;
     if (!listener) return res.status(404).json({ success: false, error: "خدمة الاستماع غير موجودة" });
@@ -217,7 +217,7 @@ router.post("/api/travel/air-mir/listeners/:id/toggle", (req: Request, res: Resp
   }
 });
 
-router.get("/api/travel/air-mir/files", (req: Request, res: Response) => {
+router.get("/travel/air-mir/files", (req: Request, res: Response) => {
   try {
     const files = db.prepare("SELECT * FROM travel_air_mir_files ORDER BY id DESC LIMIT 50").all().map((f: any) => ({
       ...f,
@@ -229,7 +229,7 @@ router.get("/api/travel/air-mir/files", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/air-mir/upload", (req: Request, res: Response) => {
+router.post("/travel/air-mir/upload", (req: Request, res: Response) => {
   try {
     const { raw_content, file_name, file_type } = req.body;
     if (!raw_content) {
@@ -284,7 +284,7 @@ router.post("/api/travel/air-mir/upload", (req: Request, res: Response) => {
 // 3️⃣ MULTI-SUPPLIER HOTEL AGGREGATORS & DYNAMIC MARKUP
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/hotel-aggregators", (req: Request, res: Response) => {
+router.get("/travel/hotel-aggregators", (req: Request, res: Response) => {
   try {
     const aggregators = db.prepare("SELECT * FROM travel_hotel_aggregators ORDER BY id ASC").all();
     res.json({ success: true, data: aggregators });
@@ -293,7 +293,7 @@ router.get("/api/travel/hotel-aggregators", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/hotel-aggregators/:id/test", (req: Request, res: Response) => {
+router.post("/travel/hotel-aggregators/:id/test", (req: Request, res: Response) => {
   try {
     const agg = db.prepare("SELECT * FROM travel_hotel_aggregators WHERE id = ?").get(req.params.id) as any;
     if (!agg) return res.status(404).json({ success: false, error: "المزود غير موجود" });
@@ -315,7 +315,7 @@ router.post("/api/travel/hotel-aggregators/:id/test", (req: Request, res: Respon
   }
 });
 
-router.post("/api/travel/hotel-aggregators/search", (req: Request, res: Response) => {
+router.post("/travel/hotel-aggregators/search", (req: Request, res: Response) => {
   try {
     const { city, check_in, check_out, guests, channel } = req.body;
     const targetChannel = channel || "b2c_web";
@@ -410,7 +410,7 @@ router.post("/api/travel/hotel-aggregators/search", (req: Request, res: Response
   }
 });
 
-router.get("/api/travel/markup-rules", (req: Request, res: Response) => {
+router.get("/travel/markup-rules", (req: Request, res: Response) => {
   try {
     const rules = db.prepare("SELECT * FROM travel_markup_rules ORDER BY priority DESC, id ASC").all();
     res.json({ success: true, data: rules });
@@ -419,7 +419,7 @@ router.get("/api/travel/markup-rules", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/markup-rules", (req: Request, res: Response) => {
+router.post("/travel/markup-rules", (req: Request, res: Response) => {
   try {
     const { rule_name, channel, service_type, destination_country, airline_or_chain, markup_type, markup_value, discount_value, priority, notes } = req.body;
     if (!rule_name || markup_value === undefined) {
@@ -440,7 +440,7 @@ router.post("/api/travel/markup-rules", (req: Request, res: Response) => {
   }
 });
 
-router.delete("/api/travel/markup-rules/:id", (req: Request, res: Response) => {
+router.delete("/travel/markup-rules/:id", (req: Request, res: Response) => {
   try {
     db.prepare("DELETE FROM travel_markup_rules WHERE id = ?").run(req.params.id);
     res.json({ success: true, message: "تم حذف قاعدة التسعير" });
@@ -453,16 +453,40 @@ router.delete("/api/travel/markup-rules/:id", (req: Request, res: Response) => {
 // 4️⃣ CHARTER & FLIGHT/HOTEL BLOCK ALLOTMENTS
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/charter-blocks", (req: Request, res: Response) => {
+router.get("/travel/charter-blocks", (_req: Request, res: Response) => {
   try {
-    const blocks = db.prepare("SELECT * FROM travel_charter_blocks ORDER BY id DESC").all();
+    const blocks = db.prepare("SELECT * FROM travel_charter_blocks ORDER BY id DESC").all().map((b: any) => {
+      const totalSeats = Number(b.total_seats_contracted || 0);
+      const soldSeats = Number(b.seats_sold || 0);
+      const costPerSeat = Number(b.buy_rate_per_seat || 0);
+      const sellPerSeat = Number(b.sell_rate_per_seat || 0);
+      const breakEvenSeats = Number(b.break_even_seats || 0);
+      const occupancyPct = totalSeats > 0 ? Math.round((soldSeats / totalSeats) * 100) : 0;
+      const breakEvenPct = totalSeats > 0 ? Math.round((breakEvenSeats / totalSeats) * 100) : 0;
+      const totalRevenue = soldSeats * sellPerSeat;
+      const totalProfit = totalRevenue - (totalSeats * costPerSeat);
+      return {
+        ...b,
+        flight_number: b.flight_no,
+        departure_date: b.travel_date,
+        total_seats: totalSeats,
+        sold_seats: soldSeats,
+        cost_per_seat: costPerSeat,
+        selling_price_per_seat: sellPerSeat,
+        break_even_pct: breakEvenPct,
+        occupancy_pct: occupancyPct,
+        is_profitable: soldSeats >= breakEvenSeats,
+        total_revenue: totalRevenue,
+        total_profit: totalProfit
+      };
+    });
     res.json({ success: true, data: blocks });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post("/api/travel/charter-blocks", (req: Request, res: Response) => {
+router.post("/travel/charter-blocks", (req: Request, res: Response) => {
   try {
     const {
       block_code, block_name, flight_no, airline_code, origin, destination,
@@ -497,7 +521,7 @@ router.post("/api/travel/charter-blocks", (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/travel/charter-blocks/:id/allocations", (req: Request, res: Response) => {
+router.get("/travel/charter-blocks/:id/allocations", (req: Request, res: Response) => {
   try {
     const allocations = db.prepare("SELECT * FROM travel_charter_allocations WHERE block_id = ? ORDER BY id DESC").all(req.params.id);
     res.json({ success: true, data: allocations });
@@ -506,7 +530,7 @@ router.get("/api/travel/charter-blocks/:id/allocations", (req: Request, res: Res
   }
 });
 
-router.post("/api/travel/charter-blocks/:id/allocations", (req: Request, res: Response) => {
+router.post("/travel/charter-blocks/:id/allocations", (req: Request, res: Response) => {
   try {
     const { agent_or_client_name, seats_allocated, price_per_seat, deposit_paid } = req.body;
     const blockId = req.params.id;
@@ -538,16 +562,65 @@ router.post("/api/travel/charter-blocks/:id/allocations", (req: Request, res: Re
   }
 });
 
-router.get("/api/travel/hotel-allotments", (req: Request, res: Response) => {
+router.post("/travel/charter-blocks/:id/sell", (req: Request, res: Response) => {
   try {
-    const allotments = db.prepare("SELECT * FROM travel_hotel_allotments ORDER BY id DESC").all();
+    const seatsCount = Number(req.body?.seats_count || req.body?.seats_allocated || 1);
+    const blockId = req.params.id;
+    const block = db.prepare("SELECT * FROM travel_charter_blocks WHERE id = ?").get(blockId) as any;
+    if (!block) return res.status(404).json({ success: false, error: "البلوك غير موجود" });
+    if (seatsCount <= 0 || seatsCount > Number(block.seats_available || 0)) {
+      return res.status(400).json({ success: false, error: `المقاعد المتاحة لا تكفي (${block.seats_available} مقعد متبقي فقط)` });
+    }
+    db.prepare(`
+      INSERT INTO travel_charter_allocations (block_id, agent_or_client_name, seats_allocated, seats_confirmed, price_per_seat, deposit_paid, status)
+      VALUES (?, ?, ?, ?, ?, 0, 'confirmed')
+    `).run(blockId, req.body?.agent_or_client_name || "مبيعات مباشرة", seatsCount, seatsCount, block.sell_rate_per_seat);
+
+    const newSold = Number(block.seats_sold || 0) + seatsCount;
+    const newAvail = Number(block.seats_available || 0) - seatsCount;
+    const newLoadFactor = Math.round((newSold / Number(block.total_seats_contracted || 1)) * 100 * 10) / 10;
+    db.prepare("UPDATE travel_charter_blocks SET seats_sold = ?, seats_available = ?, load_factor_pct = ? WHERE id = ?")
+      .run(newSold, newAvail, newLoadFactor, blockId);
+
+    res.json({ success: true, message: `تم تخصيص وبيع ${seatsCount} مقعد بنجاح من البلوك ${block.block_code}` });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get("/travel/hotel-allotments", (_req: Request, res: Response) => {
+  try {
+    const allotments = db.prepare("SELECT * FROM travel_hotel_allotments ORDER BY id DESC").all().map((a: any) => {
+      const contracted = Number(a.total_rooms_contracted || 0);
+      const sold = Number(a.rooms_sold || 0);
+      const releaseDate = a.auto_release_date ? new Date(a.auto_release_date) : new Date();
+      const daysUntilRelease = Math.max(0, Math.ceil((releaseDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+      const occupancyPct = contracted > 0 ? Math.round((sold / contracted) * 100) : 0;
+      return {
+        ...a,
+        allotment_code: a.contract_code,
+        city: a.destination_city,
+        room_category: a.room_type,
+        valid_from: a.check_in_start,
+        valid_to: a.check_out_end,
+        contracted_rooms: contracted,
+        sold_rooms: sold,
+        release_days: a.auto_release_days,
+        release_deadline: a.auto_release_date,
+        cost_per_night: a.buy_rate_per_night,
+        sell_per_night: a.sell_rate_per_night,
+        unsold_risk_rooms: Math.max(0, contracted - sold),
+        days_until_release: daysUntilRelease,
+        occupancy_pct: occupancyPct
+      };
+    });
     res.json({ success: true, data: allotments });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post("/api/travel/hotel-allotments", (req: Request, res: Response) => {
+router.post("/travel/hotel-allotments", (req: Request, res: Response) => {
   try {
     const {
       contract_code, hotel_name, destination_city, check_in_start, check_out_end,
@@ -579,7 +652,25 @@ router.post("/api/travel/hotel-allotments", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/hotel-allotments/:id/release", (req: Request, res: Response) => {
+router.post("/travel/hotel-allotments/:id/sell", (req: Request, res: Response) => {
+  try {
+    const roomsCount = Number(req.body?.rooms_count || 1);
+    const allotment = db.prepare("SELECT * FROM travel_hotel_allotments WHERE id = ?").get(req.params.id) as any;
+    if (!allotment) return res.status(404).json({ success: false, error: "عقد البلوك الفندقي غير موجود" });
+    if (roomsCount <= 0 || roomsCount > Number(allotment.rooms_available || 0)) {
+      return res.status(400).json({ success: false, error: `الغرف المتاحة لا تكفي (${allotment.rooms_available} غرفة متبقية فقط)` });
+    }
+    const newSold = Number(allotment.rooms_sold || 0) + roomsCount;
+    const newAvail = Number(allotment.rooms_available || 0) - roomsCount;
+    db.prepare("UPDATE travel_hotel_allotments SET rooms_sold = ?, rooms_available = ? WHERE id = ?")
+      .run(newSold, newAvail, req.params.id);
+    res.json({ success: true, message: `تم حجز وتثبيت ${roomsCount} غرفة فندقية من البلوك بنجاح` });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post("/travel/hotel-allotments/:id/release", (req: Request, res: Response) => {
   try {
     const allotment = db.prepare("SELECT * FROM travel_hotel_allotments WHERE id = ?").get(req.params.id) as any;
     if (!allotment) return res.status(404).json({ success: false, error: "عقد البلوك الفندقي غير موجود" });
@@ -600,37 +691,58 @@ router.post("/api/travel/hotel-allotments/:id/release", (req: Request, res: Resp
 // 5️⃣ ZATCA PHASE 2 E-INVOICING & MULTI-CURRENCY FX ENGINE
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/zatca/invoices", (req: Request, res: Response) => {
+router.get("/travel/zatca/invoices", (_req: Request, res: Response) => {
   try {
-    const invoices = db.prepare("SELECT * FROM travel_zatca_invoices ORDER BY id DESC").all();
+    const invoices = db.prepare("SELECT * FROM travel_zatca_invoices ORDER BY id DESC").all().map((inv: any) => ({
+      ...inv,
+      invoice_date: inv.issue_date,
+      customer_name: inv.buyer_name,
+      customer_tax_number: inv.buyer_vat_no,
+      tax_treatment: inv.travel_tax_mode === "agent_commission_only" || inv.travel_tax_mode === "commission_only" ? "commission_only" : "full_principal_value",
+      ticket_or_hotel_value: inv.grand_total,
+      agency_commission: inv.total_taxable_amount,
+      taxable_base: inv.total_taxable_amount,
+      vat_rate_pct: inv.vat_rate || 15,
+      zatca_uuid: inv.uuid,
+      zatca_hash: inv.invoice_hash,
+      qr_code_tlv: inv.qr_code_tlv_base64
+    }));
     res.json({ success: true, data: invoices });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post("/api/travel/zatca/generate", (req: Request, res: Response) => {
+router.post(["/travel/zatca/generate", "/travel/zatca/generate-invoice"], (req: Request, res: Response) => {
   try {
     const {
-      buyer_name, buyer_vat_no, total_amount, travel_tax_mode, invoice_type
-    } = req.body;
+      invoice_number,
+      buyer_name, customer_name,
+      buyer_vat_no, customer_tax_number,
+      total_amount, ticket_or_hotel_value,
+      travel_tax_mode, tax_treatment,
+      agency_commission,
+      invoice_type
+    } = req.body || {};
 
-    const invNum = "INV-ZATCA-" + Date.now().toString().slice(-6);
+    const invNum = invoice_number || ("INV-ZATCA-" + Date.now().toString().slice(-6));
     const issueDate = new Date().toISOString().slice(0, 10);
     const issueTime = new Date().toTimeString().slice(0, 8);
     const sellerName = "شركة أومني فلاي العالمية للسفريات والسياحة";
     const sellerVat = "300123456700003";
 
-    const taxMode = travel_tax_mode || "agent_commission_only";
-    const totalNum = Number(total_amount) || 1500;
-    
-    // In agent commission mode: VAT is 15% only on service markup (e.g. 10% fee)
+    const rawMode = travel_tax_mode || tax_treatment || "agent_commission_only";
+    const taxMode = rawMode === "commission_only" ? "agent_commission_only" : rawMode;
+    const totalNum = Number(total_amount ?? ticket_or_hotel_value) || 1500;
+    const customerLabel = buyer_name || customer_name || "عميل سفر معتمد";
+    const customerVat = buyer_vat_no || customer_tax_number || null;
+
     let taxableAmount = totalNum;
     let vatAmount = totalNum * 0.15;
     let grandTotal = totalNum + vatAmount;
 
     if (taxMode === "agent_commission_only") {
-      const commissionFee = 150.0;
+      const commissionFee = Number(agency_commission || 150);
       taxableAmount = commissionFee;
       vatAmount = commissionFee * 0.15;
       grandTotal = totalNum + vatAmount;
@@ -648,7 +760,7 @@ router.post("/api/travel/zatca/generate", (req: Request, res: Response) => {
   <cbc:UUID>${uuid}</cbc:UUID>
   <cbc:IssueDate>${issueDate}</cbc:IssueDate>
   <cbc:IssueTime>${issueTime}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode name="0100000">${invoice_type === "simplified_tax" ? "388" : "388"}</cbc:InvoiceTypeCode>
+  <cbc:InvoiceTypeCode name="0100000">388</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>SAR</cbc:DocumentCurrencyCode>
   <cac:AccountingSupplierParty>
     <cac:Party>
@@ -679,7 +791,7 @@ router.post("/api/travel/zatca/generate", (req: Request, res: Response) => {
 
     const result = stmt.run(
       invNum, invoice_type || "standard_tax", taxMode, issueDate, issueTime,
-      sellerName, sellerVat, buyer_name || "عميل سفر معتمد", buyer_vat_no || null,
+      sellerName, sellerVat, customerLabel, customerVat,
       taxableAmount, vatAmount, grandTotal,
       uuid, invoiceHash, cryptoStamp, tlvQR, ublXml
     );
@@ -691,6 +803,7 @@ router.post("/api/travel/zatca/generate", (req: Request, res: Response) => {
         invoice_number: invNum,
         uuid,
         qr_code_tlv_base64: tlvQR,
+        qr_code_tlv: tlvQR,
         cryptographic_stamp: cryptoStamp,
         tax_mode: taxMode,
         taxable_amount: taxableAmount,
@@ -705,16 +818,25 @@ router.post("/api/travel/zatca/generate", (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/travel/fx/rates", (req: Request, res: Response) => {
+router.get(["/travel/fx/rates", "/travel/fx-rates"], (_req: Request, res: Response) => {
   try {
-    const rates = db.prepare("SELECT * FROM travel_fx_rates ORDER BY id ASC").all();
+    const rates = db.prepare("SELECT * FROM travel_fx_rates ORDER BY id ASC").all().map((r: any) => ({
+      ...r,
+      currency_code: r.target_currency || r.currency_code || "USD",
+      currency_name: r.currency_name || r.target_currency || "USD",
+      buy_rate: Number(r.rate || 1),
+      sell_rate: Number((Number(r.rate || 1) * 1.005).toFixed(4)),
+      official_mid_rate: Number(r.rate || 1),
+      is_base_currency: r.target_currency === "SAR" ? 1 : 0,
+      updated_at: r.last_updated
+    }));
     res.json({ success: true, data: rates });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post("/api/travel/fx/rates/update", (req: Request, res: Response) => {
+router.post("/travel/fx/rates/update", (req: Request, res: Response) => {
   try {
     const { target_currency, rate, inverse_rate } = req.body;
     if (!target_currency || !rate) {
@@ -730,7 +852,7 @@ router.post("/api/travel/fx/rates/update", (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/travel/fx/revaluations", (req: Request, res: Response) => {
+router.get("/travel/fx/revaluations", (_req: Request, res: Response) => {
   try {
     const revs = db.prepare("SELECT * FROM travel_fx_revaluations ORDER BY id DESC").all();
     res.json({ success: true, data: revs });
@@ -739,25 +861,30 @@ router.get("/api/travel/fx/revaluations", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/fx/revaluate", (req: Request, res: Response) => {
+router.post("/travel/fx/revaluate", (req: Request, res: Response) => {
   try {
-    const { account_name, currency, foreign_balance, old_rate, new_rate } = req.body;
-    const oldAmount = Number(foreign_balance) * Number(old_rate);
-    const newAmount = Number(foreign_balance) * Number(new_rate);
+    const body = req.body || {};
+    const accountName = body.account_name || "حساب الموردين بالعملة الأجنبية (USD)";
+    const currency = body.currency || "USD";
+    const foreignBalance = Number(body.foreign_balance ?? 10000);
+    const oldRate = Number(body.old_rate ?? 3.74);
+    const newRate = Number(body.new_rate ?? 3.75);
+    const oldAmount = foreignBalance * oldRate;
+    const newAmount = foreignBalance * newRate;
     const gainLoss = newAmount - oldAmount;
 
     const stmt = db.prepare(`
       INSERT INTO travel_fx_revaluations (revaluation_date, account_name, currency, foreign_balance, old_rate, new_rate, local_amount_old, local_amount_new, gain_loss_amount, is_posted, created_by)
       VALUES (datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?, ?, 1, 'مدير الحسابات والعملات')
     `);
-    stmt.run(account_name || "حساب موردين خارجي (USD)", currency || "USD", foreign_balance, old_rate, new_rate, oldAmount, newAmount, gainLoss);
+    stmt.run(accountName, currency, foreignBalance, oldRate, newRate, oldAmount, newAmount, gainLoss);
 
     res.json({
       success: true,
       data: {
-        account_name,
+        account_name: accountName,
         currency,
-        foreign_balance,
+        foreign_balance: foreignBalance,
         gain_loss_amount: gainLoss,
         nature: gainLoss >= 0 ? "أرباح فروق أسعار صرف (دائن)" : "خسائر فروق أسعار صرف (مدين)"
       },
@@ -772,25 +899,50 @@ router.post("/api/travel/fx/revaluate", (req: Request, res: Response) => {
 // 6️⃣ VIRTUAL CREDIT CARDS (VCC) & SETTLEMENT
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/vcc/cards", (req: Request, res: Response) => {
+router.get("/travel/vcc/cards", (_req: Request, res: Response) => {
   try {
-    const cards = db.prepare("SELECT * FROM travel_vcc_cards ORDER BY id DESC").all();
+    const cards = db.prepare("SELECT * FROM travel_vcc_cards ORDER BY id DESC").all().map((c: any) => ({
+      ...c,
+      provider: c.issuer_gateway || "MasterCard B2B",
+      masked_pan: c.card_number_masked,
+      max_limit: Number(c.credit_limit || 0),
+      spent_amount: Number(c.amount_charged || 0),
+      remaining_balance: Number(c.balance_available ?? c.credit_limit ?? 0),
+      merchant_category_lock: c.mcc_restriction || "all_travel",
+      supplier_name: c.card_holder_name || "مورد طيران/فنادق",
+      booking_reference: c.card_token,
+      purpose: c.notes || "سداد حجوزات B2B",
+      valid_until: c.expiration_date
+    }));
     res.json({ success: true, data: cards });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post("/api/travel/vcc/cards/generate", (req: Request, res: Response) => {
+router.post(["/travel/vcc/cards/generate", "/travel/vcc/generate"], (req: Request, res: Response) => {
   try {
-    const { card_holder_name, currency, credit_limit, issuer_gateway, card_type, mcc_restriction, notes } = req.body;
-    if (!credit_limit) {
+    const {
+      card_holder_name, supplier_name,
+      currency,
+      credit_limit, amount,
+      issuer_gateway, provider,
+      card_type,
+      mcc_restriction, merchant_category_lock,
+      purpose, notes
+    } = req.body || {};
+
+    const limitVal = Number(credit_limit ?? amount);
+    if (!limitVal || limitVal <= 0) {
       return res.status(400).json({ success: false, error: "حد الرصيد الائتماني للبطاقة مطلوب" });
     }
 
-    const token = "VCC-" + (issuer_gateway || "CONF").substring(0, 4).toUpperCase() + "-" + Date.now().toString().slice(-6);
+    const gateway = issuer_gateway || provider || "conferma";
+    const holder = card_holder_name || supplier_name || "OMNIFLY TRAVEL B2B VCC";
+    const mcc = mcc_restriction || merchant_category_lock || "all_travel";
+    const token = "VCC-" + String(gateway).substring(0, 4).toUpperCase() + "-" + Date.now().toString().slice(-6);
     const last4 = Math.floor(1000 + Math.random() * 9000);
-    const masked = (issuer_gateway === "wex" ? "4111" : "5425") + " •••• •••• " + last4;
+    const masked = (String(gateway).toLowerCase().includes("wex") ? "4111" : "5425") + " •••• •••• " + last4;
     const cvv = String(Math.floor(100 + Math.random() * 900));
 
     const today = new Date();
@@ -806,21 +958,24 @@ router.post("/api/travel/vcc/cards/generate", (req: Request, res: Response) => {
     `);
 
     const result = stmt.run(
-      token, masked, card_holder_name || "OMNIFLY TRAVEL B2B VCC", cvv,
-      currency || "USD", credit_limit, credit_limit,
-      issuer_gateway || "conferma", card_type || "single_use",
-      mcc_restriction || "all_travel", today.toISOString().slice(0, 10),
-      expiryDate.toISOString().slice(0, 10), notes || null
+      token, masked, holder, cvv,
+      currency || "USD", limitVal, limitVal,
+      gateway, card_type || "single_use",
+      mcc, today.toISOString().slice(0, 10),
+      expiryDate.toISOString().slice(0, 10), purpose || notes || null
     );
 
     res.json({
       success: true,
       id: result.lastInsertRowid,
       data: {
+        id: result.lastInsertRowid,
         card_token: token,
         card_number_masked: masked,
+        masked_pan: masked,
         cvv,
-        credit_limit,
+        credit_limit: limitVal,
+        max_limit: limitVal,
         currency: currency || "USD",
         status: "active"
       },
@@ -831,7 +986,41 @@ router.post("/api/travel/vcc/cards/generate", (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/travel/vcc/cards/:id/cancel", (req: Request, res: Response) => {
+router.post("/travel/vcc/cards/:id/settle", (req: Request, res: Response) => {
+  try {
+    const amount = Number(req.body?.amount || 0);
+    const merchant = req.body?.merchant || "Travel Supplier Settlement";
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, error: "مبلغ التسوية يجب أن يكون أكبر من الصفر" });
+    }
+    const card = db.prepare("SELECT * FROM travel_vcc_cards WHERE id = ?").get(req.params.id) as any;
+    if (!card) return res.status(404).json({ success: false, error: "البطاقة غير موجودة" });
+    if (card.status === "cancelled") {
+      return res.status(400).json({ success: false, error: "البطاقة ملغاة ولا يمكن الخصم منها" });
+    }
+    const avail = Number(card.balance_available || 0);
+    if (amount > avail) {
+      return res.status(400).json({ success: false, error: `الرصيد المتاح (${avail}) أقل من مبلغ التسوية المطلوب` });
+    }
+
+    const newCharged = Number(card.amount_charged || 0) + amount;
+    const newAvail = avail - amount;
+    const newStatus = newAvail <= 0 ? "exhausted" : card.status;
+    db.prepare("UPDATE travel_vcc_cards SET amount_charged = ?, balance_available = ?, status = ? WHERE id = ?")
+      .run(newCharged, newAvail, newStatus, req.params.id);
+
+    db.prepare(`
+      INSERT INTO travel_vcc_transactions (vcc_id, transaction_ref, merchant_name, merchant_category_code, amount, currency, auth_code, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'settled')
+    `).run(req.params.id, `TX-VCC-${Date.now().toString().slice(-6)}`, merchant, card.mcc_restriction || "4511", amount, card.currency || "USD", `AUTH-${Date.now().toString().slice(-6)}`);
+
+    res.json({ success: true, message: `تم خصم وتسوية ${amount} ${card.currency} بنجاح` });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post("/travel/vcc/cards/:id/cancel", (req: Request, res: Response) => {
   try {
     db.prepare("UPDATE travel_vcc_cards SET status = 'cancelled' WHERE id = ?").run(req.params.id);
     res.json({ success: true, message: "تم إلغاء البطاقة الافتراضية وحظر أي حركات خصم مستقبلية" });
@@ -840,7 +1029,7 @@ router.post("/api/travel/vcc/cards/:id/cancel", (req: Request, res: Response) =>
   }
 });
 
-router.get("/api/travel/vcc/transactions", (req: Request, res: Response) => {
+router.get("/travel/vcc/transactions", (_req: Request, res: Response) => {
   try {
     const txs = db.prepare(`
       SELECT t.*, c.card_token, c.card_number_masked, c.issuer_gateway
@@ -858,51 +1047,69 @@ router.get("/api/travel/vcc/transactions", (req: Request, res: Response) => {
 // 7️⃣ AI SMART ITINERARY GENERATOR & DAY-BY-DAY PLANNER
 // ─────────────────────────────────────────────────────────────
 
-router.get("/api/travel/itineraries", (req: Request, res: Response) => {
+function hydrateItineraryRecord(it: any) {
+  const daysRows = db.prepare("SELECT * FROM travel_itinerary_days WHERE itinerary_id = ? ORDER BY day_number ASC").all(it.id) as any[];
+  const highlights = it.highlights_json ? JSON.parse(it.highlights_json) : [];
+  const dailyPlans = daysRows.map((d: any) => ({
+    ...d,
+    title: d.day_title,
+    city: it.destination_city || it.destination_country,
+    highlights: []
+  }));
+  const travelersCount = Number(it.travelers_count || 2);
+  const totalPrice = Number(it.base_price || 0);
+  return {
+    ...it,
+    destination: it.destination_city || it.destination_country,
+    travelers_count: travelersCount,
+    budget_tier: it.budget_tier || "فاخر 5 نجوم",
+    target_customer_name: it.target_audience || "عميل VIP",
+    daily_plans: dailyPlans,
+    days: daysRows,
+    estimated_cost_per_person: travelersCount > 0 ? Math.round(totalPrice / travelersCount) : totalPrice,
+    agency_markup_pct: 15,
+    total_price: totalPrice,
+    proposal_pdf_url: it.qr_code_url || "",
+    highlights,
+    inclusions: it.inclusions_json ? JSON.parse(it.inclusions_json) : [],
+    exclusions: it.exclusions_json ? JSON.parse(it.exclusions_json) : []
+  };
+}
+
+router.get("/travel/itineraries", (_req: Request, res: Response) => {
   try {
-    const itineraries = db.prepare("SELECT * FROM travel_smart_itineraries ORDER BY id DESC").all().map((it: any) => ({
-      ...it,
-      highlights: it.highlights_json ? JSON.parse(it.highlights_json) : [],
-      inclusions: it.inclusions_json ? JSON.parse(it.inclusions_json) : [],
-      exclusions: it.exclusions_json ? JSON.parse(it.exclusions_json) : []
-    }));
+    const itineraries = db.prepare("SELECT * FROM travel_smart_itineraries ORDER BY id DESC").all().map(hydrateItineraryRecord);
     res.json({ success: true, data: itineraries });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.get("/api/travel/itineraries/:id", (req: Request, res: Response) => {
+router.get("/travel/itineraries/:id", (req: Request, res: Response) => {
   try {
     const itinerary = db.prepare("SELECT * FROM travel_smart_itineraries WHERE id = ?").get(req.params.id) as any;
     if (!itinerary) return res.status(404).json({ success: false, error: "البرنامج السياحي غير موجود" });
-
-    const days = db.prepare("SELECT * FROM travel_itinerary_days WHERE itinerary_id = ? ORDER BY day_number ASC").all(req.params.id);
-
-    res.json({
-      success: true,
-      data: {
-        ...itinerary,
-        highlights: itinerary.highlights_json ? JSON.parse(itinerary.highlights_json) : [],
-        inclusions: itinerary.inclusions_json ? JSON.parse(itinerary.inclusions_json) : [],
-        exclusions: itinerary.exclusions_json ? JSON.parse(itinerary.exclusions_json) : [],
-        days
-      }
-    });
+    res.json({ success: true, data: hydrateItineraryRecord(itinerary) });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post("/api/travel/itineraries/ai-generate", (req: Request, res: Response) => {
+router.post(["/travel/itineraries/ai-generate", "/travel/itineraries/generate"], (req: Request, res: Response) => {
   try {
-    const { destination, days_count, theme, target_budget } = req.body;
+    const {
+      destination,
+      days_count, duration_days,
+      theme,
+      target_budget,
+      target_customer_name
+    } = req.body || {};
     const dest = destination || "جورجيا (تبليسي وباتومي)";
-    const days = Number(days_count) || 7;
-    const nights = days - 1;
+    const days = Number(days_count ?? duration_days) || 7;
+    const nights = Math.max(1, days - 1);
     const price = Number(target_budget) || (days * 650);
 
-    const title = `برنامج ${dest} الاستثنائي (${days} أيام / ${nights} ليالي) - ${theme === "honeymoon" ? "شهر العسل" : "باقة العائلة الفاخرة"}`;
+    const title = `برنامج ${dest} الاستثنائي (${days} أيام / ${nights} ليالي) - ${theme === "honeymoon" ? "شهر العسل" : (theme || "باقة العائلة الفاخرة")}`;
     const overview = `برنامج سياحي متكامل ومصمم بالذكاء الاصطناعي لوكالة أومني فلاي لاستكشاف أهم المعالم التاريخية والطبيعية في ${dest} مع توفير أرقى مستويات الراحة والفنادق والخدمات الخاصة.`;
 
     const highlights = [
@@ -931,11 +1138,11 @@ router.post("/api/travel/itineraries/ai-generate", (req: Request, res: Response)
         title, destination_country, destination_city, duration_days, duration_nights,
         theme, target_audience, base_price, currency, status, overview,
         highlights_json, inclusions_json, exclusions_json, hero_image_url, qr_code_url
-      ) VALUES (?, ?, ?, ?, ?, ?, 'أفراد وعائلات VIP', ?, 'SAR', 'published', ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SAR', 'published', ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
-      title, dest, dest, days, nights, theme || "family", price, overview,
+      title, dest, dest, days, nights, theme || "family", target_customer_name || "أفراد وعائلات VIP", price, overview,
       JSON.stringify(highlights), JSON.stringify(inclusions), JSON.stringify(exclusions),
       "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200",
       `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://omnifly.sa/itineraries/${encodeURIComponent(dest)}`
@@ -943,7 +1150,6 @@ router.post("/api/travel/itineraries/ai-generate", (req: Request, res: Response)
 
     const itinId = Number(result.lastInsertRowid);
 
-    // Insert sample generated days
     const insDay = db.prepare(`
       INSERT INTO travel_itinerary_days (itinerary_id, day_number, day_title, morning_activity, afternoon_activity, evening_activity, hotel_name, meals_included, transport_type, photo_url, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -975,9 +1181,11 @@ router.post("/api/travel/itineraries/ai-generate", (req: Request, res: Response)
       );
     }
 
+    const createdItin = db.prepare("SELECT * FROM travel_smart_itineraries WHERE id = ?").get(itinId);
     res.json({
       success: true,
       id: itinId,
+      data: hydrateItineraryRecord(createdItin),
       message: `تم توليد البرنامج السياحي الاحترافي لـ ${dest} بنجاح عبر المساعد الذكي!`
     });
   } catch (error: any) {

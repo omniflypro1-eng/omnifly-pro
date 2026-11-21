@@ -28,7 +28,7 @@ import { PrintHeader } from "@/components/print-header";
 import { AccountImportModal } from "@/components/accounting/AccountImportModal";
 
 function fetchAuth(url: string, opts: RequestInit = {}) {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) ?? "";
   return fetch(url, { ...opts, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(opts.headers ?? {}) } });
 }
 async function apiGet(url: string) { const r = await fetchAuth(url); if (!r.ok) throw new Error(await r.text()); return r.json(); }
@@ -946,7 +946,7 @@ export default function Accounting() {
   });
 
   const deleteVoucherMutation = useMutation({
-    mutationFn: (id: any) => fetch(`/api/accounting/vouchers/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${localStorage.getItem("pos_token") || ""}` } }),
+    mutationFn: (id: any) => fetch(`/api/accounting/vouchers/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${(typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : null) || ""}` } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/accounting/vouchers"] });
       toast({ title: "تم حذف السند بنجاح" });

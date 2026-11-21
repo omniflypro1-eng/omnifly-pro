@@ -29,6 +29,8 @@ export interface OfflineLicenseSnapshot {
   maxDevices: number;
   allowLocalDesktop: boolean;
   offlineGraceHours: number;
+  graceDays?: number;
+  retentionDaysAfterExpiry?: number;
   lastServerContactMs: number;
   maxMonotonicEpochMs: number;
   installationId: string;
@@ -146,8 +148,11 @@ export function persistInstallationFileMetadata(
 export function verifyOfflineLicensePolicy(snapshot: OfflineLicenseSnapshot | null): {
   allowed: boolean;
   reason?: string;
-  code?: "license_expired" | "license_suspended" | "offline_grace_exceeded" | "clock_tampered" | "local_disabled" | "license_required";
+  code?: "license_expired" | "license_suspended" | "license_not_started" | "offline_grace_exceeded" | "clock_tampered" | "local_disabled" | "license_required";
   remainingDays?: number;
+  isGracePeriod?: boolean;
+  isRetentionWarning?: boolean;
+  retentionDaysLeft?: number;
   clockTampered?: boolean;
   updatedSnapshot?: OfflineLicenseSnapshot;
 } {
@@ -171,7 +176,7 @@ export function verifyOfflineLicensePolicy(snapshot: OfflineLicenseSnapshot | nu
     return {
       allowed: false,
       code: "license_suspended",
-      reason: "تم تعليق اشتراك المؤسسة من قِبل المطور."
+      reason: "تم تعليق اشتراك المؤسسة من قِبل المطور. جميع بياناتك محفوظة بأمان، يرجى التواصل مع المطور لإعادة التفعيل."
     };
   }
 
@@ -191,12 +196,29 @@ export function verifyOfflineLicensePolicy(snapshot: OfflineLicenseSnapshot | nu
     maxMonotonicEpochMs: Math.max(snapshot.maxMonotonicEpochMs || 0, nowMs),
   };
 
+  if (snapshot.licenseStartDate) {
+    const startDt = new Date(`${snapshot.licenseStartDate}T00:00:00`);
+    if (!Number.isNaN(startDt.getTime()) && nowMs < startDt.getTime()) {
+      return {
+        allowed: false,
+        code: "license_not_started",
+        updatedSnapshot,
+        reason: `لم يبدأ سريان ترخيص هذه المؤسسة بعد (تاريخ البداية: ${snapshot.licenseStartDate}). يرجى التواصل مع المطور أو مراجعة تاريخ البداية.`
+      };
+    }
+  }
+
+  const graceDays = Math.max(0, Number(snapshot.graceDays ?? 14));
+  const retentionDays = Math.max(graceDays, Number(snapshot.retentionDaysAfterExpiry ?? 30));
+
   if (snapshot.subscriptionStatus === "expired" || snapshot.licenseStatus === "expired") {
     return {
       allowed: false,
       code: "license_expired",
+      isRetentionWarning: true,
+      retentionDaysLeft: retentionDays,
       updatedSnapshot,
-      reason: `انتهى اشتراك وترخيص المؤسسة بتاريخ (${snapshot.licenseExpiresAt}). يرجى التجديد عبر المطور.`
+      reason: `انتهى اشتراك وترخيص المؤسسة بتاريخ (${snapshot.licenseExpiresAt}). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDays} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة حالياً بأمان، يرجى التواصل مع المطور للتجديد.`
     };
   }
 
@@ -205,13 +227,28 @@ export function verifyOfflineLicensePolicy(snapshot: OfflineLicenseSnapshot | nu
     if (!Number.isNaN(exp.getTime())) {
       const diffDays = Math.ceil((exp.getTime() - nowMs) / (1000 * 60 * 60 * 24));
       if (diffDays < 0 || exp.getTime() < nowMs) {
-        return {
-          allowed: false,
-          code: "license_expired",
-          updatedSnapshot,
-          remainingDays: diffDays,
-          reason: `انتهت فترة صلاحية الترخيص بتاريخ (${snapshot.licenseExpiresAt}). تم حفظ جميع بياناتك بأمان ولن يُحذف أي سجل، يرجى التواصل مع المطور لتجديد الاشتراك.`
-        };
+        const retentionDaysLeft = Math.max(1, retentionDays + diffDays);
+        if (diffDays >= -graceDays) {
+          return {
+            allowed: true,
+            updatedSnapshot,
+            remainingDays: diffDays,
+            isGracePeriod: true,
+            isRetentionWarning: true,
+            retentionDaysLeft,
+            reason: `تنبيه هام: انتهت صلاحية الترخيص بتاريخ (${snapshot.licenseExpiresAt}) والنظام يعمل ضمن فترة السماح (${graceDays} يوم). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDaysLeft} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة بأمان حالياً.`
+          };
+        } else {
+          return {
+            allowed: false,
+            code: "license_expired",
+            updatedSnapshot,
+            remainingDays: diffDays,
+            isRetentionWarning: true,
+            retentionDaysLeft,
+            reason: `انتهت فترة صلاحية الترخيص وفترة السماح بتاريخ (${snapshot.licenseExpiresAt}). سوف يتم حذف بيانات هذا الحساب بعد ${retentionDaysLeft} يوم إذا لم يتم التجديد — جميع بياناتك محفوظة بأمان حالياً ولن يُحذف أي سجل، يرجى التواصل مع المطور لتجديد الاشتراك.`
+          };
+        }
       }
 
       // Check offline grace window
