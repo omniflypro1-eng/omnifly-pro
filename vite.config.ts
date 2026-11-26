@@ -9,6 +9,28 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
+      {
+        name: 'optional-jspdf-deps-fallback',
+        enforce: 'pre',
+        async resolveId(source, importer, options) {
+          if (
+            (source === 'canvg' || source === 'dompurify') &&
+            importer &&
+            importer.includes('jspdf')
+          ) {
+            const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+            if (resolved) return resolved;
+            return `\0virtual:optional-${source}`;
+          }
+          return null;
+        },
+        load(id) {
+          if (id === '\0virtual:optional-canvg' || id === '\0virtual:optional-dompurify') {
+            return 'export default {}; export const Canvg = undefined;';
+          }
+          return null;
+        },
+      },
       // Copies src/assets into dist/ so root-relative URLs like
       // "/src/assets/images/..." (e.g. generate_image output) still resolve
       // in production builds. Do not remove.
