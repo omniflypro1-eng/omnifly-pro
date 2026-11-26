@@ -99,6 +99,9 @@ class DatabaseWrapper {
     this.dbKey = dbKey;
     this.db = new DatabaseSyncClass(filename);
     try {
+      this.db.exec("PRAGMA busy_timeout = 5000;");
+    } catch {}
+    try {
       ensure4WhatsAppConfigTable(this);
     } catch {}
   }
@@ -7435,9 +7438,11 @@ if (!skipDemoSeedOnStartup) {
 }
 
 export function ensure4WhatsAppConfigTable(dbInstance: any) {
-  try {
+  const runEnsure = () => {
     const execMethod = typeof dbInstance.exec === "function" ? dbInstance.exec.bind(dbInstance) : (sql: string) => dbInstance.db.exec(sql);
     const prepareMethod = typeof dbInstance.prepare === "function" ? dbInstance.prepare.bind(dbInstance) : (sql: string) => dbInstance.db.prepare(sql);
+
+    try { execMethod("PRAGMA busy_timeout = 5000;"); } catch {}
 
     execMethod(`
       CREATE TABLE IF NOT EXISTS travel_4whatsapp_config (
@@ -7481,8 +7486,16 @@ export function ensure4WhatsAppConfigTable(dbInstance: any) {
         0, 0, 1000, datetime('now', 'localtime'), datetime('now', 'localtime')
       )
     `).run();
+  };
+
+  try {
+    runEnsure();
   } catch (e) {
-    console.error("Error ensuring travel_4whatsapp_config table:", e);
+    try {
+      runEnsure();
+    } catch (retryErr) {
+      console.error("Error ensuring travel_4whatsapp_config table:", retryErr);
+    }
   }
 }
 

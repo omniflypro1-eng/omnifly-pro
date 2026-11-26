@@ -47,6 +47,7 @@ export interface WhatsAppGatewayTabProps {
     password: string;
     phone_number: string;
     country_code: string;
+    api_endpoint?: string;
   };
   setFourWaForm: React.Dispatch<React.SetStateAction<any>>;
   fourWaStatus: "pending_login" | "ready_for_scan" | "connected";
@@ -58,6 +59,7 @@ export interface WhatsAppGatewayTabProps {
   setShowFourWaPassword: React.Dispatch<React.SetStateAction<boolean>>;
   fourWaLoginMutation: any;
   fourWaCheckStatusMutation: any;
+  fourWaDiagnoseMutation?: any;
   fourWaGenerateQrMutation: any;
   fourWaConfirmScanMutation: any;
   fourWaDisconnectMutation: any;
@@ -85,6 +87,7 @@ export function WhatsAppGatewayTab({
   setShowFourWaPassword,
   fourWaLoginMutation,
   fourWaCheckStatusMutation,
+  fourWaDiagnoseMutation,
   fourWaGenerateQrMutation,
   fourWaConfirmScanMutation,
   fourWaDisconnectMutation,
@@ -350,7 +353,13 @@ export function WhatsAppGatewayTab({
                 بوابة واتساب للأعمال (4WhatsApp Gateway)
               </h3>
               <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold">
-                api2.4whatsapp.com
+                {(() => {
+                  try {
+                    return new URL(fourWaForm.api_endpoint || fourWaData?.api_endpoint || "https://api2.4whatsapp.com/api/Agent_Client_").hostname;
+                  } catch {
+                    return "api2.4whatsapp.com";
+                  }
+                })()}
               </Badge>
             </div>
             <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
@@ -1694,7 +1703,14 @@ export function WhatsAppGatewayTab({
                 const isNetworkErr =
                   errText.includes("تعذر الاتصال") ||
                   errText.includes("تعذر الوصول") ||
-                  errText.includes("انتهت مهلة الاتصال") ||
+                  errText.includes("تعذر ترجمة") ||
+                  errText.includes("انتهت مهلة") ||
+                  errText.includes("رفض الاتصال") ||
+                  errText.includes("Failed to fetch") ||
+                  errText.includes("ENOTFOUND") ||
+                  errText.includes("EAI_AGAIN") ||
+                  errText.includes("ECONNREFUSED") ||
+                  errText.includes("TIMEOUT") ||
                   errText.includes("no such table");
                 return (
                   <div className="bg-rose-50 border border-rose-200 text-rose-900 p-3.5 rounded-2xl flex items-start gap-2.5 text-xs">
@@ -1840,6 +1856,147 @@ export function WhatsAppGatewayTab({
                 </div>
               </div>
 
+              {/* Server Endpoint & Local Connection Diagnostics */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                  <div className="md:col-span-5">
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      خادم بوابة 4WhatsApp (API Endpoint)
+                    </label>
+                    <select
+                      value={
+                        ["https://api2.4whatsapp.com/api/Agent_Client_", "https://api.4whatsapp.com/api/Agent_Client_"].includes(
+                          fourWaForm.api_endpoint || "https://api2.4whatsapp.com/api/Agent_Client_"
+                        )
+                          ? (fourWaForm.api_endpoint || "https://api2.4whatsapp.com/api/Agent_Client_")
+                          : "custom"
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val !== "custom") {
+                          setFourWaForm((prev: any) => ({ ...prev, api_endpoint: val }));
+                        } else if (
+                          ["https://api2.4whatsapp.com/api/Agent_Client_", "https://api.4whatsapp.com/api/Agent_Client_"].includes(
+                            fourWaForm.api_endpoint || ""
+                          )
+                        ) {
+                          setFourWaForm((prev: any) => ({ ...prev, api_endpoint: "https://" }));
+                        }
+                      }}
+                      className="w-full h-9 px-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-800"
+                    >
+                      <option value="https://api2.4whatsapp.com/api/Agent_Client_">
+                        الأساسي (api2.4whatsapp.com)
+                      </option>
+                      <option value="https://api.4whatsapp.com/api/Agent_Client_">
+                        البديل (api.4whatsapp.com)
+                      </option>
+                      <option value="custom">رابط مخصص / بروكسي محلي (Custom URL)</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-4">
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      عنوان الاتصال الفعلي
+                    </label>
+                    <Input
+                      value={fourWaForm.api_endpoint || "https://api2.4whatsapp.com/api/Agent_Client_"}
+                      onChange={(e) =>
+                        setFourWaForm((prev: any) => ({ ...prev, api_endpoint: e.target.value }))
+                      }
+                      placeholder="https://api2.4whatsapp.com/api/Agent_Client_"
+                      className="font-mono text-[11px] h-9 rounded-xl bg-white border-slate-200"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    {fourWaDiagnoseMutation && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={fourWaDiagnoseMutation.isPending}
+                        onClick={() =>
+                          fourWaDiagnoseMutation.mutate({
+                            api_endpoint: fourWaForm.api_endpoint || "https://api2.4whatsapp.com/api/Agent_Client_"
+                          })
+                        }
+                        className="w-full h-9 text-xs font-bold rounded-xl border-slate-300 bg-white hover:bg-slate-100 text-slate-800 gap-1.5"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${fourWaDiagnoseMutation.isPending ? "animate-spin" : ""}`} />
+                        <span>{fourWaDiagnoseMutation.isPending ? "جاري الفحص..." : "فحص الشبكة والاتصال"}</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {fourWaDiagnoseMutation?.data && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2 text-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`font-black ${fourWaDiagnoseMutation.data.any_reachable ? "text-emerald-700" : "text-rose-700"}`}>
+                        {fourWaDiagnoseMutation.data.message}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px]">
+                          القاعدة المحلية: {fourWaDiagnoseMutation.data.db_table_ok ? "سليمة ✓" : "غير مهيأة"}
+                        </Badge>
+                        {fourWaDiagnoseMutation.data.proxy_detected && (
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            Proxy: {fourWaDiagnoseMutation.data.proxy_detected}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(fourWaDiagnoseMutation.data.probes || []).map((p: any) => (
+                        <div
+                          key={p.endpoint}
+                          className={`p-2 rounded-lg border flex items-center justify-between gap-2 ${
+                            p.reachable
+                              ? "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                              : "bg-rose-50/70 border-rose-200 text-rose-900"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-mono font-bold truncate" dir="ltr">
+                              {p.hostname || p.endpoint}
+                            </div>
+                            <div className="text-[10px] opacity-80">
+                              {p.dns_ip ? `DNS (${p.dns_source === "public_dns" ? "1.1.1.1" : "النظام"}): ${p.dns_ip}` : "DNS غير محلول"}
+                              {p.error ? ` — ${p.error}` : ""}
+                            </div>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-1.5">
+                            {p.reachable ? (
+                              <>
+                                <Badge className="bg-emerald-600 text-white text-[10px] font-mono">
+                                  {p.latency_ms}ms
+                                </Badge>
+                                {fourWaForm.api_endpoint !== p.endpoint && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setFourWaForm((prev: any) => ({ ...prev, api_endpoint: p.endpoint }))}
+                                    className="h-6 px-2 text-[10px] rounded-md bg-white"
+                                  >
+                                    اعتماد
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
+                              <Badge variant="destructive" className="text-[10px]">
+                                غير متصل
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100">
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <Button
@@ -1872,7 +2029,7 @@ export function WhatsAppGatewayTab({
                 </div>
 
                 <p className="text-[11px] text-slate-400">
-                  يتم التحقق مباشرة عبر سيرفر 4WhatsApp من كود الشركة واسم المستخدم والرمز السري ورقم الهاتف قبل الحفظ
+                  يتم التحقق مباشرة عبر سيرفر 4WhatsApp (مع دعم IPv4 والبروكسي وتبديل الخادم التلقائي وحفظ البيانات محلياً عند انقطاع الإنترنت)
                 </p>
               </div>
             </form>

@@ -1550,7 +1550,8 @@ router.get("/admin/website/4whatsapp-status", async (req, res) => {
         username: String(fourWa.username),
         password: String(fourWa.password),
         phoneClean: cleanPhone,
-        timeoutMs: 10000
+        timeoutMs: 10000,
+        baseEndpoint: fourWa.api_endpoint
       });
       liveCheck = {
         checked: true,

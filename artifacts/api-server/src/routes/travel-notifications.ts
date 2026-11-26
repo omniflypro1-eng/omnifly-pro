@@ -1,5 +1,5 @@
-import { Router, Request, Response } from "express";
-import { db, masterDb, registerTenantSchemaInitializer } from "../lib/sqlite";
+import { Router, type Request, type Response } from "express";
+import { db, masterDb, registerTenantSchemaInitializer, ensure4WhatsAppConfigTable as ensure4WhatsAppConfigTableInDb } from "../lib/sqlite";
 import { ensureSyncMetadataAndTriggers } from "../lib/hybrid-sync-schema";
 import { runWithTenant } from "../lib/tenant-context";
 import { logger } from "../lib/logger";
@@ -25,6 +25,8 @@ import path from "node:path";
 import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
+import tls from "node:tls";
+import { execSync } from "node:child_process";
 import QRCode from "qrcode";
 
 try {
@@ -54,48 +56,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function ensure4WhatsAppConfigTable(): void {
   try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS travel_4whatsapp_config (
-        id INTEGER PRIMARY KEY DEFAULT 1,
-        company_code TEXT DEFAULT '',
-        username TEXT DEFAULT '',
-        password TEXT DEFAULT '',
-        phone_number TEXT DEFAULT '',
-        display_phone_number TEXT DEFAULT '',
-        country_code TEXT DEFAULT '967',
-        api_endpoint TEXT DEFAULT 'https://api2.4whatsapp.com/api/Agent_Client_',
-        is_authenticated INTEGER DEFAULT 0,
-        session_status TEXT DEFAULT 'pending_login',
-        qr_data TEXT DEFAULT '',
-        pairing_code TEXT DEFAULT '',
-        account_name TEXT DEFAULT 'وكالة أومني فلاي - 4WhatsApp Gateway',
-        balance_conversations INTEGER DEFAULT 0,
-        daily_sent_count INTEGER DEFAULT 0,
-        daily_limit INTEGER DEFAULT 1000,
-        last_login_at TEXT DEFAULT (datetime('now', 'localtime')),
-        last_scan_at TEXT DEFAULT (datetime('now', 'localtime')),
-        updated_at TEXT DEFAULT (datetime('now', 'localtime')),
-        days_remaining INTEGER DEFAULT 0,
-        last_verified_at TEXT DEFAULT '',
-        last_verification_error TEXT DEFAULT ''
-      )
-    `);
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN days_remaining INTEGER DEFAULT 0").run(); } catch {}
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN last_verified_at TEXT DEFAULT ''").run(); } catch {}
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN last_verification_error TEXT DEFAULT ''").run(); } catch {}
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN api_endpoint TEXT DEFAULT 'https://api2.4whatsapp.com/api/Agent_Client_'").run(); } catch {}
-    db.prepare(`
-      INSERT OR IGNORE INTO travel_4whatsapp_config (
-        id, company_code, username, password, phone_number, display_phone_number, country_code,
-        api_endpoint, is_authenticated, session_status, qr_data, pairing_code, account_name,
-        balance_conversations, daily_sent_count, daily_limit, last_login_at, last_scan_at
-      ) VALUES (
-        1, '', '', '', '', '', '967',
-        'https://api2.4whatsapp.com/api/Agent_Client_', 0, 'pending_login',
-        '', '', 'وكالة أومني فلاي - 4WhatsApp Gateway',
-        0, 0, 1000, datetime('now', 'localtime'), datetime('now', 'localtime')
-      )
-    `).run();
+    ensure4WhatsAppConfigTableInDb(db);
   } catch (e: any) {
     console.warn("ensure4WhatsAppConfigTable warning:", e?.message || e);
   }
@@ -1132,7 +1093,7 @@ export async function send4WhatsAppOtpDirect(
     const apiToken = String(fourWa.password || "").trim();
 
     if (fourWa.is_authenticated !== 1 || fourWa.session_status !== "connected") {
-      const liveState = await verify4WhatsAppAccountState(senderPhoneClean, apiToken, 8000);
+      const liveState = await verify4WhatsAppAccountState(senderPhoneClean, apiToken, 8000, fourWa.api_endpoint);
       if (!liveState.reachable) {
         return {
           dispatched: false,
@@ -1997,6 +1958,7 @@ export async function executeAutomatedNotificationsCycle(options: { forceAll?: b
     const agencyName = agency.businessName;
     const defaultCountryCode = agency.countryCode || "967";
     const agencySignature = buildAgencySignatureText(agency);
+    ensure4WhatsAppConfigTable();
     const fourWaConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
     const isFourWaConnected = Boolean(fourWaConfig && fourWaConfig.is_authenticated === 1 && fourWaConfig.session_status === "connected");
 
@@ -4226,6 +4188,7 @@ router.get(["/travel/notifications/auto-scheduler-status", "/travel/notification
       sched = db.prepare("SELECT * FROM travel_whatsapp_scheduler_status WHERE id = 1").get() as any;
     }
     const activeCount = db.prepare("SELECT COUNT(*) as cnt FROM travel_notification_automations WHERE is_enabled = 1").get() as any;
+    ensure4WhatsAppConfigTable();
     const fourWa = db.prepare("SELECT session_status, display_phone_number FROM travel_4whatsapp_config WHERE id = 1").get() as any;
 
     res.json({
@@ -4288,7 +4251,7 @@ function getElectronNetFetch(): ((input: string, init?: any) => Promise<Response
       const req = typeof require !== "undefined" ? require : null;
       if (req) {
         const electronMod = req("electron");
-        if (electronMod?.net?.fetch) {
+        if (electronMod && typeof electronMod !== "string" && electronMod?.net?.fetch) {
           return electronMod.net.fetch.bind(electronMod.net);
         }
       }
@@ -4297,44 +4260,295 @@ function getElectronNetFetch(): ((input: string, init?: any) => Promise<Response
   return null;
 }
 
-async function nodeHttpsBufferRequest(
-  targetUrl: string,
-  options: {
-    method?: string;
-    headers?: Record<string, string>;
-    body?: any;
-    timeoutMs?: number;
-    rejectUnauthorized?: boolean;
-  }
-): Promise<FourWaHttpResponse> {
-  const parsedUrl = new URL(targetUrl);
-  const method = options.method || "GET";
-  const timeoutMs = options.timeoutMs ?? 12000;
-  const headers: Record<string, string> = { ...(options.headers || {}) };
-  headers["Connection"] = "close";
+interface SerializedPayload {
+  headers: Record<string, string>;
+  payloadBuffer?: Buffer;
+}
 
+async function serializeFourWaPayload(
+  targetUrl: string,
+  method: string,
+  rawHeaders?: Record<string, string>,
+  body?: any
+): Promise<SerializedPayload> {
+  const headers: Record<string, string> = { ...(rawHeaders || {}) };
   let payloadBuffer: Buffer | undefined;
-  if (options.body !== undefined && options.body !== null) {
-    if (typeof options.body === "string") {
-      payloadBuffer = Buffer.from(options.body, "utf8");
-    } else if (Buffer.isBuffer(options.body)) {
-      payloadBuffer = options.body;
+
+  if (body !== undefined && body !== null) {
+    if (typeof body === "string") {
+      payloadBuffer = Buffer.from(body, "utf8");
+    } else if (Buffer.isBuffer(body)) {
+      payloadBuffer = body;
+    } else if (body instanceof Uint8Array) {
+      payloadBuffer = Buffer.from(body);
     } else {
-      // Convert FormData / Blob / URLSearchParams via standard Request serializer
-      const tmpReq = new Request(targetUrl, { method, body: options.body });
+      const tmpReq = new Request(targetUrl, { method, body });
       const ct = tmpReq.headers.get("content-type");
       if (ct && !headers["Content-Type"] && !headers["content-type"]) {
         headers["Content-Type"] = ct;
       }
       payloadBuffer = Buffer.from(await tmpReq.arrayBuffer());
     }
-    if (payloadBuffer) {
-      headers["Content-Length"] = String(payloadBuffer.byteLength);
+  }
+
+  return { headers, payloadBuffer };
+}
+
+function isDnsLookupError(err: any): boolean {
+  const code = String(err?.code || err?.cause?.code || "").toUpperCase();
+  const msg = String(err?.message || err?.cause?.message || "").toUpperCase();
+  return (
+    code === "ENOTFOUND" ||
+    code === "EAI_AGAIN" ||
+    code === "ESERVFAIL" ||
+    code === "ENODATA" ||
+    msg.includes("ENOTFOUND") ||
+    msg.includes("EAI_AGAIN") ||
+    msg.includes("GETADDRINFO")
+  );
+}
+
+function isTlsVerificationError(err: any): boolean {
+  const msg = `${err?.code || ""} ${err?.message || ""} ${err?.cause?.code || ""} ${err?.cause?.message || ""}`.toUpperCase();
+  return (
+    msg.includes("UNABLE_TO_VERIFY_LEAF_SIGNATURE") ||
+    msg.includes("UNABLE_TO_GET_ISSUER_CERT") ||
+    msg.includes("CERT_SIGNATURE_FAILURE") ||
+    msg.includes("SELF_SIGNED") ||
+    msg.includes("CERT_HAS_EXPIRED") ||
+    msg.includes("DEPTH_ZERO_SELF_SIGNED") ||
+    msg.includes("ERR_TLS_CERT_ALTNAME_INVALID") ||
+    msg.includes("CERT_UNTRUSTED") ||
+    msg.includes("ERR_TLS") ||
+    msg.includes("ERR_SSL")
+  );
+}
+
+async function resolveIpv4WithFallback(hostname: string): Promise<{ ip: string | null; source: "system" | "public_dns" | "none" }> {
+  // 1. Try system DNS (IPv4)
+  try {
+    const sysRes = await Promise.race([
+      dns.promises.lookup(hostname, { family: 4 }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DNS timeout")), 2500))
+    ]);
+    if (sysRes?.address) {
+      return { ip: sysRes.address, source: "system" };
     }
+  } catch {}
+
+  // 2. Fallback to Public DNS (Cloudflare 1.1.1.1 / Google 8.8.8.8 / Quad9 9.9.9.9)
+  try {
+    const resolver = new dns.Resolver({ timeout: 2500 });
+    resolver.setServers(["1.1.1.1", "8.8.8.8", "9.9.9.9"]);
+    const addrs = await new Promise<string[]>((resolve, reject) => {
+      resolver.resolve4(hostname, (err, res) => {
+        if (err || !res || res.length === 0) reject(err || new Error("No A records"));
+        else resolve(res);
+      });
+    });
+    if (addrs && addrs.length > 0) {
+      return { ip: addrs[0], source: "public_dns" };
+    }
+  } catch {}
+
+  return { ip: null, source: "none" };
+}
+
+let cachedWinProxy: { checkedAt: number; proxyUrl: string | null } = { checkedAt: 0, proxyUrl: null };
+
+function getWindowsRegistryProxy(): string | null {
+  if (process.platform !== "win32") return null;
+  const now = Date.now();
+  if (now - cachedWinProxy.checkedAt < 60000) {
+    return cachedWinProxy.proxyUrl;
+  }
+  let found: string | null = null;
+  try {
+    const out = execSync(
+      'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable && reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer',
+      { timeout: 800, windowsHide: true, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+    );
+    const enabled = /ProxyEnable\s+REG_DWORD\s+0x1/i.test(out);
+    if (enabled) {
+      const m = out.match(/ProxyServer\s+REG_SZ\s+([^\r\n]+)/i);
+      if (m && m[1]) {
+        let rawServer = m[1].trim();
+        if (rawServer.includes("=")) {
+          const httpsPart = rawServer.split(";").find((p) => p.toLowerCase().startsWith("https="));
+          const httpPart = rawServer.split(";").find((p) => p.toLowerCase().startsWith("http="));
+          const picked = httpsPart || httpPart;
+          rawServer = picked ? picked.split("=")[1] : rawServer.split(";")[0].split("=")[1] || "";
+        }
+        rawServer = rawServer.trim();
+        if (rawServer) {
+          found = /^https?:\/\//i.test(rawServer) ? rawServer : `http://${rawServer}`;
+        }
+      }
+    }
+  } catch {}
+  cachedWinProxy = { checkedAt: now, proxyUrl: found };
+  return found;
+}
+
+function resolveSystemProxyUrl(targetUrl: string): string | null {
+  try {
+    const u = new URL(targetUrl);
+    const noProxy = String(process.env.NO_PROXY || process.env.no_proxy || "").trim();
+    if (noProxy) {
+      const entries = noProxy.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const host = u.hostname.toLowerCase();
+      if (entries.some((e) => e === "*" || host === e || host.endsWith(`.${e.replace(/^\./, "")}`))) {
+        return null;
+      }
+    }
+  } catch {}
+
+  const envProxy =
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    process.env.ALL_PROXY ||
+    process.env.all_proxy ||
+    "";
+  if (envProxy.trim()) {
+    const clean = envProxy.trim();
+    return /^https?:\/\//i.test(clean) ? clean : `http://${clean}`;
+  }
+  return getWindowsRegistryProxy();
+}
+
+async function nodeHttpsBufferRequest(
+  targetUrl: string,
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    payloadBuffer?: Buffer;
+    timeoutMs?: number;
+    rejectUnauthorized?: boolean;
+    connectHostIp?: string;
+    proxyUrl?: string | null;
+  },
+  redirectDepth = 0
+): Promise<FourWaHttpResponse> {
+  if (redirectDepth > 4) {
+    throw new Error("Too many redirects");
+  }
+  const parsedUrl = new URL(targetUrl);
+  const method = options.method || "GET";
+  const timeoutMs = options.timeoutMs ?? 8000;
+  const headers: Record<string, string> = { ...(options.headers || {}) };
+  headers["Connection"] = "close";
+  if (!headers["Host"] && !headers["host"]) {
+    headers["Host"] = parsedUrl.host;
+  }
+  const payloadBuffer = options.payloadBuffer;
+  if (payloadBuffer) {
+    headers["Content-Length"] = String(payloadBuffer.byteLength);
+  }
+
+  const isHttps = parsedUrl.protocol === "https:";
+  const targetPort = parsedUrl.port ? Number(parsedUrl.port) : isHttps ? 443 : 80;
+
+  // Tunnel via HTTP CONNECT proxy when proxyUrl is specified
+  if (options.proxyUrl && isHttps) {
+    const pUrl = new URL(options.proxyUrl);
+    const proxyPort = pUrl.port ? Number(pUrl.port) : (pUrl.protocol === "https:" ? 443 : 8080);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (fn: () => void) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(overallTimer);
+          fn();
+        }
+      };
+      const overallTimer = setTimeout(() => {
+        const err: any = new Error("Proxy request timeout");
+        err.name = "AbortError";
+        done(() => reject(err));
+      }, timeoutMs);
+
+      const connectHeaders: Record<string, string> = {
+        Host: `${parsedUrl.hostname}:${targetPort}`
+      };
+      if (pUrl.username || pUrl.password) {
+        const creds = Buffer.from(`${decodeURIComponent(pUrl.username)}:${decodeURIComponent(pUrl.password)}`).toString("base64");
+        connectHeaders["Proxy-Authorization"] = `Basic ${creds}`;
+      }
+
+      const proxyReq = http.request({
+        hostname: pUrl.hostname,
+        port: proxyPort,
+        method: "CONNECT",
+        path: `${parsedUrl.hostname}:${targetPort}`,
+        headers: connectHeaders,
+        timeout: timeoutMs
+      });
+
+      proxyReq.on("connect", (proxyRes, socket) => {
+        if (proxyRes.statusCode !== 200) {
+          socket.destroy();
+          done(() => reject(new Error(`Proxy CONNECT returned ${proxyRes.statusCode}`)));
+          return;
+        }
+        const tlsSocket = tls.connect({
+          socket,
+          servername: parsedUrl.hostname,
+          rejectUnauthorized: options.rejectUnauthorized !== false
+        });
+        const agent = new https.Agent({ keepAlive: false });
+        (agent as any).createConnection = () => tlsSocket;
+
+        const req = https.request(
+          {
+            hostname: parsedUrl.hostname,
+            port: targetPort,
+            path: `${parsedUrl.pathname}${parsedUrl.search}`,
+            method,
+            headers,
+            agent,
+            timeout: timeoutMs
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (c: Buffer) => chunks.push(c));
+            res.on("end", () => {
+              const resHeaders: Record<string, string> = {};
+              for (const [k, v] of Object.entries(res.headers || {})) {
+                if (typeof v === "string") resHeaders[k.toLowerCase()] = v;
+                else if (Array.isArray(v)) resHeaders[k.toLowerCase()] = v.join(", ");
+              }
+              const status = res.statusCode || 0;
+              done(() => resolve({ ok: status >= 200 && status < 300, status, headers: resHeaders, body: Buffer.concat(chunks) }));
+            });
+          }
+        );
+        req.on("error", (err) => done(() => reject(err)));
+        if (payloadBuffer) req.write(payloadBuffer);
+        req.end();
+      });
+
+      proxyReq.on("timeout", () => {
+        const err: any = new Error("Proxy connect timeout");
+        err.name = "AbortError";
+        proxyReq.destroy(err);
+      });
+      proxyReq.on("error", (err) => done(() => reject(err)));
+      proxyReq.end();
+    });
   }
 
   return new Promise((resolve, reject) => {
-    const isHttps = parsedUrl.protocol === "https:";
+    let settled = false;
+    const done = (fn: () => void) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(overallTimer);
+        fn();
+      }
+    };
+
     const transport = isHttps ? https : http;
     const agent = isHttps
       ? new https.Agent({
@@ -4346,21 +4560,23 @@ async function nodeHttpsBufferRequest(
 
     const req = transport.request(
       {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port ? Number(parsedUrl.port) : isHttps ? 443 : 80,
+        hostname: options.connectHostIp || parsedUrl.hostname,
+        port: targetPort,
         path: `${parsedUrl.pathname}${parsedUrl.search}`,
         method,
         headers,
         agent,
         family: 4,
+        ...(isHttps ? { servername: parsedUrl.hostname } : {}),
         timeout: timeoutMs
       },
       (res) => {
-        // Handle 301/302/307/308 redirects safely
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           const nextUrl = new URL(res.headers.location, targetUrl).toString();
           res.resume();
-          nodeHttpsBufferRequest(nextUrl, options).then(resolve).catch(reject);
+          clearTimeout(overallTimer);
+          settled = true;
+          nodeHttpsBufferRequest(nextUrl, { ...options, connectHostIp: undefined }, redirectDepth + 1).then(resolve).catch(reject);
           return;
         }
         const chunks: Buffer[] = [];
@@ -4372,22 +4588,30 @@ async function nodeHttpsBufferRequest(
             else if (Array.isArray(v)) resHeaders[k.toLowerCase()] = v.join(", ");
           }
           const status = res.statusCode || 0;
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            headers: resHeaders,
-            body: Buffer.concat(chunks)
-          });
+          done(() =>
+            resolve({
+              ok: status >= 200 && status < 300,
+              status,
+              headers: resHeaders,
+              body: Buffer.concat(chunks)
+            })
+          );
         });
       }
     );
+
+    const overallTimer = setTimeout(() => {
+      const err: any = new Error("Request timeout");
+      err.name = "AbortError";
+      req.destroy(err);
+    }, timeoutMs);
 
     req.on("timeout", () => {
       const err: any = new Error("Request timeout");
       err.name = "AbortError";
       req.destroy(err);
     });
-    req.on("error", (err) => reject(err));
+    req.on("error", (err) => done(() => reject(err)));
     if (payloadBuffer) {
       req.write(payloadBuffer);
     }
@@ -4395,16 +4619,22 @@ async function nodeHttpsBufferRequest(
   });
 }
 
-function isTlsVerificationError(err: any): boolean {
-  const msg = `${err?.code || ""} ${err?.message || ""} ${err?.cause?.code || ""} ${err?.cause?.message || ""}`.toUpperCase();
-  return (
-    msg.includes("UNABLE_TO_VERIFY_LEAF_SIGNATURE") ||
-    msg.includes("SELF_SIGNED") ||
-    msg.includes("CERT_HAS_EXPIRED") ||
-    msg.includes("DEPTH_ZERO_SELF_SIGNED") ||
-    msg.includes("ERR_TLS_CERT_ALTNAME_INVALID") ||
-    msg.includes("CERT_UNTRUSTED")
-  );
+function classifyFourWaNetworkError(err: any): string {
+  const code = String(err?.code || err?.cause?.code || "").toUpperCase();
+  const msg = String(err?.message || err || "");
+  if (err?.name === "AbortError" || code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
+    return `انتهت مهلة الاتصال بسيرفر 4WhatsApp (${code || "TIMEOUT"}) — تحقق من سرعة الإنترنت أو جدار الحماية/الراوتر المحلي.`;
+  }
+  if (isDnsLookupError(err)) {
+    return `تعذر ترجمة عنوان سيرفر 4WhatsApp عبر DNS المحلي (${code || "DNS"}) — يرجى التأكد من اتصال الإنترنت أو ضبط DNS مثل 1.1.1.1 / 8.8.8.8.`;
+  }
+  if (code === "ECONNREFUSED" || code === "ECONNRESET" || code === "EHOSTUNREACH" || code === "ENETUNREACH") {
+    return `رفض الاتصال أو تم حجب المسار نحو سيرفر 4WhatsApp (${code}) — قد يكون المنفذ 443 محجوباً محلياً أو يتطلب بروكسي/VPN.`;
+  }
+  if (isTlsVerificationError(err)) {
+    return `تعذر إتمام التشفير الآمن (SSL/TLS: ${code || "CERT"}) بسبب فحص الشهادات أو التوقيت المحلي.`;
+  }
+  return msg || "خطأ غير متوقع في الاتصال الشبكي";
 }
 
 async function fourWaHttpRequestSingle(
@@ -4412,22 +4642,25 @@ async function fourWaHttpRequestSingle(
   options: {
     method?: string;
     headers?: Record<string, string>;
-    body?: any;
+    payloadBuffer?: Buffer;
     timeoutMs?: number;
   }
 ): Promise<FourWaHttpResponse> {
-  const timeoutMs = options.timeoutMs ?? 12000;
+  const method = options.method || "GET";
+  const stepTimeoutMs = Math.min(Math.max(options.timeoutMs ?? 8000, 3500), 9000);
+  const parsedHost = new URL(targetUrl).hostname;
+  const proxyUrl = resolveSystemProxyUrl(targetUrl);
 
-  // 1. If running in-process inside Electron, try Electron's Chromium net.fetch first (honors Windows Proxy & Cert Store)
+  // 1. If running in-process inside Electron Main, try Electron's Chromium net.fetch first (honors Windows Proxy & Cert Store)
   const electronNetFetch = getElectronNetFetch();
   if (electronNetFetch) {
     try {
       const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+      const tid = setTimeout(() => ctrl.abort(), stepTimeoutMs);
       const res = await electronNetFetch(targetUrl, {
-        method: options.method || "GET",
+        method,
         headers: options.headers,
-        body: options.body,
+        body: options.payloadBuffer,
         signal: ctrl.signal
       });
       clearTimeout(tid);
@@ -4442,15 +4675,107 @@ async function fourWaHttpRequestSingle(
     }
   }
 
-  // 2. Try standard fetch()
+  // 2. Direct IPv4 Node HTTP(S) (avoids Windows IPv6/undici stalling and keeps multipart Buffer intact)
   let lastErr: any = null;
   try {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(targetUrl, {
-      method: options.method || "GET",
+    return await nodeHttpsBufferRequest(targetUrl, {
+      method,
       headers: options.headers,
-      body: options.body,
+      payloadBuffer: options.payloadBuffer,
+      timeoutMs: stepTimeoutMs,
+      rejectUnauthorized: true
+    });
+  } catch (directErr: any) {
+    lastErr = directErr;
+
+    // 3. Antivirus / SSL Inspection local cert bypass
+    if (isTlsVerificationError(directErr)) {
+      try {
+        return await nodeHttpsBufferRequest(targetUrl, {
+          method,
+          headers: options.headers,
+          payloadBuffer: options.payloadBuffer,
+          timeoutMs: stepTimeoutMs,
+          rejectUnauthorized: false
+        });
+      } catch (tlsFallbackErr: any) {
+        lastErr = tlsFallbackErr;
+      }
+    }
+
+    // 4. Local ISP DNS failed -> try public DNS (1.1.1.1 / 8.8.8.8) & connect by resolved IPv4 + SNI
+    if (isDnsLookupError(lastErr)) {
+      const resolved = await resolveIpv4WithFallback(parsedHost);
+      if (resolved.ip) {
+        try {
+          return await nodeHttpsBufferRequest(targetUrl, {
+            method,
+            headers: options.headers,
+            payloadBuffer: options.payloadBuffer,
+            timeoutMs: stepTimeoutMs,
+            rejectUnauthorized: true,
+            connectHostIp: resolved.ip
+          });
+        } catch (dnsIpErr: any) {
+          lastErr = dnsIpErr;
+          if (isTlsVerificationError(dnsIpErr)) {
+            try {
+              return await nodeHttpsBufferRequest(targetUrl, {
+                method,
+                headers: options.headers,
+                payloadBuffer: options.payloadBuffer,
+                timeoutMs: stepTimeoutMs,
+                rejectUnauthorized: false,
+                connectHostIp: resolved.ip
+              });
+            } catch (dnsTlsErr: any) {
+              lastErr = dnsTlsErr;
+            }
+          }
+        }
+      }
+    }
+
+    // 5. System Proxy (Env HTTPS_PROXY/HTTP_PROXY or Windows Internet Settings Registry Proxy)
+    if (proxyUrl) {
+      try {
+        return await nodeHttpsBufferRequest(targetUrl, {
+          method,
+          headers: options.headers,
+          payloadBuffer: options.payloadBuffer,
+          timeoutMs: stepTimeoutMs,
+          rejectUnauthorized: true,
+          proxyUrl
+        });
+      } catch (proxyErr: any) {
+        if (isTlsVerificationError(proxyErr)) {
+          try {
+            return await nodeHttpsBufferRequest(targetUrl, {
+              method,
+              headers: options.headers,
+              payloadBuffer: options.payloadBuffer,
+              timeoutMs: stepTimeoutMs,
+              rejectUnauthorized: false,
+              proxyUrl
+            });
+          } catch (proxyTlsErr: any) {
+            lastErr = proxyTlsErr;
+          }
+        } else {
+          lastErr = proxyErr;
+        }
+      }
+    }
+  }
+
+  // 6. Final fallback: standard Node fetch()
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), Math.min(stepTimeoutMs, 6000));
+    const res = await fetch(targetUrl, {
+      method,
+      headers: options.headers,
+      body: options.payloadBuffer ? new Uint8Array(options.payloadBuffer) : undefined,
       signal: ctrl.signal
     });
     clearTimeout(tid);
@@ -4460,20 +4785,8 @@ async function fourWaHttpRequestSingle(
       headers[k.toLowerCase()] = v;
     });
     return { ok: res.ok, status: res.status, headers, body: buf };
-  } catch (err: any) {
-    lastErr = err;
-  }
-
-  // 3. Fallback: node:https forcing IPv4 (family: 4) and Connection: close (fixes Windows IPv6 / IIS keep-alive issues)
-  try {
-    return await nodeHttpsBufferRequest(targetUrl, { ...options, timeoutMs, rejectUnauthorized: true });
-  } catch (httpsErr: any) {
-    lastErr = httpsErr;
-    // 4. Fallback for Windows local antivirus/proxy HTTPS inspection certificates
-    if (isTlsVerificationError(httpsErr) || isTlsVerificationError(lastErr)) {
-      return await nodeHttpsBufferRequest(targetUrl, { ...options, timeoutMs, rejectUnauthorized: false });
-    }
-    throw httpsErr;
+  } catch {
+    throw lastErr || new Error("Network error reaching 4WhatsApp server");
   }
 }
 
@@ -4486,18 +4799,45 @@ async function fourWaHttpRequest(
     timeoutMs?: number;
   }
 ): Promise<FourWaHttpResponse> {
+  const method = options.method || "GET";
+  const serialized = await serializeFourWaPayload(targetUrl, method, options.headers, options.body);
+
   try {
-    return await fourWaHttpRequestSingle(targetUrl, options);
+    return await fourWaHttpRequestSingle(targetUrl, {
+      method,
+      headers: serialized.headers,
+      payloadBuffer: serialized.payloadBuffer,
+      timeoutMs: options.timeoutMs
+    });
   } catch (primaryErr: any) {
+    let mirrorUrl = "";
     if (targetUrl.includes("api2.4whatsapp.com")) {
-      const mirrorUrl = targetUrl.replace("api2.4whatsapp.com", "api.4whatsapp.com");
+      mirrorUrl = targetUrl.replace("api2.4whatsapp.com", "api.4whatsapp.com");
+    } else if (targetUrl.includes("api.4whatsapp.com")) {
+      mirrorUrl = targetUrl.replace("api.4whatsapp.com", "api2.4whatsapp.com");
+    }
+    if (mirrorUrl) {
       try {
-        return await fourWaHttpRequestSingle(mirrorUrl, options);
+        const mirrorHeaders = { ...serialized.headers };
+        delete mirrorHeaders["Host"];
+        delete mirrorHeaders["host"];
+        return await fourWaHttpRequestSingle(mirrorUrl, {
+          method,
+          headers: mirrorHeaders,
+          payloadBuffer: serialized.payloadBuffer,
+          timeoutMs: Math.min(options.timeoutMs ?? 7000, 7000)
+        });
       } catch {
-        throw primaryErr;
+        const enriched: any = new Error(classifyFourWaNetworkError(primaryErr));
+        enriched.name = primaryErr?.name || "Error";
+        enriched.code = primaryErr?.code;
+        throw enriched;
       }
     }
-    throw primaryErr;
+    const enriched: any = new Error(classifyFourWaNetworkError(primaryErr));
+    enriched.name = primaryErr?.name || "Error";
+    enriched.code = primaryErr?.code;
+    throw enriched;
   }
 }
 
@@ -5144,7 +5484,7 @@ router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Respo
       } else if (config.session_status === "ready_for_scan" && config.qr_data) {
         // During active QR scan polling, check accountState first so we don't disrupt QR countdown;
         // once linked=true is detected, confirm company_code + username via verify4WhatsAppFullCredentials!
-        const stateResult = await verify4WhatsAppAccountState(config.phone_number, config.password, 8000);
+        const stateResult = await verify4WhatsAppAccountState(config.phone_number, config.password, 8000, config.api_endpoint);
         if (stateResult.reachable) {
           if (!stateResult.verified) {
             verificationError = stateResult.error || "بيانات الربط مرفوضة من سيرفر 4WhatsApp";
@@ -5170,7 +5510,8 @@ router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Respo
               username: config.username,
               password: config.password,
               phoneClean: config.phone_number,
-              timeoutMs: 8000
+              timeoutMs: 8000,
+              baseEndpoint: config.api_endpoint
             });
             if (fullCheck.reachable && fullCheck.verified && fullCheck.linked) {
               serverVerified = true;
@@ -5246,7 +5587,8 @@ router.get("/travel/whatsapp/4whatsapp/status", async (_req: Request, res: Respo
           username: config.username,
           password: config.password,
           phoneClean: config.phone_number,
-          timeoutMs: 8000
+          timeoutMs: 8000,
+          baseEndpoint: config.api_endpoint
         });
         if (fullResult.reachable) {
           serverVerified = fullResult.verified;
@@ -5346,6 +5688,7 @@ router.post("/travel/whatsapp/4whatsapp/check-status", async (req: Request, res:
       ? String(body.phone_number).trim()
       : (dbConfig?.phone_number ? String(dbConfig.phone_number).trim() : "");
     const cCode = (body.country_code ? String(body.country_code).trim() : "") || dbConfig?.country_code || "967";
+    const effectiveEndpoint = normalize4WhatsAppBaseUrl(body.api_endpoint || dbConfig?.api_endpoint);
     const effectivePassword = !isPasswordMask
       ? rawPasswordInput
       : (dbConfig?.password || "");
@@ -5370,7 +5713,8 @@ router.post("/travel/whatsapp/4whatsapp/check-status", async (req: Request, res:
       username: effectiveUsername,
       password: effectivePassword,
       phoneClean: phoneInfo.cleanPhone,
-      timeoutMs: 12000
+      timeoutMs: 12000,
+      baseEndpoint: effectiveEndpoint
     });
 
     if (!fullResult.reachable) {
@@ -5406,6 +5750,7 @@ router.post("/travel/whatsapp/4whatsapp/check-status", async (req: Request, res:
     if (!usingBodyOverrides && dbConfig) {
       db.prepare(`
         UPDATE travel_4whatsapp_config SET
+          api_endpoint = ?,
           session_status = ?,
           is_authenticated = 1,
           days_remaining = ?,
@@ -5413,7 +5758,7 @@ router.post("/travel/whatsapp/4whatsapp/check-status", async (req: Request, res:
           last_verified_at = datetime('now', 'localtime'),
           last_verification_error = ''
         WHERE id = 1
-      `).run(newStatus, fullResult.daysRemaining, fullResult.qrImage || "");
+      `).run(effectiveEndpoint, newStatus, fullResult.daysRemaining, fullResult.qrImage || "");
     }
 
     return res.json({
@@ -5579,6 +5924,7 @@ router.post(["/travel/whatsapp/4whatsapp/login", "/travel/whatsapp/4whatsapp/set
         phone_number = ?,
         display_phone_number = ?,
         country_code = ?,
+        api_endpoint = ?,
         is_authenticated = 1,
         session_status = ?,
         qr_data = ?,
@@ -5596,6 +5942,7 @@ router.post(["/travel/whatsapp/4whatsapp/login", "/travel/whatsapp/4whatsapp/set
       phoneInfo.cleanPhone,
       phoneInfo.displayPhone,
       cCode,
+      effectiveEndpoint,
       targetStatus,
       qrDataFrom4Wa,
       generatedPairingCode,
@@ -5639,7 +5986,7 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
   try {
     ensure4WhatsAppConfigTable();
     const existingDbConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
-    const { company_code, username, password, phone_number, country_code } = req.body || {};
+    const { company_code, username, password, phone_number, country_code, api_endpoint } = req.body || {};
 
     const rawPassConfirm = password ? String(password).trim() : "";
     const isPassConfirmMask = !rawPassConfirm || rawPassConfirm === "••••••••" || /^\*+$/.test(rawPassConfirm);
@@ -5648,6 +5995,7 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
     const effectivePassword = !isPassConfirmMask ? rawPassConfirm : (existingDbConfig?.password || "");
     const cCode = String(country_code || existingDbConfig?.country_code || "967").replace(/\D/g, "") || "967";
     const rawPhone = phone_number !== undefined ? String(phone_number).trim() : (existingDbConfig?.phone_number || "");
+    const effectiveEndpoint = normalize4WhatsAppBaseUrl(api_endpoint || existingDbConfig?.api_endpoint);
 
     if (!effectiveCompanyCode || !effectiveUsername || !rawPhone || !effectivePassword) {
       return res.status(400).json({
@@ -5666,7 +6014,8 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
       username: effectiveUsername,
       password: effectivePassword,
       phoneClean: phoneInfo.cleanPhone,
-      timeoutMs: 12000
+      timeoutMs: 12000,
+      baseEndpoint: effectiveEndpoint
     });
 
     if (!fullResult.reachable) {
@@ -5722,6 +6071,7 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
         phone_number = ?,
         display_phone_number = ?,
         country_code = ?,
+        api_endpoint = ?,
         session_status = 'connected',
         is_authenticated = 1,
         qr_data = COALESCE(NULLIF(?, ''), qr_data),
@@ -5738,6 +6088,7 @@ router.post("/travel/whatsapp/4whatsapp/confirm-scan", async (req: Request, res:
       phoneInfo.cleanPhone,
       phoneInfo.displayPhone,
       cCode,
+      effectiveEndpoint,
       fullResult.qrImage || "",
       fullResult.daysRemaining
     );
@@ -5790,6 +6141,7 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
     const rawPhone = body.phone_number !== undefined && String(body.phone_number).trim()
       ? String(body.phone_number).trim()
       : String(config?.phone_number || "").trim();
+    const effectiveEndpoint = normalize4WhatsAppBaseUrl(body.api_endpoint || config?.api_endpoint);
 
     if (!companyCode || !username || !password || !rawPhone) {
       return res.status(400).json({
@@ -5807,7 +6159,8 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
       username,
       password,
       phoneClean: phoneInfo.cleanPhone,
-      timeoutMs: 15000
+      timeoutMs: 15000,
+      baseEndpoint: effectiveEndpoint
     });
 
     if (!fullResult.reachable) {
@@ -5841,6 +6194,7 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
           phone_number = ?,
           display_phone_number = ?,
           country_code = ?,
+          api_endpoint = ?,
           session_status = 'connected',
           is_authenticated = 1,
           qr_data = '',
@@ -5848,7 +6202,7 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
           last_verified_at = datetime('now', 'localtime'),
           last_verification_error = ''
         WHERE id = 1
-      `).run(companyCode, username, password, phoneInfo.cleanPhone, phoneInfo.displayPhone, cCode, fullResult.daysRemaining);
+      `).run(companyCode, username, password, phoneInfo.cleanPhone, phoneInfo.displayPhone, cCode, effectiveEndpoint, fullResult.daysRemaining);
       return res.json({
         success: true,
         already_linked: true,
@@ -5883,6 +6237,7 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
         phone_number = ?,
         display_phone_number = ?,
         country_code = ?,
+        api_endpoint = ?,
         session_status = ?,
         is_authenticated = 1,
         qr_data = ?,
@@ -5899,6 +6254,7 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
       phoneInfo.cleanPhone,
       phoneInfo.displayPhone,
       cCode,
+      effectiveEndpoint,
       nextSessionStatus,
       fullResult.qrImage,
       newPairingCode,
@@ -5919,6 +6275,78 @@ router.post("/travel/whatsapp/4whatsapp/generate-qr", async (req: Request, res: 
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 4.5 Diagnose Local Connectivity & Database Health for 4WhatsApp
+router.all("/travel/whatsapp/4whatsapp/diagnose", async (req: Request, res: Response) => {
+  try {
+    ensure4WhatsAppConfigTable();
+    const dbConfig = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get() as any;
+    const requestedEndpoint = normalize4WhatsAppBaseUrl((req.body as any)?.api_endpoint || (req.query as any)?.api_endpoint || dbConfig?.api_endpoint);
+    const endpointsToProbe = Array.from(
+      new Set([requestedEndpoint, FOUR_WHATSAPP_BASE_URL, FOUR_WHATSAPP_FALLBACK_URL])
+    );
+
+    const detectedProxy = resolveSystemProxyUrl(requestedEndpoint);
+    const probes = await Promise.all(
+      endpointsToProbe.map(async (ep) => {
+        const startedAt = Date.now();
+        let hostname = "";
+        try {
+          hostname = new URL(ep).hostname;
+        } catch {}
+        const dnsRes = hostname ? await resolveIpv4WithFallback(hostname) : { ip: null, source: "none" as const };
+        try {
+          const probeRes = await fourWaHttpRequestSingle(`${ep}/accountState`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json, text/plain, */*",
+              "User-Agent": "OmniFly-Travel-Pro/2026 (4WhatsApp Diagnostic)"
+            },
+            payloadBuffer: Buffer.from(JSON.stringify({ phones: "0", token: "diag" }), "utf8"),
+            timeoutMs: 6500
+          });
+          return {
+            endpoint: ep,
+            hostname,
+            dns_ip: dnsRes.ip,
+            dns_source: dnsRes.source,
+            reachable: true,
+            http_status: probeRes.status,
+            latency_ms: Date.now() - startedAt
+          };
+        } catch (err: any) {
+          return {
+            endpoint: ep,
+            hostname,
+            dns_ip: dnsRes.ip,
+            dns_source: dnsRes.source,
+            reachable: false,
+            error: classifyFourWaNetworkError(err),
+            latency_ms: Date.now() - startedAt
+          };
+        }
+      })
+    );
+
+    const anyReachable = probes.some((p) => p.reachable);
+    const recommendedEndpoint = probes.find((p) => p.reachable)?.endpoint || requestedEndpoint;
+
+    res.json({
+      success: true,
+      db_table_ok: Boolean(dbConfig),
+      proxy_detected: detectedProxy || null,
+      any_reachable: anyReachable,
+      recommended_endpoint: recommendedEndpoint,
+      probes,
+      message: anyReachable
+        ? `🟢 الاتصال بسيرفر 4WhatsApp متاح وجاهز من هذا الجهاز عبر (${recommendedEndpoint}).`
+        : "❌ تعذر الوصول إلى سيرفرات 4WhatsApp من الجهاز المحلي — تحقق من اتصال الإنترنت أو جدار الحماية/البروكسي أو جرب تغيير خادم الربط."
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "تعذر إجراء فحص الاتصال المحلي" });
   }
 });
 

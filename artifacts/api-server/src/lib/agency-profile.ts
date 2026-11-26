@@ -1,4 +1,4 @@
-import { db } from "./sqlite";
+import { db, ensure4WhatsAppConfigTable } from "./sqlite";
 
 export interface SystemAgencyProfile {
   businessName: string;
@@ -83,6 +83,7 @@ export function getSystemAgencyProfile(): SystemAgencyProfile {
 
   let fourWaRow: any = null;
   try {
+    ensure4WhatsAppConfigTable(db);
     fourWaRow = db.prepare("SELECT * FROM travel_4whatsapp_config WHERE id = 1").get();
   } catch {}
 

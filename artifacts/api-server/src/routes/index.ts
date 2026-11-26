@@ -14,7 +14,6 @@ import customersRouter from "./customers";
 import dashboardRouter from "./dashboard";
 import documentPrintSettingsRouter from "./document-print-settings";
 import employeesRouter from "./employees";
-import esaalatRouter from "./esaalat";
 import expensesRouter from "./expenses";
 import healthRouter from "./health";
 import hrRouter from "./hr";

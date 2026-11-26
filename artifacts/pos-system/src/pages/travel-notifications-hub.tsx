@@ -93,13 +93,19 @@ function fetchWithAuth<T>(url: string, options?: RequestInit): Promise<T> {
       Authorization: `Bearer ${token}`,
       ...options?.headers
     }
-  }).then(async (r) => {
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error(err.error || "حدث خطأ في الخادم");
-    }
-    return r.json();
-  });
+  })
+    .catch((netErr: any) => {
+      throw new Error(`تعذر الاتصال بالخادم المحلي: ${netErr?.message || "يرجى التحقق من تشغيل خادم النظام"}`);
+    })
+    .then(async (r) => {
+      if (!r.ok) {
+        const rawText = await r.text().catch(() => "");
+        let err: any = {};
+        try { err = JSON.parse(rawText); } catch {}
+        throw new Error(err.error || err.message || (rawText && rawText.length < 220 ? rawText : `حدث خطأ في الخادم (HTTP ${r.status})`));
+      }
+      return r.json();
+    });
 }
 
 // Department configuration map
@@ -153,7 +159,8 @@ export default function TravelNotificationsHubPage() {
     username: "",
     password: "",
     phone_number: "",
-    country_code: "967" // Default Yemen +967 YE
+    country_code: "967", // Default Yemen +967 YE
+    api_endpoint: "https://api2.4whatsapp.com/api/Agent_Client_"
   });
   const [showFourWaPassword, setShowFourWaPassword] = useState(false);
   const [fourWaStatus, setFourWaStatus] = useState<"pending_login" | "ready_for_scan" | "connected">("pending_login");
@@ -539,12 +546,13 @@ ${agencyName}`
   }, [fourWaForm]);
 
   const buildFourWaCredentialPayload = () => {
-    const f = fourWaFormRef.current;
+    const f = fourWaFormRef.current as any;
     const payload: Record<string, any> = {};
     if (f.company_code?.trim()) payload.company_code = f.company_code.trim();
     if (f.username?.trim()) payload.username = f.username.trim();
     if (f.phone_number?.trim()) payload.phone_number = f.phone_number.trim();
     if (f.country_code?.trim()) payload.country_code = f.country_code.trim();
+    if (f.api_endpoint?.trim()) payload.api_endpoint = f.api_endpoint.trim();
     const rawPass = f.password?.trim() || "";
     if (rawPass && rawPass !== "••••••••" && !/^\*+$/.test(rawPass)) {
       payload.password = rawPass;
@@ -596,13 +604,14 @@ ${agencyName}`
       if (nextStatus === "pending_login") {
         setFourWaQrDataUrl("");
       }
-      setFourWaForm((prev) => ({
+      setFourWaForm((prev: any) => ({
         ...prev,
         company_code: fourWaData.company_code || prev.company_code,
         username: fourWaData.username || prev.username,
         password: fourWaData.has_saved_password ? (prev.password || "••••••••") : (fourWaData.password || prev.password),
         phone_number: fourWaData.phone_number?.replace(new RegExp(`^${fourWaData.country_code || '967'}`), '') || prev.phone_number,
-        country_code: fourWaData.country_code || "967"
+        country_code: fourWaData.country_code || "967",
+        api_endpoint: fourWaData.api_endpoint || prev.api_endpoint || "https://api2.4whatsapp.com/api/Agent_Client_"
       }));
     }
   }, [fourWaData]);
@@ -1096,10 +1105,40 @@ ${agencyName}`
     onError: (err: any) => {
       refetchFourWa();
       const msg = String(err?.message || "");
-      const isNetErr = msg.includes("تعذر الاتصال") || msg.includes("تعذر الوصول") || msg.includes("انتهت مهلة الاتصال");
+      const isNetErr = msg.includes("تعذر الاتصال") || msg.includes("تعذر الوصول") || msg.includes("تعذر ترجمة") || msg.includes("انتهت مهلة الاتصال") || msg.includes("رفض الاتصال");
       toast({
         title: isNetErr ? "⚠️ تعذر الوصول إلى سيرفر 4WhatsApp محلياً" : "نتيجة الفحص المباشر من السيرفر",
         description: msg,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // 7. 4WhatsApp Local Connectivity & DB Diagnostic
+  const fourWaDiagnoseMutation = useMutation({
+    mutationFn: (vars?: { api_endpoint?: string }) =>
+      fetchWithAuth<any>("/api/travel/whatsapp/4whatsapp/diagnose", {
+        method: "POST",
+        body: JSON.stringify(vars || { api_endpoint: (fourWaFormRef.current as any)?.api_endpoint })
+      }),
+    onSuccess: (res) => {
+      if (res?.any_reachable) {
+        toast({
+          title: "🟢 فحص الاتصال المحلي: السيرفر متاح",
+          description: res.message
+        });
+      } else {
+        toast({
+          title: "⚠️ فحص الاتصال المحلي: السيرفر غير متاح حالياً",
+          description: res.message,
+          variant: "destructive"
+        });
+      }
+    },
+    onError: (err: any) => {
+      toast({
+        title: "تعذر إتمام الفحص الشبكي",
+        description: err?.message,
         variant: "destructive"
       });
     }
@@ -1379,6 +1418,7 @@ ${agencyName}`
             setShowFourWaPassword={setShowFourWaPassword}
             fourWaLoginMutation={fourWaLoginMutation}
             fourWaCheckStatusMutation={fourWaCheckStatusMutation}
+            fourWaDiagnoseMutation={fourWaDiagnoseMutation}
             fourWaGenerateQrMutation={fourWaGenerateQrMutation}
             fourWaConfirmScanMutation={fourWaConfirmScanMutation}
             fourWaDisconnectMutation={fourWaDisconnectMutation}
