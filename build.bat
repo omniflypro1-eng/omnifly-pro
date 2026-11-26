@@ -15,8 +15,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/3] تثبيت التبعيات...
-call npm install
+cd /d "%~dp0"
+set "NODE_OPTIONS=--dns-result-order=ipv4first"
+
+echo [1/3] فحص وتثبيت التبعيات...
+call node scripts/safe-npm-install.mjs
 if errorlevel 1 (
     echo [خطأ] فشل تثبيت التبعيات.
     pause

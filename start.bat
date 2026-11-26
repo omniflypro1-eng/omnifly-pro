@@ -17,9 +17,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
+set "NODE_OPTIONS=--dns-result-order=ipv4first"
+
 if not exist "node_modules" (
     echo [تنبيه] التبعيات غير مثبتة، جاري تثبيت حزم النظام تلقائياً...
-    call npm install
+    call node scripts/safe-npm-install.mjs
     if errorlevel 1 (
         echo [خطأ] فشل تثبيت الحزم عبر npm.
         pause

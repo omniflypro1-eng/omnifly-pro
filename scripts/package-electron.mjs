@@ -1,15 +1,94 @@
 import { execSync } from "node:child_process";
+import dns from "node:dns";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import packager from "@electron/packager";
 
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {}
+
 const ROOT = process.cwd();
-const ELECTRON_VERSION = "33.2.1";
 const ELECTRON_ABI = "130"; // Electron 33.x uses NODE_MODULE_VERSION 130
 const APP_NAME = "OmniFly_Pro";
 const OUT_DIR = path.join(ROOT, "dist-desktop");
 const TARGET_DIR = path.join(OUT_DIR, `${APP_NAME}-win32-x64`);
+
+function resolveTargetElectronVersion() {
+  try {
+    const installedPkgPath = path.join(ROOT, "node_modules", "electron", "package.json");
+    if (fs.existsSync(installedPkgPath)) {
+      const ver = String(JSON.parse(fs.readFileSync(installedPkgPath, "utf8")).version || "").trim();
+      if (ver.startsWith("33.")) {
+        return ver;
+      }
+    }
+  } catch {}
+  return "33.2.1";
+}
+
+const ELECTRON_VERSION = resolveTargetElectronVersion();
+
+const IGNORE_PATTERNS = [
+  /^\/\.git($|\/)/,
+  /^\/\.aistudio($|\/)/,
+  /^\/dist-desktop($|\/)/,
+  /^\/artifacts\/pos-system($|\/)/,
+  /^\/artifacts\/api-server\/src($|\/)/,
+  /^\/artifacts\/mockup-sandbox($|\/)/,
+  /^\/artifacts\/desktop-binaries($|\/)/,
+  /^\/WhatsApp-Source-And-Run($|\/)/,
+  /^\/app($|\/)/,
+  /^\/src($|\/)/,
+  /^\/scripts($|\/)/,
+  /^\/node_modules\/electron($|\/)/,
+  /^\/node_modules\/@electron($|\/)/,
+  /^\/node_modules\/electron-builder($|\/)/,
+  /^\/node_modules\/app-builder-bin($|\/)/,
+  /^\/node_modules\/7zip-bin($|\/)/,
+  /^\/node_modules\/esbuild($|\/)/,
+  /^\/node_modules\/@esbuild($|\/)/,
+  /^\/node_modules\/vite($|\/)/,
+  /^\/node_modules\/@vitejs($|\/)/,
+  /^\/node_modules\/typescript($|\/)/,
+  /^\/node_modules\/\.vite($|\/)/,
+  /^\/node_modules\/\.cache($|\/)/,
+  /^\/node_modules\/rollup($|\/)/,
+  /^\/node_modules\/@rollup($|\/)/,
+  /^\/node_modules\/@tailwindcss($|\/)/,
+  /^\/node_modules\/tailwindcss($|\/)/,
+  /^\/node_modules\/prettier($|\/)/,
+  /^\/node_modules\/@babel($|\/)/,
+  /^\/node_modules\/lucide-react($|\/)/,
+  /^\/node_modules\/pdfjs-dist($|\/)/,
+  /^\/node_modules\/jspdf($|\/)/,
+  /^\/node_modules\/html2canvas($|\/)/,
+  /^\/node_modules\/recharts($|\/)/,
+  /^\/node_modules\/framer-motion($|\/)/,
+  /^\/node_modules\/motion($|\/)/,
+  /^\/node_modules\/react($|\/)/,
+  /^\/node_modules\/react-dom($|\/)/,
+  /^\/node_modules\/@radix-ui($|\/)/,
+  /^\/node_modules\/@tanstack($|\/)/,
+  /^\/node_modules\/xlsx($|\/)/,
+  /^\/node_modules\/date-fns-jalali($|\/)/,
+  /^\/\.npmignore$/,
+  /^\/\.gitignore$/,
+  /^\/\.npmrc$/,
+  /^\/\.env($|\.)/,
+  /^\/server\.ts$/,
+  /^\/vite\.config\.ts$/,
+  /^\/tsconfig.*\.json$/,
+  /^\/Dockerfile$/,
+  /^\/netlify\.toml$/,
+  /^\/render\.yaml$/,
+  /^\/replit\.md$/,
+  /^\/.*\.mjs$/,
+  /^\/.*\.bat$/,
+  /^\/.*\.md$/,
+  /^\/artifacts\/api-server\/data\/.*(-wal|-shm|\.corrupt\.|sync-backups|\.omni-install\.json|\.pg-sync-state\.json)/,
+];
 
 function extractSingleFileFromTarGz(gzBuffer, targetSuffix) {
   const tar = zlib.gunzipSync(gzBuffer);
@@ -36,6 +115,115 @@ function extractSingleFileFromTarGz(gzBuffer, targetSuffix) {
     offset = dataStart + paddedBlocks;
   }
   return null;
+}
+
+function isNetworkError(err) {
+  const msg = `${err?.code || ""} ${err?.message || ""} ${err?.cause?.code || ""}`.toLowerCase();
+  return (
+    msg.includes("etimedout") ||
+    msg.includes("econnreset") ||
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("eai_again") ||
+    msg.includes("socket") ||
+    msg.includes("timeout") ||
+    msg.includes("network") ||
+    msg.includes("fetch failed") ||
+    msg.includes("request")
+  );
+}
+
+function shouldIgnoreRelPath(relPathUnix) {
+  const withSlash = relPathUnix.startsWith("/") ? relPathUnix : `/${relPathUnix}`;
+  return IGNORE_PATTERNS.some((rx) => rx.test(withSlash));
+}
+
+function copyAppFilteredSync(srcRoot, destRoot) {
+  fs.mkdirSync(destRoot, { recursive: true });
+  const stack = [""];
+  while (stack.length > 0) {
+    const relDir = stack.pop();
+    const absDir = relDir ? path.join(srcRoot, relDir) : srcRoot;
+    const entries = fs.readdirSync(absDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
+      const relUnix = rel.replace(/\\/g, "/");
+      if (shouldIgnoreRelPath(relUnix)) continue;
+
+      const srcPath = path.join(srcRoot, rel);
+      const destPath = path.join(destRoot, rel);
+      if (entry.isDirectory()) {
+        fs.mkdirSync(destPath, { recursive: true });
+        stack.push(rel);
+      } else if (entry.isSymbolicLink()) {
+        try {
+          const realStat = fs.statSync(srcPath);
+          if (realStat.isDirectory()) {
+            fs.mkdirSync(destPath, { recursive: true });
+            stack.push(rel);
+          } else {
+            fs.copyFileSync(srcPath, destPath);
+          }
+        } catch {}
+      } else if (entry.isFile()) {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+}
+
+async function packageOfflineFromLocalElectronDist(iconPath) {
+  const localDist = path.join(ROOT, "node_modules", "electron", "dist");
+  const localExe = path.join(localDist, "electron.exe");
+  if (process.platform !== "win32" || !fs.existsSync(localExe)) {
+    return false;
+  }
+
+  console.log("[Electron Packager] Using 100% offline local Electron dist fallback (node_modules/electron/dist)...");
+  if (fs.existsSync(TARGET_DIR)) {
+    fs.rmSync(TARGET_DIR, { recursive: true, force: true });
+  }
+  fs.mkdirSync(TARGET_DIR, { recursive: true });
+  fs.cpSync(localDist, TARGET_DIR, { recursive: true });
+
+  const copiedElectronExe = path.join(TARGET_DIR, "electron.exe");
+  const targetExe = path.join(TARGET_DIR, `${APP_NAME}.exe`);
+  if (fs.existsSync(copiedElectronExe)) {
+    fs.renameSync(copiedElectronExe, targetExe);
+  }
+
+  const resourcesDir = path.join(TARGET_DIR, "resources");
+  const defaultAppAsar = path.join(resourcesDir, "default_app.asar");
+  if (fs.existsSync(defaultAppAsar)) {
+    try { fs.rmSync(defaultAppAsar, { force: true }); } catch {}
+  }
+
+  const appPkgRoot = path.join(resourcesDir, "app");
+  copyAppFilteredSync(ROOT, appPkgRoot);
+
+  if (fs.existsSync(iconPath) && fs.existsSync(targetExe)) {
+    try {
+      const { createRequire } = await import("node:module");
+      const req = createRequire(import.meta.url);
+      const ResEdit = req("resedit");
+      const exeData = fs.readFileSync(targetExe);
+      const exe = ResEdit.NtExecutable.from(exeData);
+      const res = ResEdit.NtExecutableResource.from(exe);
+      const iconFile = ResEdit.Data.IconFile.from(fs.readFileSync(iconPath));
+      ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
+        res.entries,
+        1,
+        1033,
+        iconFile.icons.map((item) => item.data)
+      );
+      res.outputResource(exe);
+      fs.writeFileSync(targetExe, Buffer.from(exe.generate()));
+    } catch (iconErr) {
+      console.warn(`[Electron Packager] Offline icon notice: ${iconErr.message}`);
+    }
+  }
+
+  return true;
 }
 
 async function ensureWindowsBetterSqlite3(appPkgRoot) {
@@ -67,7 +255,7 @@ async function ensureWindowsBetterSqlite3(appPkgRoot) {
   console.log(`[Electron SQLite] Fetching win32-x64 Electron v${ELECTRON_VERSION} (ABI ${ELECTRON_ABI}) prebuild for better-sqlite3 v${version}...`);
 
   try {
-    const res = await fetch(prebuildUrl, { redirect: "follow" });
+    const res = await fetch(prebuildUrl, { redirect: "follow", signal: AbortSignal.timeout(20000) });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
@@ -117,7 +305,10 @@ async function ensureCleanSeedDatabase(appPkgRoot) {
     }
   }
 
-  if (fs.existsSync(srcDb)) {
+  if (!fs.existsSync(srcDb)) return;
+
+  // 1. Primary: use better-sqlite3 backup API
+  try {
     const { createRequire } = await import("node:module");
     const req = createRequire(import.meta.url);
     const BetterSqlite3 = req("better-sqlite3");
@@ -127,14 +318,51 @@ async function ensureCleanSeedDatabase(appPkgRoot) {
       if (fs.existsSync(destDb)) fs.unlinkSync(destDb);
       await db.backup(destDb);
       console.log(`[Electron SQLite] Created clean standalone seed database at ${destDb}`);
+      return;
     } finally {
       db.close();
     }
+  } catch (bsErr) {
+    console.warn(`[Electron SQLite] better-sqlite3 host backup fallback: ${bsErr.message}`);
   }
+
+  // 2. Secondary: Node built-in node:sqlite (Node 22.5+)
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(srcDb);
+    try {
+      try { db.exec("PRAGMA wal_checkpoint(TRUNCATE);"); } catch {}
+      if (fs.existsSync(destDb)) fs.unlinkSync(destDb);
+      const escapedDest = destDb.replace(/'/g, "''");
+      db.exec(`VACUUM INTO '${escapedDest}';`);
+      console.log(`[Electron SQLite] Created clean standalone seed database via node:sqlite at ${destDb}`);
+      return;
+    } finally {
+      db.close();
+    }
+  } catch (nsErr) {
+    console.warn(`[Electron SQLite] node:sqlite fallback notice: ${nsErr.message}`);
+  }
+
+  // 3. Last resort: clean file copy
+  fs.copyFileSync(srcDb, destDb);
+  console.log(`[Electron SQLite] Copied seed database to ${destDb}`);
 }
 
 async function main() {
   const iconPath = path.join(ROOT, "public", "omnisystem-logo.ico");
+
+  // Ensure built files exist
+  const requiredBuildOutputs = [
+    path.join(ROOT, "dist", "server.cjs"),
+    path.join(ROOT, "dist", "index.html"),
+    path.join(ROOT, "electron-main.cjs"),
+    path.join(ROOT, "preload.cjs"),
+  ];
+  if (requiredBuildOutputs.some((f) => !fs.existsSync(f))) {
+    console.log("[Electron Packager] Build outputs missing — running npm run build first...");
+    execSync("npm run build", { cwd: ROOT, stdio: "inherit" });
+  }
 
   // Clean any chat artifacts from dist
   try {
@@ -142,24 +370,7 @@ async function main() {
     fs.rmSync(path.join(ROOT, "public", "assets", "aistudio"), { recursive: true, force: true });
   } catch {}
 
-  const ignoreList = [
-    /^\/\.git($|\/)/,
-    /^\/\.aistudio($|\/)/,
-    /^\/dist-desktop($|\/)/,
-    /^\/artifacts\/pos-system($|\/)/,
-    /^\/artifacts\/api-server\/src($|\/)/,
-    /^\/artifacts\/mockup-sandbox($|\/)/,
-    /^\/WhatsApp-Source-And-Run($|\/)/,
-    /^\/app($|\/)/,
-    /^\/\.npmignore$/,
-    /^\/\.gitignore$/,
-    /^\/.*\.mjs$/,
-    /^\/.*\.bat$/,
-    /^\/.*\.md$/,
-    /^\/artifacts\/api-server\/data\/.*(-wal|-shm|\.corrupt\.|sync-backups|\.omni-install\.json|\.pg-sync-state\.json)/,
-  ];
-
-  console.log("[Electron Packager] Packaging OmniFly Pro for Windows x64 using JS API...");
+  console.log(`[Electron Packager] Packaging OmniFly Pro (Electron v${ELECTRON_VERSION}) for Windows x64...`);
 
   const packageOptions = {
     dir: ROOT,
@@ -171,10 +382,34 @@ async function main() {
     overwrite: true,
     prune: false,
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
-    ignore: ignoreList,
+    ignore: IGNORE_PATTERNS,
   };
 
-  await packager(packageOptions);
+  try {
+    await packager(packageOptions);
+  } catch (err) {
+    if (isNetworkError(err)) {
+      console.warn(`[Electron Packager] Primary Electron download timed out (${err.message}). Retrying via mirror...`);
+      try {
+        await packager({
+          ...packageOptions,
+          download: {
+            mirrorOptions: {
+              mirror: "https://npmmirror.com/mirrors/electron/",
+            },
+          },
+        });
+      } catch (mirrorErr) {
+        console.warn(`[Electron Packager] Mirror download notice: ${mirrorErr.message}`);
+        const ok = await packageOfflineFromLocalElectronDist(iconPath);
+        if (!ok) {
+          throw mirrorErr;
+        }
+      }
+    } else {
+      throw err;
+    }
+  }
 
   const appPkgRoot = path.join(TARGET_DIR, "resources", "app");
   if (!fs.existsSync(appPkgRoot)) {
@@ -195,3 +430,4 @@ main().catch((err) => {
   console.error("❌ Electron packaging failed:", err);
   process.exit(1);
 });
+

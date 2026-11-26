@@ -16,9 +16,11 @@ if errorlevel 1 (
 )
 echo [OK] Node.js موجود ومتاح
 
+set "NODE_OPTIONS=--dns-result-order=ipv4first"
+
 echo.
-echo [1/2] تثبيت التبعيات والحزم...
-call npm install
+echo [1/2] فحص وتثبيت التبعيات والحزم...
+call node scripts/safe-npm-install.mjs
 if errorlevel 1 (
     echo [تنبيه] حدث خطأ أثناء تثبيت الحزم عبر npm.
     pause & exit /b 1
