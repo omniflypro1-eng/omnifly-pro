@@ -59,6 +59,35 @@ export default defineConfig(() => {
     },
     optimizeDeps: {
       entries: ['index.html', 'artifacts/pos-system/src/main.tsx'],
+      esbuildOptions: {
+        plugins: [
+          {
+            name: 'esbuild-optional-jspdf-deps',
+            setup(build) {
+              build.onResolve({filter: /^(canvg|dompurify)$/}, (args) => {
+                if (args.importer && args.importer.toLowerCase().includes('jspdf')) {
+                  const candidate = path.resolve(__dirname, 'node_modules', args.path, 'package.json');
+                  const nestedCandidate = path.resolve(
+                    path.dirname(args.importer),
+                    '..',
+                    'node_modules',
+                    args.path,
+                    'package.json',
+                  );
+                  if (!fs.existsSync(candidate) && !fs.existsSync(nestedCandidate)) {
+                    return {path: args.path, namespace: 'optional-jspdf-stub'};
+                  }
+                }
+                return undefined;
+              });
+              build.onLoad({filter: /.*/, namespace: 'optional-jspdf-stub'}, () => ({
+                contents: 'export default {}; export const Canvg = undefined;',
+                loader: 'js',
+              }));
+            },
+          },
+        ],
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
