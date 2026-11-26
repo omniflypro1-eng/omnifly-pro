@@ -98,6 +98,9 @@ class DatabaseWrapper {
     this.filename = filename;
     this.dbKey = dbKey;
     this.db = new DatabaseSyncClass(filename);
+    try {
+      ensure4WhatsAppConfigTable(this);
+    } catch {}
   }
 
   prepare(sql: string) {
@@ -5505,54 +5508,6 @@ function runMigrations() {
   } catch (e) {
     console.error("Error creating Esaalat tables:", e);
   }
-
-  // Module: 4WhatsApp Gateway & WhatsApp Automation Core Tables (Always present on fresh, restored, local & tenant DBs)
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS travel_4whatsapp_config (
-        id INTEGER PRIMARY KEY DEFAULT 1,
-        company_code TEXT DEFAULT '',
-        username TEXT DEFAULT '',
-        password TEXT DEFAULT '',
-        phone_number TEXT DEFAULT '',
-        display_phone_number TEXT DEFAULT '',
-        country_code TEXT DEFAULT '967',
-        api_endpoint TEXT DEFAULT 'https://api2.4whatsapp.com/api/Agent_Client_',
-        is_authenticated INTEGER DEFAULT 0,
-        session_status TEXT DEFAULT 'pending_login',
-        qr_data TEXT DEFAULT '',
-        pairing_code TEXT DEFAULT '',
-        account_name TEXT DEFAULT 'وكالة أومني فلاي - 4WhatsApp Gateway',
-        balance_conversations INTEGER DEFAULT 0,
-        daily_sent_count INTEGER DEFAULT 0,
-        daily_limit INTEGER DEFAULT 1000,
-        last_login_at TEXT DEFAULT (datetime('now', 'localtime')),
-        last_scan_at TEXT DEFAULT (datetime('now', 'localtime')),
-        updated_at TEXT DEFAULT (datetime('now', 'localtime')),
-        days_remaining INTEGER DEFAULT 0,
-        last_verified_at TEXT DEFAULT '',
-        last_verification_error TEXT DEFAULT ''
-      );
-    `);
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN days_remaining INTEGER DEFAULT 0").run(); } catch {}
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN last_verified_at TEXT DEFAULT ''").run(); } catch {}
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN last_verification_error TEXT DEFAULT ''").run(); } catch {}
-    try { db.prepare("ALTER TABLE travel_4whatsapp_config ADD COLUMN api_endpoint TEXT DEFAULT 'https://api2.4whatsapp.com/api/Agent_Client_'").run(); } catch {}
-    db.prepare(`
-      INSERT OR IGNORE INTO travel_4whatsapp_config (
-        id, company_code, username, password, phone_number, display_phone_number, country_code,
-        api_endpoint, is_authenticated, session_status, qr_data, pairing_code, account_name,
-        balance_conversations, daily_sent_count, daily_limit, last_login_at, last_scan_at
-      ) VALUES (
-        1, '', '', '', '', '', '967',
-        'https://api2.4whatsapp.com/api/Agent_Client_', 0, 'pending_login',
-        '', '', 'وكالة أومني فلاي - 4WhatsApp Gateway',
-        0, 0, 1000, datetime('now', 'localtime'), datetime('now', 'localtime')
-      )
-    `).run();
-  } catch (e) {
-    console.error("Error creating travel_4whatsapp_config table:", e);
-  }
 }
 
 function seedData() {
@@ -7477,5 +7432,57 @@ if (!skipDemoSeedOnStartup) {
       }
     }
   }, 2000);
+}
+
+export function ensure4WhatsAppConfigTable(dbInstance: any) {
+  try {
+    const execMethod = typeof dbInstance.exec === "function" ? dbInstance.exec.bind(dbInstance) : (sql: string) => dbInstance.db.exec(sql);
+    const prepareMethod = typeof dbInstance.prepare === "function" ? dbInstance.prepare.bind(dbInstance) : (sql: string) => dbInstance.db.prepare(sql);
+
+    execMethod(`
+      CREATE TABLE IF NOT EXISTS travel_4whatsapp_config (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        company_code TEXT DEFAULT '',
+        username TEXT DEFAULT '',
+        password TEXT DEFAULT '',
+        phone_number TEXT DEFAULT '',
+        display_phone_number TEXT DEFAULT '',
+        country_code TEXT DEFAULT '967',
+        api_endpoint TEXT DEFAULT 'https://api2.4whatsapp.com/api/Agent_Client_',
+        is_authenticated INTEGER DEFAULT 0,
+        session_status TEXT DEFAULT 'pending_login',
+        qr_data TEXT DEFAULT '',
+        pairing_code TEXT DEFAULT '',
+        account_name TEXT DEFAULT 'وكالة أومني فلاي - 4WhatsApp Gateway',
+        balance_conversations INTEGER DEFAULT 0,
+        daily_sent_count INTEGER DEFAULT 0,
+        daily_limit INTEGER DEFAULT 1000,
+        last_login_at TEXT DEFAULT (datetime('now', 'localtime')),
+        last_scan_at TEXT DEFAULT (datetime('now', 'localtime')),
+        updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+        days_remaining INTEGER DEFAULT 0,
+        last_verified_at TEXT DEFAULT '',
+        last_verification_error TEXT DEFAULT ''
+      );
+    `);
+    try { prepareMethod("ALTER TABLE travel_4whatsapp_config ADD COLUMN days_remaining INTEGER DEFAULT 0").run(); } catch {}
+    try { prepareMethod("ALTER TABLE travel_4whatsapp_config ADD COLUMN last_verified_at TEXT DEFAULT ''").run(); } catch {}
+    try { prepareMethod("ALTER TABLE travel_4whatsapp_config ADD COLUMN last_verification_error TEXT DEFAULT ''").run(); } catch {}
+    try { prepareMethod("ALTER TABLE travel_4whatsapp_config ADD COLUMN api_endpoint TEXT DEFAULT 'https://api2.4whatsapp.com/api/Agent_Client_'").run(); } catch {}
+    prepareMethod(`
+      INSERT OR IGNORE INTO travel_4whatsapp_config (
+        id, company_code, username, password, phone_number, display_phone_number, country_code,
+        api_endpoint, is_authenticated, session_status, qr_data, pairing_code, account_name,
+        balance_conversations, daily_sent_count, daily_limit, last_login_at, last_scan_at
+      ) VALUES (
+        1, '', '', '', '', '', '967',
+        'https://api2.4whatsapp.com/api/Agent_Client_', 0, 'pending_login',
+        '', '', 'وكالة أومني فلاي - 4WhatsApp Gateway',
+        0, 0, 1000, datetime('now', 'localtime'), datetime('now', 'localtime')
+      )
+    `).run();
+  } catch (e) {
+    console.error("Error ensuring travel_4whatsapp_config table:", e);
+  }
 }
 
