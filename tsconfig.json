@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "types": ["vite/client"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "artifacts/pos-system/src/*"
+      ],
+      "@workspace/api-client-react": [
+        "artifacts/pos-system/src/lib/api-client-react.tsx"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "artifacts/pos-system/src/**/*.ts",
+    "artifacts/pos-system/src/**/*.tsx"
+  ],
+  "exclude": [
+    "dist",
+    "app",
+    "artifacts/api-server",
+    "artifacts/mockup-sandbox",
+    "WhatsApp-Source-And-Run",
+    "node_modules"
+  ]
+}

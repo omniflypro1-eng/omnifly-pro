@@ -1,0 +1,354 @@
+import React, { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { 
+  MessageSquare, ExternalLink, AlertCircle, Phone, User, 
+  Luggage, ShieldCheck, Laptop, FileText, RefreshCw, Zap, X
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useAgencyConfig } from "@/hooks/use-agency-config";
+
+interface WhatsAppModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  targetPax?: any;
+  allPassengers?: any[];
+  selectedCustomerId?: any;
+  currentCustomerName?: string;
+  onBatchComplete?: (res: any) => void;
+  onEditPassenger?: (paxId: any) => void;
+}
+
+export function WhatsAppAutomationModal({
+  open,
+  onOpenChange,
+  targetPax,
+  allPassengers = [],
+  selectedCustomerId,
+  currentCustomerName,
+  onBatchComplete,
+  onEditPassenger
+}: WhatsAppModalProps) {
+  const { toast } = useToast();
+  const { agencyName, phone: agencyPhone, address: agencyAddress } = useAgencyConfig();
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending4Wa, setSending4Wa] = useState(false);
+  const [sendingMeta, setSendingMeta] = useState(false);
+  const [templateType, setTemplateType] = useState<"card" | "passport_alert" | "umrah_exit" | "batch_report">("card");
+  
+  // 4WhatsApp Gateway status
+  const [fourWaConfig, setFourWaConfig] = useState<any>(null);
+  const [fourWaConnected, setFourWaConnected] = useState<boolean>(false);
+
+  // Fetch 4WhatsApp status
+  useEffect(() => {
+    if (open) {
+      fetch("/api/travel/whatsapp/4whatsapp/status")
+        .then(r => r.json())
+        .then(data => {
+          if (data?.config) {
+            setFourWaConfig(data.config);
+            setFourWaConnected(Boolean(data.linked || (data.config.is_authenticated === 1 && data.config.session_status === "connected")));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [open]);
+
+  // Generate customized message based on template selection and passenger details
+  const generateTemplateText = (type: "card" | "passport_alert" | "umrah_exit" | "batch_report", pax: any) => {
+    const recipientName = pax?.name_ar || pax?.name_en || currentCustomerName || "العميل الكريم";
+    const passportNo = pax?.passport_number || "---";
+    const remaining = pax?.remaining_days !== null && pax?.remaining_days !== undefined ? `${pax.remaining_days} يوم` : 'غير محدد';
+    const exitDate = (pax?.expected_exit_date || '').replace(/-/g, '/');
+    const entryDate = (pax?.travel_date || '').replace(/-/g, '/');
+    const contactPhone = fourWaConfig?.display_phone_number || agencyPhone || "";
+    const footerLines = [
+      `🏢 *${agencyName}*`,
+      agencyAddress ? `📍 العنوان: ${agencyAddress}` : "",
+      contactPhone ? `📞 للتواصل والاستفسار: ${contactPhone}` : ""
+    ].filter(Boolean).join("\n");
+
+    switch(type) {
+      case "card":
+        return `عزيزنا المسافر *${recipientName}* المحترم 🛂\nتحية طيبة من ${agencyName} ✈️\nنرفق لكم بطاقة المسافر وتفاصيل وثائق السفر المعتمدة:\n• رقم الجواز: ${passportNo}\n• تاريخ الدخول/السفر: ${entryDate || 'قريباً'}\n• تاريخ الخروج المتوقع: ${exitDate || 'حسب مدة التأشيرة'}\n• المدة المقررة: ${pax?.program_duration_days || 90} يوم\nنتمنى لكم رحلة سعيدة وموفقة! 🌟\n\n----------------------------------------\n${footerLines}`;
+
+      case "passport_alert":
+        return `⚠️ *تنبيه هام بشأن صلاحية جواز السفر*\nعزيزنا المسافر: *${recipientName}* 🛂\nنود إحاطتكم بأن جواز سفركم رقم (*${passportNo}*) قارب على الانتهاء.\nنوصيكم بسرعة تجديد الجواز لضمان استيفاء شروط السفر والتأشيرات الدولية (صلاحية لا تقل عن 6 أشهر).\n${agencyName} تتمنى لكم دوام التوفيق 🌟\n\n----------------------------------------\n${footerLines}`;
+
+      case "umrah_exit":
+        return `🕋 *تذكير متابعة تأشيرة العمرة وموعد الخروج - مكة المكرمة*\nالمعتمر الكريم: *${recipientName}*\n• رقم الجواز: ${passportNo}\n• تاريخ الدخول: ${entryDate} | المدة: ${pax?.program_duration_days || 90} يوم\n• الأيام المتبقية داخل مكة: *${remaining}*\n• تاريخ الخروج المتوقع: ${exitDate}\nيرجى التنسيق المبكر لتأكيد حجوزات المغادرة والعودة بسلامة الله.\n\n----------------------------------------\n${footerLines}`;
+
+      case "batch_report":
+        return `عزيزنا العميل *${recipientName}* المحترم 🌸\nمرفق لكم كشف تقرير المسافرين والمعتمرين المسجلين في ${agencyName}.\nإجمالي المسافرين في الكشف: ${allPassengers.length} مسافر\nتاريخ التقرير: ${new Date().toLocaleDateString('ar-SA')}\nشكراً لتعاملكم الدائم والمتميز معنا ✈️\n\n----------------------------------------\n${footerLines}`;
+    }
+  };
+
+  // Sync state whenever modal opens or pax changes
+  useEffect(() => {
+    if (open) {
+      const recipientPhone = targetPax?.phone || targetPax?.mobile || (allPassengers.length > 0 ? allPassengers[0]?.phone : "") || "";
+      setPhone(recipientPhone);
+
+      const initialType = targetPax ? "card" : "batch_report";
+      setTemplateType(initialType);
+      setMessage(generateTemplateText(initialType, targetPax));
+    }
+  }, [open, targetPax, allPassengers, currentCustomerName, fourWaConfig, agencyName, agencyPhone, agencyAddress]);
+
+  const handleTemplateChange = (newType: "card" | "passport_alert" | "umrah_exit" | "batch_report") => {
+    setTemplateType(newType);
+    setMessage(generateTemplateText(newType, targetPax));
+  };
+
+  // 1. Send via 4WhatsApp Enterprise Gateway (https://api2.4whatsapp.com/api/Agent_Client)
+  const handleSendVia4WhatsApp = async () => {
+    if (!phone || !message) {
+      toast({ title: "تنبيه", description: "يرجى إدخال رقم الهاتف ونص الرسالة", variant: "destructive" });
+      return;
+    }
+    setSending4Wa(true);
+    try {
+      const res = await fetch("/api/travel/whatsapp/4whatsapp/send-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient_phone: phone,
+          message_body: message,
+          recipient_name: targetPax?.name_ar || targetPax?.name_en || currentCustomerName || "عميل"
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "فشل الإرسال عبر بوابة 4WhatsApp");
+
+      toast({
+        title: "✓ تم الإرسال بنجاح عبر 4WHATSAPP السحابية ⚡",
+        description: data.message || `تم تسليم الرسالة إلى +${phone}`
+      });
+      if (onBatchComplete) {
+        onBatchComplete({ successCount: 1, skippedCount: 0, successList: [targetPax || { name: currentCustomerName }] });
+      }
+      onOpenChange(false);
+    } catch (err: any) {
+      toast({
+        title: "فشل الإرسال عبر 4WhatsApp",
+        description: err.message || "حدث خطأ أثناء التواصل مع بوابة 4WhatsApp",
+        variant: "destructive"
+      });
+    } finally {
+      setSending4Wa(false);
+    }
+  };
+
+  // 2. Open Direct Official Dynamic WhatsApp Web URL
+  const handleOpenDirectWhatsAppWeb = () => {
+    const cleanDigits = phone.replace(/[^0-9]/g, "");
+    const encoded = encodeURIComponent(message);
+    const url = `https://web.whatsapp.com/send/?phone=${cleanDigits}&text=${encoded}&type=phone_number&app_absent=0`;
+    window.open(url, "_blank");
+  };
+
+  // 3. Launch WhatsApp Desktop Protocol
+  const handleLaunchWhatsAppDesktop = () => {
+    const cleanDigits = phone.replace(/[^0-9]/g, "");
+    const encoded = encodeURIComponent(message);
+    const url = `whatsapp://send?phone=${cleanDigits}&text=${encoded}`;
+    window.location.href = url;
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100%-0.75rem)] sm:w-full max-w-2xl max-h-[92dvh] flex flex-col p-0 overflow-hidden bg-white text-slate-900 rounded-2xl shadow-2xl [&>button]:hidden" dir="rtl">
+        <DialogHeader className="p-4 sm:px-6 sm:py-4 border-b bg-slate-50/80 shrink-0 text-right">
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-1 min-w-0">
+              <DialogTitle className="text-sm sm:text-base font-black flex items-center gap-2 text-indigo-950">
+                <MessageSquare className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span className="truncate">إرسال تنبيه ورسالة واتساب للمسافر</span>
+              </DialogTitle>
+              <DialogDescription className="text-[11px] sm:text-xs text-slate-500">
+                اختر القالب وعدّل نص الرسالة ثم أرسل عبر بوابة الواتساب السحابية أو واتساب ويب
+              </DialogDescription>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge className="hidden sm:inline-flex bg-purple-100 text-purple-900 border-purple-300 font-bold text-xs gap-1">
+                <Zap className="w-3.5 h-3.5 text-purple-600" />
+                <span>4WhatsApp: {fourWaConnected ? "متصل 🟢" : "جاهز 🟡"}</span>
+              </Badge>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-8 px-2.5 rounded-xl gap-1 shrink-0"
+              >
+                <X className="w-4 h-4" />
+                <span>إغلاق</span>
+              </Button>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="space-y-4 p-4 sm:p-6 text-xs overflow-y-auto flex-1">
+          {/* Template Selection Pills */}
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1.5">
+              اختر قالب الرسالة المخصص لبيانات المسافر:
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => handleTemplateChange("card")}
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 font-bold ${
+                  templateType === "card"
+                    ? "bg-indigo-50 border-indigo-500 text-indigo-900 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <Luggage className="w-4 h-4 text-indigo-600" />
+                <span>بطاقة المسافر</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTemplateChange("passport_alert")}
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 font-bold ${
+                  templateType === "passport_alert"
+                    ? "bg-amber-50 border-amber-500 text-amber-900 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 text-amber-600" />
+                <span>انتهاء الجواز</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTemplateChange("umrah_exit")}
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 font-bold ${
+                  templateType === "umrah_exit"
+                    ? "bg-rose-50 border-rose-500 text-rose-900 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+                <span>مغادرة مكة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTemplateChange("batch_report")}
+                className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 font-bold ${
+                  templateType === "batch_report"
+                    ? "bg-emerald-50 border-emerald-500 text-emerald-900 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>كشف التقرير</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Passenger & Phone Inputs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1 mb-1">
+                <User className="w-3.5 h-3.5 text-slate-500" /> اسم المسافر / المستلم
+              </label>
+              <Input
+                readOnly
+                value={targetPax?.name_ar || targetPax?.name_en || currentCustomerName || "عميل عام"}
+                className="bg-slate-50 text-xs font-bold rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1 mb-1">
+                <Phone className="w-3.5 h-3.5 text-slate-500" /> رقم الهاتف والواتساب (مع رمز الدولة)
+              </label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="967771234567 أو 966501234567"
+                dir="ltr"
+                className="text-xs font-mono font-bold rounded-xl"
+              />
+            </div>
+          </div>
+
+          {/* Message Textarea */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700">نص الرسالة المعد للإرسال:</label>
+              <span className="text-[10px] text-slate-400">يمكنك تعديل أي جزء من النص يدوياً قبل الإرسال</span>
+            </div>
+            <Textarea
+              rows={7}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="text-xs font-sans leading-relaxed resize-none rounded-xl"
+              placeholder="اكتب نص رسالة الواتساب هنا..."
+            />
+          </div>
+
+        </div>
+
+        {/* Action Buttons */}
+        <DialogFooter className="gap-2 p-3 sm:px-6 sm:py-4 sm:justify-between flex flex-col sm:flex-row border-t bg-slate-50 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleOpenDirectWhatsAppWeb}
+              className="text-[#00a884] border-[#00a884]/40 hover:bg-[#00a884]/10 text-xs font-bold rounded-xl gap-1.5 h-9 flex-1 sm:flex-initial"
+              title="فتح الرابط التلقائي المباشر لخدمة WhatsApp Web"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>واتساب ويب</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLaunchWhatsAppDesktop}
+              className="text-slate-700 border-slate-300 hover:bg-slate-100 text-xs font-bold rounded-xl gap-1.5 h-9 flex-1 sm:flex-initial"
+              title="فتح المحادثة في تطبيق واتساب المكتبي"
+            >
+              <Laptop className="w-3.5 h-3.5" />
+              <span>تطبيق الكمبيوتر</span>
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              className="text-xs rounded-xl h-9"
+            >
+              إلغاء
+            </Button>
+
+            <Button
+              type="button"
+              onClick={handleSendVia4WhatsApp}
+              disabled={sending4Wa}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs gap-2 px-4 py-2 rounded-xl shadow-lg shadow-purple-500/20 h-9 flex-1 sm:flex-initial"
+            >
+              {sending4Wa ? (
+                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+              ) : (
+                <Zap className="w-4 h-4 text-amber-300" />
+              )}
+              <span>{sending4Wa ? "جاري الإرسال..." : "إرسال عبر 4WhatsApp ⚡"}</span>
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
