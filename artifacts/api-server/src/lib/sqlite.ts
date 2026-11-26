@@ -97,7 +97,22 @@ class DatabaseWrapper {
     }
     this.filename = filename;
     this.dbKey = dbKey;
-    this.db = new DatabaseSyncClass(filename);
+    try {
+      this.db = new DatabaseSyncClass(filename);
+    } catch (openErr: any) {
+      const errMsg = String(openErr?.message || openErr).toLowerCase();
+      if (errMsg.includes("malformed") || errMsg.includes("corrupt") || errMsg.includes("not a database") || errMsg.includes("disk i/o error")) {
+        console.warn(`[SQLite Recovery] Database at ${filename} appears corrupted/malformed (${errMsg}). Quarantining and rebuilding fresh database...`);
+        try {
+          if (existsSync(filename)) renameSync(filename, `${filename}.${Date.now()}.corrupt`);
+          if (existsSync(`${filename}-wal`)) unlinkSync(`${filename}-wal`);
+          if (existsSync(`${filename}-shm`)) unlinkSync(`${filename}-shm`);
+        } catch {}
+        this.db = new DatabaseSyncClass(filename);
+      } else {
+        throw openErr;
+      }
+    }
     try {
       this.db.exec("PRAGMA busy_timeout = 5000;");
     } catch {}
